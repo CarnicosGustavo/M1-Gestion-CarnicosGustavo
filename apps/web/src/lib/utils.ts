@@ -1,15 +1,16 @@
 
 const localeCurrencyMap: Record<string, string> = {
-  en: "USD",
-  "pt-BR": "BRL",
+  es: "MXN",
 };
 
 function resolveLocale(locale?: string) {
-  return locale ?? "en";
+  const loc = locale ?? "es";
+  if (loc === "es") return "es-MX";
+  return loc;
 }
 
 function resolveCurrency(locale: string) {
-  return localeCurrencyMap[locale] ?? "USD";
+  return localeCurrencyMap[locale] ?? "MXN";
 }
 
 export function formatDate(date: Date | string, locale?: string) {

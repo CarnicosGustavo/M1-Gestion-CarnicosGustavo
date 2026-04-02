@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { useLocale } from "next-intl";
 import { useRouter } from "next/navigation";
 import { setLocale } from "@/i18n/locale";
@@ -18,6 +19,8 @@ const localeNames: Record<Locale, string> = {
 };
 
 export function LocaleSwitcher() {
+  const triggerId = useId();
+  const contentId = useId();
   const locale = useLocale();
   const router = useRouter();
 
@@ -28,10 +31,10 @@ export function LocaleSwitcher() {
 
   return (
     <Select value={locale} onValueChange={onChange}>
-      <SelectTrigger className="w-[130px] h-8 text-xs">
+      <SelectTrigger id={`locale-trigger-${triggerId}`} className="w-[130px] h-8 text-xs">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent id={`locale-content-${contentId}`}>
         {locales.map((loc) => (
           <SelectItem key={loc} value={loc}>
             {localeNames[loc]}

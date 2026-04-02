@@ -169,3 +169,9 @@ export const paymentMethods = [
   { id: "debit-card", name: "Debit Card" },
   { id: "cash", name: "Cash" },
 ];
+
+export const CLIENT_NAME = "Centro de Distribución de Carnicos Gustavo";
+export const PROJECT_CREDIT = "Desarrollo ABDev.click";
+export const COUNTRY = "MX" as const;
+export const DEMO_EMAIL = "test@carnicosgustavo.com";
+export const DEMO_PASSWORD = "test1234";

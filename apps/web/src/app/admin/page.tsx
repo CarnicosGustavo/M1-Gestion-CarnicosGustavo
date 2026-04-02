@@ -192,13 +192,23 @@ function CategoryPieChart({
   }));
 
   const chartConfig: ChartConfig = Object.fromEntries(
-    entries.map(([category], i) => [
-      category,
-      {
-        label: category.charAt(0).toUpperCase() + category.slice(1),
-        color: CHART_COLORS[i % CHART_COLORS.length],
-      },
-    ])
+    entries.map(([category], i) => {
+      // Try to translate the category label, fallback to capitalized key
+      let label = category.charAt(0).toUpperCase() + category.slice(1);
+      try {
+        label = t(`categories.${category}`);
+      } catch {
+        // Fallback already set
+      }
+
+      return [
+        category,
+        {
+          label,
+          color: CHART_COLORS[i % CHART_COLORS.length],
+        },
+      ];
+    })
   );
 
   return (

@@ -3,8 +3,7 @@ import { cookies } from "next/headers";
 import { defaultLocale, type Locale, locales } from "./config";
 
 const messageImports = {
-  en: () => import("../messages/en"),
-  "pt-BR": () => import("../messages/pt-BR"),
+  es: () => import("../messages/es"),
 } as const;
 
 export default getRequestConfig(async () => {

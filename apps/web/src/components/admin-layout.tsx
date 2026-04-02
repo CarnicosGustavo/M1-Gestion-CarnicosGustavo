@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
 import { Button } from "@finopenpos/ui/components/button";
 import {
@@ -20,7 +20,6 @@ import {
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import {
-  Package2Icon,
   LayoutDashboardIcon,
   DollarSignIcon,
   PackageIcon,
@@ -35,7 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { LocaleSwitcher } from "@/components/locale-switcher";
+import { CLIENT_NAME } from "@/lib/constants";
 
 import { logout } from "@/app/login/actions";
 
@@ -60,6 +59,7 @@ const navItems: NavItem[] = [
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const userMenuTriggerId = useId();
   const t = useTranslations("nav");
 
   const pageNames: Record<string, string> = Object.fromEntries(
@@ -68,32 +68,37 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-muted/40">
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-3 sm:px-4 sm:gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="sm:hidden shrink-0"
-          onClick={() => setMobileMenuOpen(true)}
-        >
-          <MenuIcon className="h-5 w-5" />
-          <span className="sr-only">{t("openMenu")}</span>
-        </Button>
+      <header className="sticky top-0 z-30 grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b bg-background px-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="sm:hidden shrink-0"
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <MenuIcon className="h-5 w-5" />
+            <span className="sr-only">{t("openMenu")}</span>
+          </Button>
+          <h1 className="min-w-0 truncate text-base font-bold sm:text-lg">
+            {pageNames[pathname]}
+          </h1>
+        </div>
+
         <Link
           href="/admin"
-          className="hidden sm:flex items-center gap-2 text-lg font-semibold"
+          className="justify-self-center truncate text-sm font-semibold sm:text-base"
         >
-          <Package2Icon className="h-6 w-6" />
-          <span className="sr-only">{t("adminPanel")}</span>
+          {CLIENT_NAME}
         </Link>
-        <h1 className="text-lg sm:text-xl font-bold truncate">{pageNames[pathname]}</h1>
-        <div className="ml-auto flex items-center gap-2">
-          <LocaleSwitcher />
+
+        <div className="flex items-center justify-self-end gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
                 size="icon"
                 className="overflow-hidden rounded-full shrink-0"
+                id={`user-menu-trigger-${userMenuTriggerId}`}
               >
                 <Image
                   src={`${process.env.NEXT_PUBLIC_BASE_PATH || ""}/placeholder-user.jpg`}
@@ -130,8 +135,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 className="flex items-center gap-2 text-lg font-semibold"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                <Package2Icon className="h-6 w-6" />
-                <span>FinOpenPOS</span>
+                <span>{CLIENT_NAME}</span>
               </Link>
               <Button
                 variant="ghost"

@@ -1,30 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useLocale } from "next-intl";
 
 const DEMO_HOST = "fin-open-pos.johnenrique.tech";
 const STORAGE_KEY = "cookie-consent";
 
 const messages = {
-  en: {
-    text: "This demo uses essential cookies only for authentication and session management.",
-    accept: "Accept",
-    learnMore: "Learn more",
-  },
-  "pt-BR": {
-    text: "Esta demo utiliza apenas cookies essenciais para autenticação e gerenciamento de sessão.",
-    accept: "Aceitar",
-    learnMore: "Saiba mais",
-  },
+  text: "Esta demo utiliza solo cookies esenciales para autenticación y gestión de sesión.",
+  accept: "Aceptar",
+  learnMore: "Saber más",
 } as const;
 
 export function CookieConsent() {
   const [visible, setVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const locale = useLocale();
-  const lang = locale === "pt-BR" ? "pt-BR" : "en";
-  const t = messages[lang];
+  const t = messages;
 
   useEffect(() => {
     if (window.location.hostname !== DEMO_HOST) return;
@@ -45,7 +35,7 @@ export function CookieConsent() {
 
   if (!visible) return null;
 
-  const privacyUrl = `${window.location.origin}/${lang}/docs/legal/privacy`;
+  const privacyUrl = `${window.location.origin}/docs/legal/privacy`;
 
   return (
     <div

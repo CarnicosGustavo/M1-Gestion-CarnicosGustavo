@@ -6,21 +6,17 @@ import { Label } from "@finopenpos/ui/components/label";
 import { Input } from "@finopenpos/ui/components/input";
 import Link from "next/link";
 import { Button } from "@finopenpos/ui/components/button";
-import { MountainIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { LocaleSwitcher } from "@/components/locale-switcher";
+import { CLIENT_NAME, PROJECT_CREDIT } from "@/lib/constants";
 
 export default function SignupPage() {
   const t = useTranslations("signup");
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background">
-      <div className="absolute top-4 right-4">
-        <LocaleSwitcher />
-      </div>
       <div className="mx-auto w-full max-w-md space-y-6">
         <div className="flex flex-col items-center space-y-2">
-          <MountainIcon className="h-10 w-10" />
+          <div className="text-center text-lg font-semibold">{CLIENT_NAME}</div>
           <h2 className="text-2xl font-bold">{t("title")}</h2>
           <p className="text-sm text-muted-foreground">
             {t("subtitle")}
@@ -77,6 +73,9 @@ export default function SignupPage() {
             </CardFooter>
           </form>
         </Card>
+        <div className="text-center text-xs text-muted-foreground">
+          {PROJECT_CREDIT}
+        </div>
       </div>
     </div>
   );

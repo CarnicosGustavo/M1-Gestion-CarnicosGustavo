@@ -1,8 +1,8 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
-import { transactions } from "@/lib/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { transactions, orderItems, products } from "@/lib/db/schema";
+import { eq, and, asc, sum, sql } from "drizzle-orm";
 
 export const dashboardRouter = router({
   stats: protectedProcedure
@@ -47,13 +47,21 @@ export const dashboardRouter = router({
 
       const totalProfit = totalSelling - totalExpenses;
 
-      const revenueByCategory = allCompleted
-        .filter((t) => t.type === "income")
-        .reduce<Record<string, number>>((acc, t) => {
-          if (!t.category) return acc;
-          acc[t.category] = (acc[t.category] || 0) + t.amount;
-          return acc;
-        }, {});
+      // New revenue breakdown by product category
+      const revenueByProductCategory = await db
+        .select({
+          category: products.category,
+          total: sum(sql<number>`${orderItems.price} * ${orderItems.quantity}`).mapWith(Number),
+        })
+        .from(orderItems)
+        .innerJoin(products, eq(orderItems.product_id, products.id))
+        .innerJoin(transactions, eq(transactions.order_id, orderItems.order_id))
+        .where(and(eq(transactions.status, "completed"), eq(transactions.user_uid, uid)))
+        .groupBy(products.category);
+
+      const revenueByCategory = Object.fromEntries(
+        revenueByProductCategory.map((r) => [r.category || "otros", r.total])
+      );
 
       const expensesByCategory = allCompleted
         .filter((t) => t.type === "expense")

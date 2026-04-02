@@ -6,11 +6,12 @@ import { CookieConsent } from "@/components/cookie-consent";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import "./globals.css";
+import { CLIENT_NAME } from "@/lib/constants";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "FinOpenPOS",
+  title: CLIENT_NAME,
   description: "Open-source point of sale system",
 };
 
