@@ -6,9 +6,9 @@ const DEMO_HOST = "fin-open-pos.johnenrique.tech";
 const STORAGE_KEY = "cookie-consent";
 
 const messages = {
-  text: "Esta demo utiliza solo cookies esenciales para autenticación y gestión de sesión.",
-  accept: "Aceptar",
-  learnMore: "Saber más",
+  text: "Este sistema utiliza cookies técnicas para la gestión de su sesión de usuario.",
+  accept: "Entendido",
+  learnMore: "Privacidad",
 } as const;
 
 export function CookieConsent() {
@@ -17,7 +17,6 @@ export function CookieConsent() {
   const t = messages;
 
   useEffect(() => {
-    if (window.location.hostname !== DEMO_HOST) return;
     const consent = localStorage.getItem(STORAGE_KEY);
     if (!consent) {
       setVisible(true);

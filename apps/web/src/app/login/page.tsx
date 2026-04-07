@@ -61,14 +61,6 @@ export default function LoginPage() {
               <Button className="w-full" formAction={login}>
                 {t("submit")}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={fillDemo}
-              >
-                {t("fillDemo")}
-              </Button>
               <p className="text-sm text-center text-muted-foreground">
                 {t("noAccount")}{" "}
                 <Link
