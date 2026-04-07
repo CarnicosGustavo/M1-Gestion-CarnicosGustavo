@@ -12,7 +12,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: CLIENT_NAME,
-  description: "Open-source point of sale system",
+  description: "Sistema de Gestión de Inventario y Despiece",
 };
 
 export default async function RootLayout({
