@@ -71,7 +71,14 @@ export const ordersRouter = router({
           },
         },
       });
-      return result ?? null;
+      if (!result) return null;
+      return {
+        ...result,
+        orderItems: result.orderItems.map(item => ({
+          ...item,
+          product: item.product ?? null
+        }))
+      };
     }),
 
   list: protectedProcedure
@@ -94,7 +101,7 @@ export const ordersRouter = router({
     .input(z.void())
     .output(z.array(orderDetailSchema))
     .query(async ({ ctx }) => {
-      return db.query.orders.findMany({
+      const results = await db.query.orders.findMany({
         where: and(
           eq(orders.user_uid, ctx.user.id),
           eq(orders.requires_weighing, true)
@@ -116,6 +123,13 @@ export const ordersRouter = router({
           },
         },
       });
+      return results.map(order => ({
+        ...order,
+        orderItems: order.orderItems.map(item => ({
+          ...item,
+          product: item.product ?? null
+        }))
+      }));
     }),
 
   create: protectedProcedure

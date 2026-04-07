@@ -267,6 +267,7 @@ export const productsRouter = router({
     }),
 
   getTransformations: protectedProcedure
+    .meta({ openapi: { method: "GET", path: "/products/transformations", tags: ["Products"], summary: "Get product transformations" } })
     .input(z.object({ parentProductId: z.number(), transformationType: z.string() }))
     .query(async ({ ctx, input }) => {
       return db.query.productTransformations.findMany({
