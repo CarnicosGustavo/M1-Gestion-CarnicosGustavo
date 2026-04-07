@@ -10,6 +10,8 @@ import {
   account,
   session,
   user,
+  productTransformations,
+  inventoryTransactions,
 } from "./schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { faker } from "@faker-js/faker";
@@ -197,6 +199,13 @@ export async function seed() {
       user_uid: userId,
       category,
       unit_of_measure: "KG",
+      // Default dual stock
+      stock_pieces: faker.number.int({ min: 5, max: 20 }),
+      stock_kg: faker.number.int({ min: 50000, max: 500000 }), // x1000
+      is_parent_product: p.description === "CANAL" || p.description === "CABEZA" || p.description === "PIERNA" || p.description === "ESPALDILLA" || p.description === "COSTILLAR",
+      is_sellable_by_unit: true,
+      is_sellable_by_weight: true,
+      default_sale_unit: "KG",
     };
   });
 
@@ -213,6 +222,8 @@ export async function seed() {
       .where(inArray(orderItems.order_id, orderIds));
   }
 
+  await db.delete(inventoryTransactions);
+  await db.delete(productTransformations);
   await db.delete(transactions).where(eq(transactions.user_uid, userId));
   await db.delete(orders).where(eq(orders.user_uid, userId));
   await db.delete(products).where(eq(products.user_uid, userId));
@@ -239,6 +250,31 @@ export async function seed() {
     .insert(products)
     .values(productValues)
     .returning();
+
+  // ── Product Transformations (Disassembly Recipes) ────────────────────────
+  const canal = insertedProducts.find((p) => p.description === "CANAL");
+  const lomo = insertedProducts.find((p) => p.description === "LOMO");
+  const pierna = insertedProducts.find((p) => p.description === "PIERNA");
+  const jamon = insertedProducts.find((p) => p.description === "JAMON");
+
+  if (canal && lomo && pierna && jamon) {
+    await db.insert(productTransformations).values([
+      {
+        parent_product_id: canal.id,
+        child_product_id: lomo.id,
+        yield_quantity_pieces: 2000, // 2 lomos por canal
+        yield_weight_ratio: 150, // 15% del peso del canal
+        transformation_type: "DESPIECE_NACIONAL",
+      },
+      {
+        parent_product_id: canal.id,
+        child_product_id: pierna.id,
+        yield_quantity_pieces: 2000, // 2 piernas por canal
+        yield_weight_ratio: 300, // 30% del peso del canal
+        transformation_type: "DESPIECE_NACIONAL",
+      },
+    ]);
+  }
 
   // ── Orders + Order Items + Selling Transactions ──────────────────────────
   const orderCount = 60; // Más pedidos para ver mejor el dashboard

@@ -31,6 +31,8 @@ import {
   XIcon,
   ReceiptTextIcon,
   SettingsIcon,
+  ScissorsIcon,
+  ScaleIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -40,7 +42,7 @@ import { logout } from "@/app/login/actions";
 
 interface NavItem {
   href: string;
-  labelKey: "dashboard" | "cashier" | "products" | "customers" | "orders" | "paymentMethods" | "pos" | "invoices" | "fiscalSettings";
+  labelKey: "dashboard" | "cashier" | "products" | "customers" | "orders" | "paymentMethods" | "pos" | "invoices" | "fiscalSettings" | "disassembly" | "weighingStation";
   icon: LucideIcon;
 }
 
@@ -48,6 +50,8 @@ const navItems: NavItem[] = [
   { href: "/admin", labelKey: "dashboard", icon: LayoutDashboardIcon },
   { href: "/admin/cashier", labelKey: "cashier", icon: DollarSignIcon },
   { href: "/admin/products", labelKey: "products", icon: PackageIcon },
+  { href: "/admin/disassembly", labelKey: "disassembly", icon: ScissorsIcon },
+  { href: "/admin/weighing-station", labelKey: "weighingStation", icon: ScaleIcon },
   { href: "/admin/customers", labelKey: "customers", icon: UsersIcon },
   { href: "/admin/orders", labelKey: "orders", icon: ShoppingBagIcon },
   { href: "/admin/payment-methods", labelKey: "paymentMethods", icon: CreditCardIcon },

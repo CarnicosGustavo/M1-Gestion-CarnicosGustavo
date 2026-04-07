@@ -6,6 +6,8 @@ import {
   integer,
   timestamp,
   boolean,
+  decimal,
+  numeric,
   customType,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -33,8 +35,11 @@ export const products = pgTable("products", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  price: integer("price").notNull(),
-  in_stock: integer("in_stock").notNull(),
+  price_per_kg: numeric("price_per_kg", { precision: 12, scale: 2 }),
+  unit: varchar("unit", { length: 20 }),
+  active: boolean("active").notNull().default(true),
+  sort_order: integer("sort_order"),
+  in_stock: numeric("in_stock", { precision: 12, scale: 3 }).notNull().default("0"),
   user_uid: varchar("user_uid", { length: 255 }).notNull(),
   category: varchar("category", { length: 50 }),
   // Fiscal fields (optional, fallback to fiscal_settings defaults)
@@ -44,6 +49,40 @@ export const products = pgTable("products", {
   pis_cst: varchar("pis_cst", { length: 2 }),
   cofins_cst: varchar("cofins_cst", { length: 2 }),
   unit_of_measure: varchar("unit_of_measure", { length: 6 }).default("UN"),
+  // New Inventory Dual Fields
+  stock_pieces: integer("stock_pieces").notNull().default(0),
+  stock_kg: numeric("stock_kg", { precision: 12, scale: 3 }).notNull().default("0"),
+  is_parent_product: boolean("is_parent_product").notNull().default(false),
+  is_sellable_by_unit: boolean("is_sellable_by_unit").notNull().default(true),
+  is_sellable_by_weight: boolean("is_sellable_by_weight").notNull().default(true),
+  default_sale_unit: varchar("default_sale_unit", { length: 10 }).notNull().default("KG"),
+  price_per_piece: numeric("price_per_piece", { precision: 12, scale: 2 }),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// ── Product Transformations ────────────────────────────────────────────────
+export const productTransformations = pgTable("product_transformations", {
+  id: serial("id").primaryKey(),
+  parent_product_id: integer("parent_product_id").references(() => products.id).notNull(),
+  child_product_id: integer("child_product_id").references(() => products.id).notNull(),
+  yield_quantity_pieces: numeric("yield_quantity_pieces", { precision: 12, scale: 3 }).notNull(),
+  yield_weight_ratio: numeric("yield_weight_ratio", { precision: 12, scale: 3 }).notNull(),
+  transformation_type: varchar("transformation_type", { length: 50 }).notNull(),
+  is_active: boolean("is_active").notNull().default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// ── Inventory Transactions ──────────────────────────────────────────────────
+export const inventoryTransactions = pgTable("inventory_transactions", {
+  id: serial("id").primaryKey(),
+  product_id: integer("product_id").references(() => products.id).notNull(),
+  quantity_change_pieces: integer("quantity_change_pieces"),
+  quantity_change_kg: numeric("quantity_change_kg", { precision: 12, scale: 3 }),
+  transaction_type: varchar("transaction_type", { length: 50 }).notNull(),
+  reference_id: integer("reference_id"),
+  notes: text("notes"),
   created_at: timestamp("created_at").defaultNow(),
 });
 
@@ -62,10 +101,15 @@ export const customers = pgTable("customers", {
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
   customer_id: integer("customer_id").references(() => customers.id),
-  total_amount: integer("total_amount").notNull(),
+  total_amount: numeric("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   user_uid: varchar("user_uid", { length: 255 }).notNull(),
   status: varchar("status", { length: 20 }),
+  requires_weighing: boolean("requires_weighing").notNull().default(false),
+  whatsapp_message_id: varchar("whatsapp_message_id", { length: 255 }),
+  notes: text("notes"),
+  delivery_address: text("delivery_address"),
   created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
 });
 
 // ── Order Items ─────────────────────────────────────────────────────────────
@@ -73,8 +117,13 @@ export const orderItems = pgTable("order_items", {
   id: serial("id").primaryKey(),
   order_id: integer("order_id").references(() => orders.id),
   product_id: integer("product_id").references(() => products.id),
-  quantity: integer("quantity").notNull(),
-  price: integer("price").notNull(),
+  product_name: varchar("product_name", { length: 255 }),
+  quantity: integer("quantity").notNull(), // legacy, keep for compatibility if needed
+  quantity_pieces: integer("quantity_pieces"),
+  quantity_kg: numeric("quantity_kg", { precision: 12, scale: 3 }),
+  unit_price: numeric("unit_price", { precision: 12, scale: 2 }).notNull().default("0"),
+  subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull().default("0"),
+  status: varchar("status", { length: 50 }).notNull().default("PENDING"),
   created_at: timestamp("created_at").defaultNow(),
 });
 
@@ -259,6 +308,9 @@ export const customersRelations = relations(customers, ({ many }) => ({
 
 export const productsRelations = relations(products, ({ many }) => ({
   orderItems: many(orderItems),
+  transformationsAsParent: many(productTransformations, { relationName: "parentTransformations" }),
+  transformationsAsChild: many(productTransformations, { relationName: "childTransformations" }),
+  inventoryTransactions: many(inventoryTransactions),
 }));
 
 export const paymentMethodsRelations = relations(paymentMethods, ({ many }) => ({
@@ -289,5 +341,25 @@ export const invoiceEventsRelations = relations(invoiceEvents, ({ one }) => ({
   invoice: one(invoices, {
     fields: [invoiceEvents.invoice_id],
     references: [invoices.id],
+  }),
+}));
+
+export const productTransformationsRelations = relations(productTransformations, ({ one }) => ({
+  parentProduct: one(products, {
+    fields: [productTransformations.parent_product_id],
+    references: [products.id],
+    relationName: "parentTransformations",
+  }),
+  childProduct: one(products, {
+    fields: [productTransformations.child_product_id],
+    references: [products.id],
+    relationName: "childTransformations",
+  }),
+}));
+
+export const inventoryTransactionsRelations = relations(inventoryTransactions, ({ one }) => ({
+  product: one(products, {
+    fields: [inventoryTransactions.product_id],
+    references: [products.id],
   }),
 }));

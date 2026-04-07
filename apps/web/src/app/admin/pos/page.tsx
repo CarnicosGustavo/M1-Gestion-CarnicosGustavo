@@ -24,7 +24,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { formatCurrency } from "@/lib/utils";
 
 type Product = RouterOutputs["products"]["list"][number];
-type POSProduct = Pick<Product, "id" | "name" | "price" | "in_stock"> & { category: string; quantity: number };
+type POSProduct = Pick<Product, "id" | "name" | "price_per_kg" | "price_per_piece" | "stock_pieces" | "stock_kg" | "is_sellable_by_weight" | "is_sellable_by_unit" | "default_sale_unit"> & { category: string; quantityPieces: number; quantityKg: number | null };
 
 export default function POSPage() {
   const trpc = useTRPC();
@@ -40,10 +40,16 @@ export default function POSPage() {
   const loading = loadingProducts || loadingCustomers || loadingMethods;
 
   const createOrderMutation = useMutation(trpc.orders.create.mutationOptions({
-    onSuccess: () => {
+    onSuccess: (order) => {
       queryClient.invalidateQueries(trpc.orders.list.queryOptions());
       queryClient.invalidateQueries(trpc.products.list.queryOptions());
-      toast.success(tOrders("createdSuccessfully"));
+      
+      if (order.status === "PENDIENTE_PESAJE") {
+        toast.warning(t("orderRequiresWeighing"));
+      } else {
+        toast.success(tOrders("createdSuccessfully"));
+      }
+      
       setSelectedProducts([]);
       setSelectedCustomer(null);
       setPaymentMethod(null);
@@ -68,23 +74,38 @@ export default function POSPage() {
   const handleSelectProduct = (productId: number | string) => {
     const product = products.find((p) => p.id === productId);
     if (!product) return;
-    if (product.in_stock <= 0) {
+    
+    // Validar stock dual
+    if (product.stock_pieces <= 0 && product.stock_kg <= 0) {
       toast.error(t("outOfStock", { name: product.name }));
       return;
     }
+
     const existing = selectedProducts.find((p) => p.id === productId);
-    if (existing && existing.quantity >= product.in_stock) {
-      toast.error(t("limitedStock", { count: product.in_stock, name: product.name }));
-      return;
-    }
     if (existing) {
       setSelectedProducts(
         selectedProducts.map((p) =>
-          p.id === productId ? { ...p, quantity: p.quantity + 1 } : p
+          p.id === productId ? { ...p, quantityPieces: p.quantityPieces + 1 } : p
         )
       );
     } else {
-      setSelectedProducts([...selectedProducts, { id: product.id, name: product.name, price: product.price, in_stock: product.in_stock, category: product.category ?? "", quantity: 1 }]);
+      setSelectedProducts([
+        ...selectedProducts, 
+        { 
+          id: product.id, 
+          name: product.name, 
+          price_per_kg: product.price_per_kg,
+          price_per_piece: product.price_per_piece,
+          stock_pieces: product.stock_pieces,
+          stock_kg: product.stock_kg,
+          is_sellable_by_weight: product.is_sellable_by_weight,
+          is_sellable_by_unit: product.is_sellable_by_unit,
+          default_sale_unit: product.default_sale_unit,
+          category: product.category ?? "", 
+          quantityPieces: 1,
+          quantityKg: null 
+        }
+      ]);
     }
   };
 
@@ -99,17 +120,12 @@ export default function POSPage() {
   };
 
   const handleQuantityChange = (productId: number, delta: number) => {
-    const product = products.find((p) => p.id === productId);
     setSelectedProducts((prev) =>
       prev.map((p) => {
         if (p.id !== productId) return p;
-        const newQty = p.quantity + delta;
+        const newQty = p.quantityPieces + delta;
         if (newQty <= 0) return p;
-        if (product && newQty > product.in_stock) {
-          toast.error(t("limitedUnits", { count: product.in_stock }));
-          return p;
-        }
-        return { ...p, quantity: newQty };
+        return { ...p, quantityPieces: newQty };
       })
     );
   };
@@ -118,24 +134,29 @@ export default function POSPage() {
     setSelectedProducts(selectedProducts.filter((p) => p.id !== productId));
   };
 
-  const total = selectedProducts.reduce(
-    (sum, product) => sum + product.price * product.quantity,
-    0
-  );
+  const total = selectedProducts.reduce((sum, p) => {
+    if (p.quantityKg) {
+      return sum + (Number(p.price_per_kg) || 0) * p.quantityKg;
+    }
+    if (p.quantityPieces && p.price_per_piece) {
+      return sum + Number(p.price_per_piece) * p.quantityPieces;
+    }
+    return sum;
+  }, 0);
 
-  const canCreate = selectedProducts.length > 0 && selectedCustomer && paymentMethod;
+  const canCreate = selectedProducts.length > 0 && selectedCustomer && (paymentMethod || selectedProducts.some(p => p.is_sellable_by_weight && !p.quantityKg));
 
   const handleCreateOrder = () => {
     if (!canCreate) return;
     createOrderMutation.mutate({
       customerId: selectedCustomer!.id,
-      paymentMethodId: paymentMethod!.id,
-      products: selectedProducts.map((p) => ({
-        id: p.id,
-        quantity: p.quantity,
-        price: p.price,
+      paymentMethodId: paymentMethod?.id,
+      items: selectedProducts.map((p) => ({
+        productId: p.id,
+        quantityPieces: p.quantityPieces,
+        quantityKg: p.quantityKg ? Math.round(p.quantityKg * 1000) : undefined,
+        unitPrice: p.quantityKg ? Math.round((Number(p.price_per_kg) || 0) * 100) : Math.round((Number(p.price_per_piece) || 0) * 100),
       })),
-      total,
     });
   };
 
@@ -207,7 +228,7 @@ export default function POSPage() {
             <Combobox
               items={filteredProducts.map((p) => ({
                 id: p.id,
-                name: `${p.name} — ${formatCurrency(p.price, locale)} (${p.in_stock} in stock)`,
+                name: `${p.name} — ${formatCurrency(Number(p.price_per_kg || p.price_per_piece || 0) * 100, locale)} (${p.stock_pieces} pzas / ${p.stock_kg} kg)`,
               }))}
               placeholder={t("addProduct")}
               noSelect
@@ -227,24 +248,19 @@ export default function POSPage() {
                   <TableRow>
                     <TableHead>{tc("name")}</TableHead>
                     <TableHead className="hidden sm:table-cell">{tc("price")}</TableHead>
-                    <TableHead className="hidden md:table-cell">{tc("status")}</TableHead>
-                    <TableHead>{t("qty")}</TableHead>
+                    <TableHead>{t("pieces")}</TableHead>
+                    <TableHead>{t("weight")}</TableHead>
                     <TableHead>{tc("total")}</TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {selectedProducts.map((product) => {
-                    const source = products.find((p) => p.id === product.id);
+                    const price = product.quantityKg ? (Number(product.price_per_kg) || 0) : (Number(product.price_per_piece) || 0);
                     return (
                       <TableRow key={product.id}>
                         <TableCell className="font-medium">{product.name}</TableCell>
-                        <TableCell className="hidden sm:table-cell">{formatCurrency(product.price, locale)}</TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <Badge variant={source && source.in_stock > 5 ? "default" : "destructive"}>
-                            {source?.in_stock ?? 0}
-                          </Badge>
-                        </TableCell>
+                        <TableCell className="hidden sm:table-cell">{formatCurrency(price * 100, locale)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <Button
@@ -252,24 +268,40 @@ export default function POSPage() {
                               variant="outline"
                               className="h-7 w-7"
                               onClick={() => handleQuantityChange(product.id, -1)}
-                              disabled={product.quantity <= 1}
+                              disabled={product.quantityPieces <= 1}
                             >
                               <MinusIcon className="h-3 w-3" />
                             </Button>
-                            <span className="w-8 text-center tabular-nums">{product.quantity}</span>
+                            <span className="w-8 text-center tabular-nums">{product.quantityPieces}</span>
                             <Button
                               size="icon"
                               variant="outline"
                               className="h-7 w-7"
                               onClick={() => handleQuantityChange(product.id, 1)}
-                              disabled={source ? product.quantity >= source.in_stock : false}
                             >
                               <PlusIcon className="h-3 w-3" />
                             </Button>
                           </div>
                         </TableCell>
+                        <TableCell>
+                          {product.is_sellable_by_weight ? (
+                            product.quantityKg ? (
+                              <Badge variant="success">{product.quantityKg} kg</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-orange-500 border-orange-200 bg-orange-50">
+                                {t("pendingWeight")}
+                              </Badge>
+                            )
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
                         <TableCell className="font-medium">
-                          {formatCurrency(product.quantity * product.price, locale)}
+                          {product.is_sellable_by_weight && !product.quantityKg ? (
+                            <span className="text-muted-foreground italic">{t("pendingWeight")}</span>
+                          ) : (
+                            formatCurrency((product.quantityKg ? (product.quantityKg * price) : (product.quantityPieces * price)) * 100, locale)
+                          )}
                         </TableCell>
                         <TableCell>
                           <Button
@@ -290,7 +322,12 @@ export default function POSPage() {
             </div>
           )}
           <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t pt-4">
-            <strong className="text-lg">{tc("total")}: {formatCurrency(total, locale)}</strong>
+            <div className="flex flex-col">
+              <strong className="text-lg">{tc("total")}: {formatCurrency(total * 100, locale)}</strong>
+              {selectedProducts.some(p => p.is_sellable_by_weight && !p.quantityKg) && (
+                <span className="text-xs text-orange-600 font-medium">{t("weighingPendingItems")}</span>
+              )}
+            </div>
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                 <input
@@ -309,7 +346,7 @@ export default function POSPage() {
                 className="flex-1 sm:flex-initial"
               >
                 {createOrderMutation.isPending && <Loader2Icon className="h-4 w-4 animate-spin mr-2" />}
-                {t("createOrder")}
+                {selectedProducts.some(p => p.is_sellable_by_weight && !p.quantityKg) ? t("orderRequiresWeighing") : t("createOrder")}
               </Button>
             </div>
           </div>
