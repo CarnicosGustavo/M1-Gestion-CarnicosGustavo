@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/ensure-db.mjs && node ../../node_modules/drizzle-kit/bin.cjs push && node ../../node_modules/next/dist/bin/next dev --turbo --port 3001",
-    "build": "node scripts/ensure-db.mjs && node ../../node_modules/drizzle-kit/bin.cjs push && node ../../node_modules/next/dist/bin/next build",
+    "dev": "node scripts/ensure-db.mjs && drizzle-kit push && next dev --turbo --port 3001",
+    "build": "node scripts/ensure-db.mjs && drizzle-kit push && next build",
     "start": "next start",
     "lint": "next lint",
     "db:ensure": "node scripts/ensure-db.mjs",
-    "db:push": "node ../../node_modules/drizzle-kit/bin.cjs push",
+    "db:push": "drizzle-kit push",
     "test": "bun test src/lib/trpc/routers/__tests__",
     "test:coverage": "bun test --coverage src/lib/trpc/routers/__tests__",
     "prepare-prod": "bun scripts/prepare-prod.ts"
