@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/ensure-db.mjs && drizzle-kit push && next dev --turbo --port 3001",
+    "dev": "next dev --turbo --port 3001",
     "build": "node scripts/ensure-db.mjs && drizzle-kit push && next build",
     "start": "next start",
     "lint": "next lint",

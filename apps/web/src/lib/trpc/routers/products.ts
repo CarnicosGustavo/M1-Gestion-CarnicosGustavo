@@ -34,6 +34,26 @@ const productSchema = z.object({
   updated_at: z.date().nullable(),
 });
 
+const productTransformationSchema = z.object({
+  id: z.number(),
+  parent_product_id: z.number(),
+  child_product_id: z.number(),
+  yield_quantity_pieces: z.union([z.string(), z.number()]),
+  yield_weight_ratio: z.union([z.string(), z.number()]),
+  transformation_type: z.string(),
+  is_active: z.boolean(),
+  created_at: z.date().nullable().optional(),
+  updated_at: z.date().nullable().optional(),
+  childProduct: z
+    .object({
+      id: z.number(),
+      name: z.string(),
+      category: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
 export const productsRouter = router({
   list: protectedProcedure
     .meta({ openapi: { method: "GET", path: "/products", tags: ["Products"], summary: "List all products" } })
@@ -269,7 +289,19 @@ export const productsRouter = router({
   getTransformations: protectedProcedure
     .meta({ openapi: { method: "GET", path: "/products/transformations", tags: ["Products"], summary: "Get product transformations" } })
     .input(z.object({ parentProductId: z.number(), transformationType: z.string() }))
+    .output(z.array(productTransformationSchema))
     .query(async ({ ctx, input }) => {
+      const uid = ctx.user.id;
+      const [parent] = await db
+        .select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.id, input.parentProductId), eq(products.user_uid, uid)))
+        .limit(1);
+
+      if (!parent) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Producto padre no encontrado" });
+      }
+
       return db.query.productTransformations.findMany({
         where: and(
           eq(productTransformations.parent_product_id, input.parentProductId),
