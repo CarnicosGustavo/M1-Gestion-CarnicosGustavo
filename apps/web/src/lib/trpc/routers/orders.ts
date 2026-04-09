@@ -8,7 +8,7 @@ import { TRPCError } from "@trpc/server";
 const orderWithCustomerSchema = z.object({
   id: z.number(),
   customer_id: z.number().nullable(),
-  total_amount: z.union([z.number(), z.string()]).transform((v) => Number(v)),
+  total_amount: z.union([z.number(), z.string()]),
   status: z.string().nullable(),
   user_uid: z.string(),
   requires_weighing: z.boolean(),
@@ -22,7 +22,7 @@ const orderWithCustomerSchema = z.object({
 const orderDetailSchema = z.object({
   id: z.number(),
   customer_id: z.number().nullable(),
-  total_amount: z.union([z.number(), z.string()]).transform((v) => Number(v)),
+  total_amount: z.union([z.number(), z.string()]),
   status: z.string().nullable(),
   user_uid: z.string(),
   requires_weighing: z.boolean(),
@@ -34,9 +34,9 @@ const orderDetailSchema = z.object({
     product_name: z.string().nullable(),
     quantity: z.number(),
     quantity_pieces: z.number().nullable(),
-    quantity_kg: z.union([z.number(), z.string()]).nullable().transform((v) => v ? Number(v) : null),
-    unit_price: z.union([z.number(), z.string()]).transform((v) => Number(v)),
-    subtotal: z.union([z.number(), z.string()]).nullable().transform((v) => v ? Number(v) : null),
+    quantity_kg: z.union([z.number(), z.string()]).nullable(),
+    unit_price: z.union([z.number(), z.string()]),
+    subtotal: z.union([z.number(), z.string()]).nullable(),
     status: z.string(),
     product: z.object({ 
       name: z.string(), 
