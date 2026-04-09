@@ -243,7 +243,7 @@ export const ordersRouter = router({
     }),
 
   updateOrderItemWeight: protectedProcedure
-    .meta({ openapi: { method: "PATCH", path: "/orders/items/{id}/weight", tags: ["Orders"], summary: "Update order item weight" } })
+    .meta({ openapi: { method: "PATCH", path: "/orders/items/{orderItemId}/weight", tags: ["Orders"], summary: "Update order item weight" } })
     .input(z.object({ orderItemId: z.number(), actualWeightKg: z.number().int().positive() }))
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
@@ -297,7 +297,7 @@ export const ordersRouter = router({
     }),
 
   completeOrderPayment: protectedProcedure
-    .meta({ openapi: { method: "POST", path: "/orders/{id}/pay", tags: ["Orders"], summary: "Complete order payment and discount inventory" } })
+    .meta({ openapi: { method: "POST", path: "/orders/{orderId}/pay", tags: ["Orders"], summary: "Complete order payment and discount inventory" } })
     .input(z.object({ orderId: z.number(), paymentMethodId: z.number() }))
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
