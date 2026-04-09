@@ -5,6 +5,18 @@ export async function proxy(request: NextRequest) {
   const sessionCookie = getSessionCookie(request);
   const { pathname } = request.nextUrl;
 
+  if (pathname === "/en" || pathname === "/en/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
+  if (pathname.startsWith("/en/")) {
+    const url = request.nextUrl.clone();
+    url.pathname = pathname.replace("/en", "");
+    return NextResponse.redirect(url);
+  }
+
   // Redirect root to login page
   if (pathname === "/") {
     const url = request.nextUrl.clone();
