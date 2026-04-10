@@ -5,6 +5,7 @@ import { z } from "zod";
 export const env = createEnv({
   server: {
     DATABASE_URL: z.string().min(1).optional(),
+    BETTER_AUTH_URL: z.string().url().optional(),
     BETTER_AUTH_SECRET: z.string().min(1).default("dev-secret-key-change-in-production"),
     BASE_URL: z.string().url().default("http://localhost"),
     CORS_ORIGIN: z.string().url().optional(),
@@ -18,6 +19,6 @@ const base = env.BASE_URL.replace(/\/$/, "");
 const isDev = base === "http://localhost";
 
 export const serverUrls = {
-  betterAuthUrl: isDev ? "http://localhost:3001" : `${base}/app`,
+  betterAuthUrl: env.BETTER_AUTH_URL ?? (isDev ? "http://localhost:3001" : base),
   landingUrl: isDev ? undefined : base,
 } as const;
