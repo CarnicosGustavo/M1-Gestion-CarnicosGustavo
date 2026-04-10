@@ -3,8 +3,12 @@ export async function register() {
     // Only seed if explicitly requested via environment variable
     // This prevents timeouts during login/startup in production
     if (process.env.RUN_SEED === "true") {
-      const { seed } = await import("@/lib/db/seed");
-      await seed();
+      try {
+        const { seed } = await import("@/lib/db/seed");
+        await seed();
+      } catch (err) {
+        console.error("Seed failed:", err);
+      }
     }
   }
 }
