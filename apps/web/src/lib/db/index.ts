@@ -10,7 +10,10 @@ const databaseUrl = process.env.DATABASE_URL;
 // Otherwise, use PGLite (local/ephemeral)
 export const db = databaseUrl 
   ? drizzlePostgres(
-      postgres(databaseUrl, databaseUrl.includes("pooler.supabase") ? { prepare: false } : undefined),
+      postgres(databaseUrl, {
+        ssl: "require",
+        ...(databaseUrl.includes("pooler.supabase") ? { prepare: false } : null),
+      }),
       { schema },
     )
   : drizzle(new PGlite("./data/pglite"), { schema });

@@ -14,7 +14,8 @@ export async function login(formData: FormData) {
       body: { email, password },
       headers: await headers(),
     });
-  } catch {
+  } catch (err) {
+    console.error("SignIn failed:", err);
     redirect("/login?error=invalid-credentials");
   }
 

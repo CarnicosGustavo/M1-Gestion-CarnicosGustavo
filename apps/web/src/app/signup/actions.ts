@@ -15,7 +15,8 @@ export async function signup(formData: FormData) {
       body: { email, password, name },
       headers: await headers(),
     });
-  } catch {
+  } catch (err) {
+    console.error("SignUp failed:", err);
     redirect("/signup?error=signup-failed");
   }
 
