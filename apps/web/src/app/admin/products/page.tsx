@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod/v4";
 import { Button } from "@finopenpos/ui/components/button";
@@ -38,7 +38,6 @@ type Product = RouterOutputs["products"]["list"][number];
 
 export default function Products() {
   const trpc = useTRPC();
-  const { data: products = [], isLoading } = useQuery(trpc.products.list.queryOptions());
   const t = useTranslations("products");
   const tc = useTranslations("common");
   const locale = useLocale();
@@ -105,7 +104,34 @@ export default function Products() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [parentFilter, setParentFilter] = useState("all");
   const [stockFilter, setStockFilter] = useState("all");
+
+  useEffect(() => {
+    if (typeFilter !== "child" && parentFilter !== "all") {
+      setParentFilter("all");
+    }
+  }, [typeFilter, parentFilter]);
+
+  const listInput = useMemo(() => {
+    if (typeFilter === "parent") return { isParent: true as const };
+    if (typeFilter === "child")
+      return {
+        isParent: false as const,
+        parentProductId: parentFilter === "all" ? undefined : Number(parentFilter),
+      };
+    return undefined;
+  }, [typeFilter, parentFilter]);
+
+  const { data: products = [], isLoading } = useQuery(trpc.products.list.queryOptions(listInput));
+  const { data: parentProducts = [] } = useQuery(trpc.products.list.queryOptions({ isParent: true }));
+
+  const parentFilterOptions = useMemo<FilterOption[]>(() => {
+    return [
+      { label: tc("all"), value: "all" },
+      ...parentProducts.map((p) => ({ label: p.name, value: String(p.id) })),
+    ];
+  }, [parentProducts, tc]);
 
   const isEditing = editingId !== null;
   const invalidateKeys = trpc.products.list.queryOptions().queryKey;
@@ -233,6 +259,9 @@ export default function Products() {
             searchPlaceholder={t("searchPlaceholder")}
             filters={[
               { options: typeFilterOptions, value: typeFilter, onChange: setTypeFilter },
+              ...(typeFilter === "child"
+                ? [{ options: parentFilterOptions, value: parentFilter, onChange: setParentFilter }]
+                : []),
               { options: stockFilterOptions, value: stockFilter, onChange: setStockFilter },
             ]}
           >

@@ -34,6 +34,10 @@ const productSchema = z.object({
   updated_at: z.date().nullable(),
 });
 
+const productWithParentsSchema = productSchema.extend({
+  parent_product_ids: z.array(z.number()),
+});
+
 const productTransformationSchema = z.object({
   id: z.number(),
   parent_product_id: z.number(),
@@ -57,10 +61,60 @@ const productTransformationSchema = z.object({
 export const productsRouter = router({
   list: protectedProcedure
     .meta({ openapi: { method: "GET", path: "/products", tags: ["Products"], summary: "List all products" } })
-    .input(z.void())
-    .output(z.array(productSchema))
-    .query(async ({ ctx }) => {
-      return db.select().from(products).where(eq(products.user_uid, ctx.user.id));
+    .input(
+      z
+        .object({
+          isParent: z.boolean().optional(),
+          parentProductId: z.number().optional(),
+        })
+        .optional()
+    )
+    .output(z.array(productWithParentsSchema))
+    .query(async ({ ctx, input }) => {
+      const uid = ctx.user.id;
+      const rows = await db
+        .select({
+          product: products,
+          parentId: productTransformations.parent_product_id,
+        })
+        .from(products)
+        .leftJoin(
+          productTransformations,
+          and(
+            eq(products.id, productTransformations.child_product_id),
+            eq(productTransformations.is_active, true)
+          )
+        )
+        .where(
+          and(
+            eq(products.user_uid, uid),
+            input?.isParent !== undefined ? eq(products.is_parent_product, input.isParent) : undefined,
+            input?.parentProductId !== undefined
+              ? eq(productTransformations.parent_product_id, input.parentProductId)
+              : undefined
+          )
+        );
+
+      const byId = new Map<number, (typeof products.$inferSelect & { parent_product_ids: number[] })>();
+
+      for (const row of rows) {
+        const p = row.product;
+        const existing = byId.get(p.id);
+
+        if (existing) {
+          if (row.parentId !== null && !existing.parent_product_ids.includes(row.parentId)) {
+            existing.parent_product_ids.push(row.parentId);
+          }
+          continue;
+        }
+
+        byId.set(p.id, {
+          ...p,
+          parent_product_ids: row.parentId === null ? [] : [row.parentId],
+        });
+      }
+
+      return Array.from(byId.values());
     }),
 
   create: protectedProcedure
