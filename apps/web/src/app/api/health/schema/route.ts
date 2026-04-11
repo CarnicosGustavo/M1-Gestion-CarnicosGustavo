@@ -69,7 +69,7 @@ export async function GET() {
       reg: string | null;
     }[]>`
       select rel, to_regclass(rel) as reg
-      from unnest(${REQUIRED_TABLES as unknown as string[]}) as rel
+      from unnest(${REQUIRED_TABLES as unknown as string[]}::text[]) as rel
     `;
 
     const found = Object.fromEntries(rows.map((r) => [r.rel, r.reg]));
@@ -86,4 +86,3 @@ export async function GET() {
     await client.end({ timeout: 2 });
   }
 }
-
