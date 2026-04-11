@@ -193,6 +193,139 @@ export const whatsappMessages = pgTable("whatsapp_messages", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
+// --- TABLAS LEGACY (COMPATIBILIDAD CON MÓDULOS FISCAL E INVOICES) ---
+
+export const paymentMethods = pgTable("payment_methods", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  name: varchar("name", { length: 50 }).notNull().unique(),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const transactions = pgTable("transactions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  description: text("description"),
+  order_id: integer("order_id").references(() => orders.id),
+  payment_method_id: integer("payment_method_id").references(() => paymentMethods.id),
+  amount: integer("amount").notNull(),
+  user_id: text("user_id").notNull().references(() => user.id),
+  type: varchar("type", { length: 20 }),
+  category: varchar("category", { length: 100 }),
+  status: varchar("status", { length: 20 }),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const cities = pgTable("cities", {
+  id: integer("id").primaryKey(),
+  name: varchar("name", { length: 120 }).notNull(),
+  state_code: varchar("state_code", { length: 2 }).notNull(),
+});
+
+// Custom bytea type for certificates
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+export const fiscalSettings = pgTable("fiscal_settings", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  user_id: text("user_id").notNull().unique().references(() => user.id),
+  company_name: varchar("company_name", { length: 255 }).notNull(),
+  trade_name: varchar("trade_name", { length: 255 }),
+  tax_id: varchar("tax_id", { length: 14 }).notNull(),
+  state_tax_id: varchar("state_tax_id", { length: 20 }).notNull(),
+  tax_regime: integer("tax_regime").notNull(),
+  state_code: varchar("state_code", { length: 2 }).notNull(),
+  city_code: varchar("city_code", { length: 7 }).notNull(),
+  city_name: varchar("city_name", { length: 100 }).notNull(),
+  street: varchar("street", { length: 255 }).notNull(),
+  street_number: varchar("street_number", { length: 10 }).notNull(),
+  district: varchar("district", { length: 100 }).notNull(),
+  zip_code: varchar("zip_code", { length: 8 }).notNull(),
+  address_complement: varchar("address_complement", { length: 100 }),
+  environment: integer("environment").notNull().default(2),
+  nfe_series: integer("nfe_series").default(1),
+  nfce_series: integer("nfce_series").default(1),
+  next_nfe_number: integer("next_nfe_number").default(1),
+  next_nfce_number: integer("next_nfce_number").default(1),
+  csc_id: varchar("csc_id", { length: 10 }),
+  csc_token: varchar("csc_token", { length: 50 }),
+  certificate_pfx: bytea("certificate_pfx"),
+  certificate_password: text("certificate_password"),
+  certificate_valid_until: timestamp("certificate_valid_until"),
+  default_ncm: varchar("default_ncm", { length: 8 }).default("00000000"),
+  default_cfop: varchar("default_cfop", { length: 4 }).default("5102"),
+  default_icms_cst: varchar("default_icms_cst", { length: 3 }).default("00"),
+  default_pis_cst: varchar("default_pis_cst", { length: 2 }).default("99"),
+  default_cofins_cst: varchar("default_cofins_cst", { length: 2 }).default("99"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+export const invoices = pgTable("invoices", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  user_id: text("user_id").notNull().references(() => user.id),
+  order_id: integer("order_id").references(() => orders.id),
+  model: integer("model").notNull(),
+  series: integer("series").notNull(),
+  number: integer("number").notNull(),
+  access_key: varchar("access_key", { length: 44 }),
+  operation_nature: varchar("operation_nature", { length: 60 }).default("VENDA"),
+  operation_type: integer("operation_type").default(1),
+  status: varchar("status", { length: 20 }).default("pending").notNull(),
+  environment: integer("environment").notNull(),
+  request_xml: text("request_xml"),
+  response_xml: text("response_xml"),
+  protocol_xml: text("protocol_xml"),
+  protocol_number: varchar("protocol_number", { length: 20 }),
+  status_code: integer("status_code"),
+  status_message: text("status_message"),
+  issued_at: timestamp("issued_at").notNull(),
+  authorized_at: timestamp("authorized_at"),
+  total_amount: integer("total_amount").notNull(),
+  is_contingency: boolean("is_contingency").default(false),
+  contingency_type: varchar("contingency_type", { length: 20 }),
+  contingency_at: timestamp("contingency_at"),
+  contingency_reason: text("contingency_reason"),
+  recipient_tax_id: varchar("recipient_tax_id", { length: 14 }),
+  recipient_name: varchar("recipient_name", { length: 255 }),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const invoiceItems = pgTable("invoice_items", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  invoice_id: integer("invoice_id").notNull().references(() => invoices.id),
+  product_id: integer("product_id").references(() => products.id),
+  item_number: integer("item_number").notNull(),
+  product_code: varchar("product_code", { length: 60 }).notNull(),
+  description: varchar("description", { length: 120 }).notNull(),
+  ncm: varchar("ncm", { length: 8 }).notNull(),
+  cfop: varchar("cfop", { length: 4 }).notNull(),
+  unit_of_measure: varchar("unit_of_measure", { length: 6 }).default("UN"),
+  quantity: integer("quantity").notNull(),
+  unit_price: integer("unit_price").notNull(),
+  total_price: integer("total_price").notNull(),
+  icms_cst: varchar("icms_cst", { length: 3 }),
+  icms_rate: integer("icms_rate").default(0),
+  icms_amount: integer("icms_amount").default(0),
+  pis_cst: varchar("pis_cst", { length: 2 }),
+  cofins_cst: varchar("cofins_cst", { length: 2 }),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const invoiceEvents = pgTable("invoice_events", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  invoice_id: integer("invoice_id").notNull().references(() => invoices.id),
+  event_type: varchar("event_type", { length: 30 }).notNull(),
+  sequence: integer("sequence").default(1),
+  protocol_number: varchar("protocol_number", { length: 20 }),
+  status_code: integer("status_code"),
+  reason: text("reason"),
+  request_xml: text("request_xml"),
+  response_xml: text("response_xml"),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
 // --- RELACIONES ---
 
 export const userRelations = relations(user, ({ many }) => ({
@@ -235,5 +368,62 @@ export const productTransformationRelations = relations(productTransformations, 
     fields: [productTransformations.child_product_id],
     references: [products.id],
     relationName: "childProduct",
+  }),
+}));
+
+export const transactionsRelations = relations(transactions, ({ one }) => ({
+  order: one(orders, {
+    fields: [transactions.order_id],
+    references: [orders.id],
+  }),
+  paymentMethod: one(paymentMethods, {
+    fields: [transactions.payment_method_id],
+    references: [paymentMethods.id],
+  }),
+  user: one(user, {
+    fields: [transactions.user_id],
+    references: [user.id],
+  }),
+}));
+
+export const paymentMethodsRelations = relations(paymentMethods, ({ many }) => ({
+  transactions: many(transactions),
+}));
+
+export const fiscalSettingsRelations = relations(fiscalSettings, ({ one }) => ({
+  user: one(user, {
+    fields: [fiscalSettings.user_id],
+    references: [user.id],
+  }),
+}));
+
+export const invoicesRelations = relations(invoices, ({ one, many }) => ({
+  order: one(orders, {
+    fields: [invoices.order_id],
+    references: [orders.id],
+  }),
+  user: one(user, {
+    fields: [invoices.user_id],
+    references: [user.id],
+  }),
+  items: many(invoiceItems),
+  events: many(invoiceEvents),
+}));
+
+export const invoiceItemsRelations = relations(invoiceItems, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceItems.invoice_id],
+    references: [invoices.id],
+  }),
+  product: one(products, {
+    fields: [invoiceItems.product_id],
+    references: [products.id],
+  }),
+}));
+
+export const invoiceEventsRelations = relations(invoiceEvents, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceEvents.invoice_id],
+    references: [invoices.id],
   }),
 }));
