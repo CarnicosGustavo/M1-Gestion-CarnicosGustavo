@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
+async function handle(request: Request) {
   const token = new URL(request.url).searchParams.get("token");
   const expected = process.env.SEED_TOKEN;
 
@@ -18,4 +18,12 @@ export async function POST(request: Request) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ ok: false, message }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  return handle(request);
+}
+
+export async function GET(request: Request) {
+  return handle(request);
 }
