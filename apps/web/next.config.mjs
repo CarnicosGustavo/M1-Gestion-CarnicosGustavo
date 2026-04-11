@@ -8,6 +8,7 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_BASE_PATH: process.env.BASE_PATH || "",
   },
+  productionBrowserSourceMaps: true,
   serverExternalPackages: ["@electric-sql/pglite"],
   typescript: {
     ignoreBuildErrors: true,

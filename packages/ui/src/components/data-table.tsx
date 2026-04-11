@@ -60,8 +60,9 @@ interface DataTableProps<T> {
 function mapToColumnDef<T>(col: Column<T>): ColumnDef<T> {
   return {
     id: col.key,
-    accessorKey: col.key,
-    accessorFn: col.accessorFn,
+    ...(col.accessorFn
+      ? { accessorFn: col.accessorFn }
+      : { accessorKey: col.key as never }),
     header: ({ column }) => {
       if (!col.sortable) {
         return <span className={col.headerClassName}>{col.header}</span>;
