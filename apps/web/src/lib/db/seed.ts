@@ -266,15 +266,15 @@ export async function seed(options: { headers?: Headers; mode?: SeedMode } = {})
       {
         parent_product_id: canal.id,
         child_product_id: lomo.id,
-        yield_quantity_pieces: 2000, // 2 lomos por canal
-        yield_weight_ratio: 150, // 15% del peso del canal
+        yield_quantity_pieces: 2, // 2 lomos por canal
+        yield_weight_ratio: 0.15, // 15% del peso del canal
         transformation_type: "DESPIECE_NACIONAL",
       },
       {
         parent_product_id: canal.id,
         child_product_id: pierna.id,
-        yield_quantity_pieces: 2000, // 2 piernas por canal
-        yield_weight_ratio: 300, // 30% del peso del canal
+        yield_quantity_pieces: 2, // 2 piernas por canal
+        yield_weight_ratio: 0.3, // 30% del peso del canal
         transformation_type: "DESPIECE_NACIONAL",
       },
     ]);

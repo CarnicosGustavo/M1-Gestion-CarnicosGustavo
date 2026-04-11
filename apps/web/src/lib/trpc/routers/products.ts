@@ -187,6 +187,9 @@ export const productsRouter = router({
       const uid = ctx.user.id;
       const { parentProductId, quantityToProcess, transformationType } = input;
 
+      const normalizePieces = (value: number) => (value > 50 ? value / 1000 : value);
+      const normalizeRatio = (value: number) => (value > 1 ? value / 1000 : value);
+
       return await db.transaction(async (tx) => {
         // 1. Validar Stock Padre
         const [parent] = await tx
@@ -249,8 +252,8 @@ export const productsRouter = router({
 
         // 6. Incrementar Hijos
         for (const recipe of recipes) {
-          const yieldPieces = Number(recipe.yield_quantity_pieces);
-          const yieldRatio = Number(recipe.yield_weight_ratio);
+          const yieldPieces = normalizePieces(Number(recipe.yield_quantity_pieces));
+          const yieldRatio = normalizeRatio(Number(recipe.yield_weight_ratio));
 
           const childPiecesToAdd = Math.round(quantityToProcess * yieldPieces);
           const childKgToAdd = quantityToProcess * yieldRatio * parentAvgWeight;

@@ -85,7 +85,11 @@ export default function DisassemblyPage() {
     { 
       key: "expectedQty", 
       header: t("expectedQty"),
-      render: (row) => (Number(row.yield_quantity_pieces) * quantity).toFixed(0)
+      render: (row) => {
+        const raw = Number(row.yield_quantity_pieces);
+        const normalized = raw > 50 ? raw / 1000 : raw;
+        return (normalized * quantity).toFixed(0);
+      }
     },
     { 
       key: "expectedWeight", 
@@ -94,7 +98,9 @@ export default function DisassemblyPage() {
         const parentWeight = selectedParent ? Number(selectedParent.stock_kg) : 0;
         const parentPieces = selectedParent ? selectedParent.stock_pieces : 0;
         const avgWeight = parentPieces > 0 ? parentWeight / parentPieces : 0;
-        return (Number(row.yield_weight_ratio) * avgWeight * quantity).toFixed(3) + " kg";
+        const raw = Number(row.yield_weight_ratio);
+        const normalized = raw > 1 ? raw / 1000 : raw;
+        return (normalized * avgWeight * quantity).toFixed(3) + " kg";
       }
     },
   ];
