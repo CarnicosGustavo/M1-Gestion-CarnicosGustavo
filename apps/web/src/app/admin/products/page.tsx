@@ -48,7 +48,7 @@ export default function Products() {
     description: z.string(),
     price: z.number().min(0, t("priceMustBePositive")),
     in_stock: z.number().int().min(0, t("stockMustBeNonNegative")),
-    category: z.string(),
+    is_parent_product: z.boolean().default(false),
     ncm: z.string(),
     cfop: z.string(),
     icms_cst: z.string(),
@@ -57,11 +57,10 @@ export default function Products() {
     unit_of_measure: z.string(),
   });
 
-  const categoryFilterOptions: FilterOption[] = [
+  const typeFilterOptions: FilterOption[] = [
     { label: tc("all"), value: "all" },
-    { label: t("electronics"), value: "electronics" },
-    { label: t("home"), value: "home" },
-    { label: t("health"), value: "health" },
+    { label: "Piezas Padre", value: "parent" },
+    { label: "Productos Hijos", value: "child" },
   ];
 
   const stockFilterOptions: FilterOption[] = [
@@ -73,6 +72,15 @@ export default function Products() {
   const columns: Column<Product>[] = [
     { key: "name", header: t("product"), sortable: true, className: "font-medium" },
     { key: "description", header: tc("description"), hideOnMobile: true },
+    {
+      key: "type",
+      header: "Tipo",
+      render: (row) => (
+        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${row.is_parent_product ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+          {row.is_parent_product ? "Padre" : "Hijo"}
+        </span>
+      ),
+    },
     {
       key: "price",
       header: tc("price"),
@@ -88,7 +96,7 @@ export default function Products() {
     { key: "description", header: tc("description"), getValue: (p) => p.description ?? "" },
     { key: "price", header: tc("price"), getValue: (p) => (p.price / 100).toFixed(2) },
     { key: "in_stock", header: t("stock"), getValue: (p) => p.in_stock },
-    { key: "category", header: tc("category"), getValue: (p) => p.category ?? "" },
+    { key: "type", header: "Tipo", getValue: (p) => p.is_parent_product ? "Pieza Padre" : "Producto Hijo" },
   ];
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -96,7 +104,7 @@ export default function Products() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [stockFilter, setStockFilter] = useState("all");
 
   const isEditing = editingId !== null;
@@ -126,7 +134,7 @@ export default function Products() {
   });
 
   const form = useForm({
-    defaultValues: { name: "", description: "", price: 0, in_stock: 0, category: "", ncm: "", cfop: "", icms_cst: "", pis_cst: "", cofins_cst: "", unit_of_measure: "" },
+    defaultValues: { name: "", description: "", price: 0, in_stock: 0, is_parent_product: false, ncm: "", cfop: "", icms_cst: "", pis_cst: "", cofins_cst: "", unit_of_measure: "" },
     validators: {
       onSubmit: productFormSchema,
     },
@@ -136,7 +144,7 @@ export default function Products() {
         description: value.description || undefined,
         price: Math.round(value.price * 100),
         in_stock: value.in_stock,
-        category: value.category || undefined,
+        is_parent_product: value.is_parent_product,
         ncm: value.ncm || undefined,
         cfop: value.cfop || undefined,
         icms_cst: value.icms_cst || undefined,
@@ -154,12 +162,13 @@ export default function Products() {
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
-      if (categoryFilter !== "all" && p.category !== categoryFilter) return false;
+      if (typeFilter === "parent" && !p.is_parent_product) return false;
+      if (typeFilter === "child" && p.is_parent_product) return false;
       if (stockFilter === "in-stock" && p.in_stock === 0) return false;
       if (stockFilter === "out-of-stock" && p.in_stock > 0) return false;
       return p.name.toLowerCase().includes(searchTerm.toLowerCase());
     });
-  }, [products, categoryFilter, stockFilter, searchTerm]);
+  }, [products, typeFilter, stockFilter, searchTerm]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -174,7 +183,7 @@ export default function Products() {
     form.setFieldValue("description", p.description ?? "");
     form.setFieldValue("price", p.price / 100);
     form.setFieldValue("in_stock", p.in_stock);
-    form.setFieldValue("category", p.category ?? "");
+    form.setFieldValue("is_parent_product", p.is_parent_product);
     form.setFieldValue("ncm", p.ncm ?? "");
     form.setFieldValue("cfop", p.cfop ?? "");
     form.setFieldValue("icms_cst", p.icms_cst ?? "");
@@ -223,7 +232,7 @@ export default function Products() {
             onSearchChange={setSearchTerm}
             searchPlaceholder={t("searchPlaceholder")}
             filters={[
-              { options: categoryFilterOptions, value: categoryFilter, onChange: setCategoryFilter },
+              { options: typeFilterOptions, value: typeFilter, onChange: setTypeFilter },
               { options: stockFilterOptions, value: stockFilter, onChange: setStockFilter },
             ]}
           >
@@ -318,17 +327,15 @@ export default function Products() {
                   </div>
                 )}
               </form.Field>
-              <form.Field name="category">
+              <form.Field name="is_parent_product">
                 {(field) => (
                   <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
-                    <Label htmlFor="category" className="sm:text-right">{tc("category")}</Label>
-                    <Select value={field.state.value} onValueChange={(value) => field.handleChange(value)}>
-                      <SelectTrigger className="col-span-3"><SelectValue placeholder={t("selectCategory")} /></SelectTrigger>
+                    <Label htmlFor="is_parent_product" className="sm:text-right">¿Es Pieza Padre?</Label>
+                    <Select value={field.state.value ? "true" : "false"} onValueChange={(value) => field.handleChange(value === "true")}>
+                      <SelectTrigger className="col-span-3"><SelectValue placeholder="Selecciona tipo de producto" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="electronics">{t("electronics")}</SelectItem>
-                        <SelectItem value="clothing">{t("clothing")}</SelectItem>
-                        <SelectItem value="books">{t("books")}</SelectItem>
-                        <SelectItem value="home">{t("home")}</SelectItem>
+                        <SelectItem value="true">Sí (Canal, Pierna, etc.)</SelectItem>
+                        <SelectItem value="false">No (Corte final / Producto Hijo)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
