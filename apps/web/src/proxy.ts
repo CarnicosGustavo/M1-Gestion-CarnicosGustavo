@@ -30,6 +30,7 @@ export async function proxy(request: NextRequest) {
     !pathname.startsWith("/signup") &&
     !pathname.startsWith("/auth") &&
     !pathname.startsWith("/api/auth") &&
+    !pathname.startsWith("/api/health") &&
     !pathname.startsWith("/api/docs") &&
     !pathname.startsWith("/api/openapi.json")
   ) {
