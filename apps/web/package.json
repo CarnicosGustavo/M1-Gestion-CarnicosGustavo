@@ -6,7 +6,7 @@
     "dev": "next dev --turbo --port 3001",
     "build": "node scripts/ensure-db.mjs && next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "bunx biome check .",
     "db:ensure": "node scripts/ensure-db.mjs",
     "db:push": "drizzle-kit push",
     "test": "bun test src/lib/trpc/routers/__tests__",
