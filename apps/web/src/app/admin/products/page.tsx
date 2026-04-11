@@ -123,7 +123,11 @@ export default function Products() {
     return undefined;
   }, [typeFilter, parentFilter]);
 
-  const { data: products = [], isLoading } = useQuery(trpc.products.list.queryOptions(listInput));
+  const productsQueryOptions = listInput
+    ? trpc.products.list.queryOptions(listInput)
+    : trpc.products.list.queryOptions();
+
+  const { data: products = [], isLoading } = useQuery(productsQueryOptions);
   const { data: parentProducts = [] } = useQuery(trpc.products.list.queryOptions({ isParent: true }));
 
   const parentFilterOptions = useMemo<FilterOption[]>(() => {
