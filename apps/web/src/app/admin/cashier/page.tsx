@@ -118,7 +118,11 @@ export default function Cashier() {
   const editForm = useForm({
     defaultValues: { description: "", category: "", type: "income" as TransactionType, amount: 0, status: "completed" as TransactionStatus },
     validators: {
-      onSubmit: editTransactionSchema,
+      onSubmit: ({ value }) => {
+        const res = editTransactionSchema.safeParse(value);
+        if (!res.success) return res.error.errors.map((e) => e.message).join(", ");
+        return undefined;
+      },
     },
     onSubmit: ({ value }) => {
       if (editingId === null) return;

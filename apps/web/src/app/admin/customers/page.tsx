@@ -100,7 +100,11 @@ export default function CustomersPage() {
   const form = useForm({
     defaultValues: { name: "", email: "", phone: "", status: "active" as "active" | "inactive" },
     validators: {
-      onSubmit: customerFormSchema,
+      onSubmit: ({ value }) => {
+        const res = customerFormSchema.safeParse(value);
+        if (!res.success) return res.error.errors.map((e) => e.message).join(", ");
+        return undefined;
+      },
     },
     onSubmit: ({ value }) => {
       const payload = {

@@ -68,7 +68,11 @@ export default function PaymentMethodsPage() {
   const form = useForm({
     defaultValues: { name: "" },
     validators: {
-      onSubmit: paymentMethodSchema,
+      onSubmit: ({ value }) => {
+        const res = paymentMethodSchema.safeParse(value);
+        if (!res.success) return res.error.errors.map((e) => e.message).join(", ");
+        return undefined;
+      },
     },
     onSubmit: ({ value }) => {
       if (isEditing) {

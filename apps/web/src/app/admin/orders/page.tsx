@@ -117,7 +117,11 @@ export default function OrdersPage() {
   const form = useForm({
     defaultValues: { total: "", status: "pending" as OrderStatus },
     validators: {
-      onSubmit: orderEditSchema,
+      onSubmit: ({ value }) => {
+        const res = orderEditSchema.safeParse(value);
+        if (!res.success) return res.error.errors.map((e) => e.message).join(", ");
+        return undefined;
+      },
     },
     onSubmit: ({ value }) => {
       if (editingId !== null) {

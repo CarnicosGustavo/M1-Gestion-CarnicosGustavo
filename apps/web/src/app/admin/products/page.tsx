@@ -131,10 +131,9 @@ export default function Products() {
   const { data: parentProducts = [] } = useQuery(trpc.products.list.queryOptions({ isParent: true }));
 
   const parentFilterOptions = useMemo<FilterOption[]>(() => {
-    return [
-      { label: tc("all"), value: "all" },
-      ...parentProducts.map((p) => ({ label: p.name, value: String(p.id) })),
-    ];
+    const opts: FilterOption[] = [{ label: tc("all"), value: "all" }];
+    parentProducts.forEach((p) => opts.push({ label: p.name, value: String(p.id) }));
+    return opts;
   }, [parentProducts, tc]);
 
   const isEditing = editingId !== null;
@@ -166,7 +165,11 @@ export default function Products() {
   const form = useForm({
     defaultValues: { name: "", description: "", price: 0, in_stock: 0, is_parent_product: false, ncm: "", cfop: "", icms_cst: "", pis_cst: "", cofins_cst: "", unit_of_measure: "" },
     validators: {
-      onSubmit: productFormSchema,
+      onSubmit: ({ value }) => {
+        const res = productFormSchema.safeParse(value);
+        if (!res.success) return res.error.errors.map((e) => e.message).join(", ");
+        return undefined;
+      },
     },
     onSubmit: ({ value }) => {
       const payload = {
@@ -261,13 +264,18 @@ export default function Products() {
             search={searchTerm}
             onSearchChange={setSearchTerm}
             searchPlaceholder={t("searchPlaceholder")}
-            filters={[
-              { options: typeFilterOptions, value: typeFilter, onChange: setTypeFilter },
-              ...(typeFilter === "child"
-                ? [{ options: parentFilterOptions, value: parentFilter, onChange: setParentFilter }]
-                : []),
-              { options: stockFilterOptions, value: stockFilter, onChange: setStockFilter },
-            ]}
+            filters={
+              typeFilter === "child"
+                ? [
+                    { options: typeFilterOptions, value: typeFilter, onChange: setTypeFilter },
+                    { options: parentFilterOptions, value: parentFilter, onChange: setParentFilter },
+                    { options: stockFilterOptions, value: stockFilter, onChange: setStockFilter },
+                  ]
+                : [
+                    { options: typeFilterOptions, value: typeFilter, onChange: setTypeFilter },
+                    { options: stockFilterOptions, value: stockFilter, onChange: setStockFilter },
+                  ]
+            }
           >
             <Button size="sm" onClick={openCreate}>
               <PlusIcon className="w-4 h-4 mr-2" />{t("addProduct")}
@@ -277,7 +285,7 @@ export default function Products() {
         <CardContent className="p-0">
           <DataTable
             data={filteredProducts}
-            columns={[...columns, actionsColumn]}
+            columns={columns.concat(actionsColumn)}
             exportColumns={exportColumns}
             exportFilename="products"
             emptyMessage={t("noProducts")}
