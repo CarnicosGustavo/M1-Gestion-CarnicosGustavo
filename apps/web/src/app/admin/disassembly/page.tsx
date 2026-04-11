@@ -18,7 +18,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { DataTable, type Column } from "@finopenpos/ui/components/data-table";
 
 const cuttingStyles = [
   "DESPIECE_NACIONAL",
@@ -76,34 +75,20 @@ export default function DisassemblyPage() {
     }
   });
 
-  const columns: Column<any>[] = [
-    { 
-      key: "childProduct", 
-      header: t("childProduct"),
-      render: (row) => row.childProduct?.name 
-    },
-    { 
-      key: "expectedQty", 
-      header: t("expectedQty"),
-      render: (row) => {
-        const raw = Number(row.yield_quantity_pieces);
-        const normalized = raw > 50 ? raw / 1000 : raw;
-        return (normalized * quantity).toFixed(0);
-      }
-    },
-    { 
-      key: "expectedWeight", 
-      header: t("expectedWeight"),
-      render: (row) => {
-        const parentWeight = selectedParent ? Number(selectedParent.stock_kg) : 0;
-        const parentPieces = selectedParent ? selectedParent.stock_pieces : 0;
-        const avgWeight = parentPieces > 0 ? parentWeight / parentPieces : 0;
-        const raw = Number(row.yield_weight_ratio);
-        const normalized = raw > 1 ? raw / 1000 : raw;
-        return (normalized * avgWeight * quantity).toFixed(3) + " kg";
-      }
-    },
-  ];
+  const expectedPieces = (yieldQuantityPieces: unknown) => {
+    const raw = Number(yieldQuantityPieces);
+    const normalized = raw > 50 ? raw / 1000 : raw;
+    return Math.round(normalized * quantity);
+  };
+
+  const expectedKg = (yieldWeightRatio: unknown) => {
+    const parentWeight = selectedParent ? Number(selectedParent.stock_kg) : 0;
+    const parentPieces = selectedParent ? selectedParent.stock_pieces : 0;
+    const avgWeight = parentPieces > 0 ? parentWeight / parentPieces : 0;
+    const raw = Number(yieldWeightRatio);
+    const normalized = raw > 1 ? raw / 1000 : raw;
+    return normalized * avgWeight * quantity;
+  };
 
   const handleExecute = () => {
     if (!selectedParentId || !selectedStyle || quantity <= 0) return;
@@ -187,11 +172,26 @@ export default function DisassemblyPage() {
                   {t("previewDisassembly")}
                 </h3>
               </div>
-              <DataTable 
-                columns={columns} 
-                data={transformations}
-                emptyMessage={tc("noItemFound")}
-              />
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="p-3 text-left font-medium">{t("childProduct")}</th>
+                      <th className="p-3 text-left font-medium">{t("expectedQty")}</th>
+                      <th className="p-3 text-left font-medium">{t("expectedWeight")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transformations.map((row: any) => (
+                      <tr key={row.id} className="border-t">
+                        <td className="p-3">{row.childProduct?.name ?? "-"}</td>
+                        <td className="p-3">{expectedPieces(row.yield_quantity_pieces)}</td>
+                        <td className="p-3">{expectedKg(row.yield_weight_ratio).toFixed(3)} kg</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <div className="flex justify-end pt-4">
                 <Button 
                   size="lg" 
