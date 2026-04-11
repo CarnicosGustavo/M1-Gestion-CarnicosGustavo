@@ -85,12 +85,19 @@ export const products = pgTable("products", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  price_per_kg: numeric("price_per_kg", { precision: 10, scale: 2 }).notNull().default("0.00"),
-  unit: varchar("unit", { length: 50 }).notNull().default("kg"),
+  price_per_kg: numeric("price_per_kg", { precision: 10, scale: 2 }),
+  unit: varchar("unit", { length: 50 }),
   active: boolean("active").notNull().default(true),
-  sort_order: integer("sort_order").notNull().default(0),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  sort_order: integer("sort_order").default(0),
+  in_stock: numeric("in_stock", { precision: 10, scale: 3 }).notNull().default("0.000"),
+  category: varchar("category", { length: 50 }),
+  user_uid: varchar("user_uid", { length: 255 }).notNull(),
+  ncm: varchar("ncm", { length: 8 }),
+  cfop: varchar("cfop", { length: 4 }),
+  icms_cst: varchar("icms_cst", { length: 3 }),
+  pis_cst: varchar("pis_cst", { length: 2 }),
+  cofins_cst: varchar("cofins_cst", { length: 2 }),
+  unit_of_measure: varchar("unit_of_measure", { length: 6 }),
   // Inventario Dual
   stock_pieces: integer("stock_pieces").notNull().default(0),
   stock_kg: numeric("stock_kg", { precision: 10, scale: 3 }).notNull().default("0.000"),
@@ -99,6 +106,8 @@ export const products = pgTable("products", {
   is_sellable_by_weight: boolean("is_sellable_by_weight").notNull().default(true),
   default_sale_unit: varchar("default_sale_unit", { length: 10 }).notNull().default("KG"),
   price_per_piece: numeric("price_per_piece", { precision: 10, scale: 2 }),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
 });
 
 export const productTransformations = pgTable("product_transformations", {
@@ -132,25 +141,28 @@ export const inventoryTransactions = pgTable("inventory_transactions", {
 
 export const customers = pgTable("customers", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  whatsapp_phone: varchar("whatsapp_phone", { length: 20 }).notNull().unique(),
-  name: varchar("name", { length: 255 }),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  phone: varchar("phone", { length: 20 }),
+  whatsapp_phone: varchar("whatsapp_phone", { length: 20 }).unique(),
+  user_uid: varchar("user_uid", { length: 255 }).notNull(),
+  status: varchar("status", { length: 20 }),
   address: text("address"),
   notes: text("notes"),
-  total_orders: integer("total_orders").notNull().default(0),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  created_at: timestamp("created_at").defaultNow(),
 });
 
 export const orders = pgTable("orders", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   customer_id: integer("customer_id").references(() => customers.id),
-  status: orderStatusEnum("status").notNull().default("pending"),
+  status: varchar("status", { length: 50 }).default("pending"),
   total_amount: numeric("total_amount", { precision: 10, scale: 2 }).notNull().default("0.00"),
+  user_uid: varchar("user_uid", { length: 255 }).notNull(),
   notes: text("notes"),
   delivery_address: text("delivery_address"),
   whatsapp_message_id: varchar("whatsapp_message_id", { length: 255 }),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
   requires_weighing: boolean("requires_weighing").notNull().default(false),
 });
 
@@ -163,12 +175,14 @@ export const orderItems = pgTable("order_items", {
     .notNull()
     .references(() => products.id),
   product_name: varchar("product_name", { length: 255 }).notNull(),
+  quantity: integer("quantity"),
+  price: numeric("price", { precision: 10, scale: 2 }),
   quantity_pieces: integer("quantity_pieces"),
   quantity_kg: numeric("quantity_kg", { precision: 10, scale: 3 }),
   unit_price: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
   subtotal: numeric("subtotal", { precision: 10, scale: 2 }).notNull(),
   status: varchar("status", { length: 50 }).notNull().default("PENDING"), // 'PENDING', 'WEIGHED'
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  created_at: timestamp("created_at").defaultNow(),
 });
 
 export const whatsappSessions = pgTable("whatsapp_sessions", {
@@ -208,7 +222,7 @@ export const transactions = pgTable("transactions", {
   order_id: integer("order_id").references(() => orders.id),
   payment_method_id: integer("payment_method_id").references(() => paymentMethods.id),
   amount: integer("amount").notNull(),
-  user_id: text("user_id").notNull().references(() => user.id),
+  user_uid: varchar("user_uid", { length: 255 }).notNull(),
   type: varchar("type", { length: 20 }),
   category: varchar("category", { length: 100 }),
   status: varchar("status", { length: 20 }),
@@ -230,7 +244,7 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 
 export const fiscalSettings = pgTable("fiscal_settings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  user_id: text("user_id").notNull().unique().references(() => user.id),
+  user_uid: varchar("user_uid", { length: 255 }).notNull().unique(),
   company_name: varchar("company_name", { length: 255 }).notNull(),
   trade_name: varchar("trade_name", { length: 255 }),
   tax_id: varchar("tax_id", { length: 14 }).notNull(),
@@ -381,22 +395,13 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
     fields: [transactions.payment_method_id],
     references: [paymentMethods.id],
   }),
-  user: one(user, {
-    fields: [transactions.user_id],
-    references: [user.id],
-  }),
 }));
 
 export const paymentMethodsRelations = relations(paymentMethods, ({ many }) => ({
   transactions: many(transactions),
 }));
 
-export const fiscalSettingsRelations = relations(fiscalSettings, ({ one }) => ({
-  user: one(user, {
-    fields: [fiscalSettings.user_id],
-    references: [user.id],
-  }),
-}));
+export const fiscalSettingsRelations = relations(fiscalSettings, () => ({}));
 
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   order: one(orders, {
