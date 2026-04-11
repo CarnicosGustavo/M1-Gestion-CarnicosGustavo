@@ -28,8 +28,14 @@ export default function Error({
             <span className="text-xs text-muted-foreground">Digest: {error.digest}</span>
           ) : null}
         </CardContent>
+        {error.stack ? (
+          <CardContent>
+            <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 text-xs">
+              {error.stack}
+            </pre>
+          </CardContent>
+        ) : null}
       </Card>
     </div>
   );
 }
-

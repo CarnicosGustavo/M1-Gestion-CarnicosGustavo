@@ -4,6 +4,11 @@ import { db } from "@/lib/db";
 import { transactions, orderItems, products } from "@/lib/db/schema";
 import { eq, and, asc, sum, sql } from "drizzle-orm";
 
+function safeNumber(value: unknown) {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export const dashboardRouter = router({
   stats: protectedProcedure
     .meta({ openapi: { method: "GET", path: "/dashboard/stats", tags: ["Dashboard"], summary: "Get all dashboard statistics" } })
@@ -24,7 +29,7 @@ export const dashboardRouter = router({
 
       const allCompleted = await db
         .select({
-          amount: transactions.amount,
+          amount: sql<number>`${transactions.amount}`.mapWith(Number),
           type: transactions.type,
           category: transactions.category,
           created_at: transactions.created_at,
@@ -33,17 +38,22 @@ export const dashboardRouter = router({
         .where(and(eq(transactions.status, "completed"), eq(transactions.user_uid, uid)))
         .orderBy(asc(transactions.created_at));
 
+      const normalizedCompleted = allCompleted.map((t) => ({
+        ...t,
+        amount: safeNumber(t.amount),
+      }));
+
       const totalRevenue = allCompleted
         .filter((t) => t.type === "income")
-        .reduce((s, t) => s + t.amount, 0);
+        .reduce((s, t) => s + safeNumber(t.amount), 0);
 
       const totalExpenses = allCompleted
         .filter((t) => t.type === "expense")
-        .reduce((s, t) => s + t.amount, 0);
+        .reduce((s, t) => s + safeNumber(t.amount), 0);
 
       const totalSelling = allCompleted
         .filter((t) => t.category === "selling")
-        .reduce((s, t) => s + t.amount, 0);
+        .reduce((s, t) => s + safeNumber(t.amount), 0);
 
       const totalProfit = totalSelling - totalExpenses;
 
@@ -60,31 +70,31 @@ export const dashboardRouter = router({
         .groupBy(products.category);
 
       const revenueByCategory = Object.fromEntries(
-        revenueByProductCategory.map((r) => [r.category || "otros", r.total])
+        revenueByProductCategory.map((r) => [r.category || "otros", safeNumber(r.total)])
       );
 
-      const expensesByCategory = allCompleted
+      const expensesByCategory = normalizedCompleted
         .filter((t) => t.type === "expense")
         .reduce<Record<string, number>>((acc, t) => {
           if (!t.category) return acc;
-          acc[t.category] = (acc[t.category] || 0) + t.amount;
+          acc[t.category] = (acc[t.category] || 0) + safeNumber(t.amount);
           return acc;
         }, {});
 
-      const cashFlow = allCompleted.reduce<Record<string, number>>((acc, t) => {
+      const cashFlow = normalizedCompleted.reduce<Record<string, number>>((acc, t) => {
         const date = t.created_at
           ? new Date(t.created_at).toISOString().split("T")[0]
           : "unknown";
-        acc[date] = (acc[date] || 0) + t.amount;
+        acc[date] = (acc[date] || 0) + safeNumber(t.amount);
         return acc;
       }, {});
 
-      const profitMargin = calculateProfitMarginSeries(allCompleted);
+      const profitMargin = calculateProfitMarginSeries(normalizedCompleted);
 
       return {
-        totalRevenue,
-        totalExpenses,
-        totalProfit,
+        totalRevenue: safeNumber(totalRevenue),
+        totalExpenses: safeNumber(totalExpenses),
+        totalProfit: safeNumber(totalProfit),
         revenueByCategory,
         expensesByCategory,
         cashFlow: Object.entries(cashFlow).map(([date, amount]) => ({ date, amount })),
