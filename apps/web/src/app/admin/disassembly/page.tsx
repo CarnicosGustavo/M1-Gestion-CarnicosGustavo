@@ -53,15 +53,15 @@ export default function DisassemblyPage() {
     parentProducts.find(p => p.id === Number(selectedParentId)),
   [parentProducts, selectedParentId]);
 
-  const { data: transformations = [], isLoading: isLoadingTransformations } = useQuery(
-    trpc.products.getTransformations.queryOptions(
-      { 
-        parentProductId: Number(selectedParentId), 
-        transformationType: selectedStyle 
-      },
-      { enabled: !!selectedParentId && !!selectedStyle }
-    )
-  );
+  const transformationsQueryOptions = trpc.products.getTransformations.queryOptions({
+    parentProductId: Number(selectedParentId || 0),
+    transformationType: selectedStyle,
+  });
+
+  const { data: transformations = [], isLoading: isLoadingTransformations } = useQuery({
+    ...transformationsQueryOptions,
+    enabled: !!selectedParentId && !!selectedStyle,
+  });
 
   const disassemblyMutation = trpc.products.processDisassembly.useMutation({
     onSuccess: () => {
