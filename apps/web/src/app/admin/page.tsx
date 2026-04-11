@@ -36,6 +36,7 @@ import {
 } from "recharts";
 import { formatCurrency, formatShortDate } from "@/lib/utils";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
+import { Button } from "@finopenpos/ui/components/button";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "next-intl";
@@ -50,11 +51,13 @@ const CHART_COLORS = [
 
 export default function Page() {
   const trpc = useTRPC();
-  const { data, isLoading } = useQuery(trpc.dashboard.stats.queryOptions());
+  const { data, isLoading, error, refetch, isFetching } = useQuery(
+    trpc.dashboard.stats.queryOptions()
+  );
   const t = useTranslations("dashboard");
   const locale = useLocale();
 
-  if (isLoading || !data) {
+  if (isLoading || isFetching) {
     return (
       <div className="grid flex-1 items-start gap-6">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -84,6 +87,24 @@ export default function Page() {
             </Card>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="grid flex-1 items-start gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Panel</CardTitle>
+            <CardDescription>{String(error?.message ?? "Error desconocido")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" onClick={() => refetch()}>
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }

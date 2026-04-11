@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useForm } from "@tanstack/react-form";
-import { z } from "zod/v4";
+import { useMemo, useState } from "react";
 import { Button } from "@finopenpos/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@finopenpos/ui/components/card";
 import { ScissorsIcon, PackageIcon, CheckCircleIcon, ArrowRightIcon } from "lucide-react";
@@ -35,6 +33,7 @@ const cuttingStyles = [
 
 export default function DisassemblyPage() {
   const trpc = useTRPC();
+  const utils = trpc.useUtils();
   const t = useTranslations("pos");
   const tc = useTranslations("common");
 
@@ -70,7 +69,7 @@ export default function DisassemblyPage() {
       setSelectedParentId("");
       setSelectedStyle("");
       setQuantity(1);
-      trpc.useUtils().products.list.invalidate();
+      utils.products.list.invalidate();
     },
     onError: (error) => {
       toast.error(t("disassemblyError") + ": " + error.message);
