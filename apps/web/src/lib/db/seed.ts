@@ -30,7 +30,58 @@ const EXPENSE_CATEGORIES = [
   "suministros",
 ] as const;
 
-export async function seed(options: { headers?: Headers } = {}) {
+type SeedMode = "auth" | "full";
+
+async function seedAuthUser(options: { headers?: Headers }) {
+  const legacyUser = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.email, LEGACY_DEMO_EMAIL))
+    .limit(1);
+
+  if (legacyUser[0]?.id) {
+    await db.delete(session).where(eq(session.userId, legacyUser[0].id));
+    await db.delete(account).where(eq(account.userId, legacyUser[0].id));
+    await db.delete(user).where(eq(user.id, legacyUser[0].id));
+  }
+
+  const existingUser = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.email, DEMO_EMAIL))
+    .limit(1);
+
+  if (existingUser[0]?.id) {
+    const passwordAccounts = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(account)
+      .where(and(eq(account.userId, existingUser[0].id), isNotNull(account.password)));
+
+    if (passwordAccounts[0].count > 0) {
+      return existingUser[0].id;
+    }
+
+    await db.delete(session).where(eq(session.userId, existingUser[0].id));
+    await db.delete(account).where(eq(account.userId, existingUser[0].id));
+    await db.delete(user).where(eq(user.id, existingUser[0].id));
+  }
+
+  return (
+    await auth.api.signUpEmail({
+      body: { name: DEMO_NAME, email: DEMO_EMAIL, password: DEMO_PASSWORD },
+      headers: options.headers,
+    })
+  ).user.id;
+}
+
+export async function seed(options: { headers?: Headers; mode?: SeedMode } = {}) {
+  const mode = options.mode ?? "auth";
+  const userId = await seedAuthUser({ headers: options.headers });
+
+  if (mode === "auth") {
+    return { userId };
+  }
+
   const existing = await db
     .select({ count: sql<number>`count(*)` })
     .from(paymentMethods);
@@ -60,55 +111,6 @@ export async function seed(options: { headers?: Headers } = {}) {
     .select({ id: paymentMethods.id })
     .from(paymentMethods);
   const paymentMethodIds = paymentMethodRows.map((pm) => pm.id);
-
-  const legacyUser = await db
-    .select({ id: user.id })
-    .from(user)
-    .where(eq(user.email, LEGACY_DEMO_EMAIL))
-    .limit(1);
-
-  if (legacyUser[0]?.id) {
-    await db.delete(session).where(eq(session.userId, legacyUser[0].id));
-    await db.delete(account).where(eq(account.userId, legacyUser[0].id));
-    await db.delete(user).where(eq(user.id, legacyUser[0].id));
-  }
-
-  const existingUser = await db
-    .select({ id: user.id })
-    .from(user)
-    .where(eq(user.email, DEMO_EMAIL))
-    .limit(1);
-
-  let userId: string;
-
-  if (existingUser[0]?.id) {
-    const passwordAccounts = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(account)
-      .where(and(eq(account.userId, existingUser[0].id), isNotNull(account.password)));
-
-    if (passwordAccounts[0].count > 0) {
-      userId = existingUser[0].id;
-    } else {
-      await db.delete(session).where(eq(session.userId, existingUser[0].id));
-      await db.delete(account).where(eq(account.userId, existingUser[0].id));
-      await db.delete(user).where(eq(user.id, existingUser[0].id));
-
-      userId = (
-        await auth.api.signUpEmail({
-          body: { name: DEMO_NAME, email: DEMO_EMAIL, password: DEMO_PASSWORD },
-          headers: options.headers,
-        })
-      ).user.id;
-    }
-  } else {
-    userId = (
-      await auth.api.signUpEmail({
-        body: { name: DEMO_NAME, email: DEMO_EMAIL, password: DEMO_PASSWORD },
-        headers: options.headers,
-      })
-    ).user.id;
-  }
 
   // ── Products ─────────────────────────────────────────────────────────────
   const demoProducts: Array<{ barcode: string; description: string }> = [
@@ -372,6 +374,8 @@ export async function seed(options: { headers?: Headers } = {}) {
       `${orderCount} orders, ${expenseCount} expense transactions, ` +
       `${cityCount} cities`
   );
+
+  return { userId };
 }
 
 const STATES = [

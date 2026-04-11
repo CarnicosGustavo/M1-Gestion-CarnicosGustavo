@@ -4,7 +4,9 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 async function handle(request: Request) {
-  const token = new URL(request.url).searchParams.get("token");
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+  const mode = url.searchParams.get("mode") === "full" ? "full" : "auth";
   const expected = process.env.SEED_TOKEN;
 
   if (!expected || !token || token !== expected) {
@@ -12,8 +14,8 @@ async function handle(request: Request) {
   }
 
   try {
-    await seed({ headers: new Headers(request.headers) });
-    return NextResponse.json({ ok: true });
+    const result = await seed({ headers: new Headers(request.headers), mode });
+    return NextResponse.json({ ok: true, mode, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ ok: false, message }, { status: 500 });
