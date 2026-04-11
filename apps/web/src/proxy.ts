@@ -5,23 +5,34 @@ export async function proxy(request: NextRequest) {
   const sessionCookie = getSessionCookie(request);
   const { pathname } = request.nextUrl;
 
+  const applyNoStore = (res: NextResponse) => {
+    if (
+      pathname.includes("/admin") ||
+      pathname.startsWith("/login") ||
+      pathname.startsWith("/signup")
+    ) {
+      res.headers.set("Cache-Control", "no-store, max-age=0");
+    }
+    return res;
+  };
+
   if (pathname === "/en" || pathname === "/en/") {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return applyNoStore(NextResponse.redirect(url));
   }
 
   if (pathname.startsWith("/en/")) {
     const url = request.nextUrl.clone();
     url.pathname = pathname.replace("/en", "");
-    return NextResponse.redirect(url);
+    return applyNoStore(NextResponse.redirect(url));
   }
 
   // Redirect root to login page
   if (pathname === "/") {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return applyNoStore(NextResponse.redirect(url));
   }
 
   if (
@@ -37,10 +48,10 @@ export async function proxy(request: NextRequest) {
   ) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return applyNoStore(NextResponse.redirect(url));
   }
 
-  return NextResponse.next();
+  return applyNoStore(NextResponse.next());
 }
 
 export const config = {
