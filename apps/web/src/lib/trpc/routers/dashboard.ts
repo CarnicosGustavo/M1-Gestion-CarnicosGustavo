@@ -51,7 +51,7 @@ export const dashboardRouter = router({
       const revenueByProductCategory = await db
         .select({
           category: products.category,
-          total: sum(sql<number>`${orderItems.price} * ${orderItems.quantity}`).mapWith(Number),
+          total: sum(sql<number>`${orderItems.subtotal}`).mapWith(Number),
         })
         .from(orderItems)
         .innerJoin(products, eq(orderItems.product_id, products.id))
