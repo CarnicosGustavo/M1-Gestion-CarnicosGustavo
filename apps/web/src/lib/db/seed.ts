@@ -30,7 +30,7 @@ const EXPENSE_CATEGORIES = [
   "suministros",
 ] as const;
 
-export async function seed() {
+export async function seed(options: { headers?: Headers } = {}) {
   const existing = await db
     .select({ count: sql<number>`count(*)` })
     .from(paymentMethods);
@@ -97,6 +97,7 @@ export async function seed() {
       userId = (
         await auth.api.signUpEmail({
           body: { name: DEMO_NAME, email: DEMO_EMAIL, password: DEMO_PASSWORD },
+          headers: options.headers,
         })
       ).user.id;
     }
@@ -104,6 +105,7 @@ export async function seed() {
     userId = (
       await auth.api.signUpEmail({
         body: { name: DEMO_NAME, email: DEMO_EMAIL, password: DEMO_PASSWORD },
+        headers: options.headers,
       })
     ).user.id;
   }
