@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@finopenpos/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@finopenpos/ui/components/card";
 import { ScissorsIcon, PackageIcon, CheckCircleIcon, ArrowRightIcon } from "lucide-react";
@@ -36,9 +36,14 @@ export default function DisassemblyPage() {
   const t = useTranslations("pos");
   const tc = useTranslations("common");
 
+  const [isClient, setIsClient] = useState(false);
   const [selectedParentId, setSelectedParentId] = useState<string>("");
   const [selectedStyle, setSelectedStyle] = useState<string>("");
   const [quantity, setQuantity] = useState<number>(1);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const { data: products = [], isLoading: isLoadingProducts } = useQuery(
     trpc.products.list.queryOptions()
@@ -99,7 +104,7 @@ export default function DisassemblyPage() {
     });
   };
 
-  if (isLoadingProducts) {
+  if (!isClient || isLoadingProducts) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-[200px] w-full" />
