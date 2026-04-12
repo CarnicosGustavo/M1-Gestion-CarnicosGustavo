@@ -8,6 +8,7 @@
     "BASE_URL",
     "RUN_SEED"
   ],
+  "globalPassThroughEnv": ["SEED_TOKEN"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
