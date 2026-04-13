@@ -14,7 +14,7 @@ import {
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import { useTRPC } from "@/lib/trpc/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -32,7 +32,7 @@ const cuttingStyles = [
 
 export default function DisassemblyPage() {
   const trpc = useTRPC();
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const t = useTranslations("pos");
   const tc = useTranslations("common");
 
@@ -73,7 +73,7 @@ export default function DisassemblyPage() {
       setSelectedParentId("");
       setSelectedStyle("");
       setQuantity(1);
-      utils.products.list.invalidate();
+      queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
     },
     onError: (error) => {
       toast.error(t("disassemblyError") + ": " + error.message);
