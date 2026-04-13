@@ -194,31 +194,31 @@ export default function RecipesPage() {
 			key: "parent",
 			header: "Padre",
 			sortable: true,
-			getValue: (r) => r.parentProduct.name,
+			accessorFn: (r) => r.parentProduct.name,
 		},
 		{
 			key: "child",
 			header: "Hijo",
 			sortable: true,
-			getValue: (r) => r.childProduct.name,
+			accessorFn: (r) => r.childProduct.name,
 			className: "font-medium",
 		},
 		{
 			key: "type",
 			header: "Estilo",
 			sortable: true,
-			getValue: (r) => r.transformation_type,
+			accessorFn: (r) => r.transformation_type,
 		},
 		{
 			key: "pieces",
 			header: "Piezas",
 			sortable: true,
-			getValue: (r) => String(r.yield_quantity_pieces),
+			accessorFn: (r) => Number(r.yield_quantity_pieces),
 		},
 		{
 			key: "active",
 			header: "Activa",
-			getValue: (r) => (r.is_active ? "Sí" : "No"),
+			accessorFn: (r) => (r.is_active ? "Sí" : "No"),
 			render: (r) => (
 				<div className="flex items-center gap-2">
 					{r.is_active ? (
