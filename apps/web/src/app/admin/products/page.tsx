@@ -106,6 +106,7 @@ export default function Products() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [parentFilter, setParentFilter] = useState("all");
   const [stockFilter, setStockFilter] = useState("all");
+  const [hierarchyParentId, setHierarchyParentId] = useState("all");
 
   useEffect(() => {
     if (typeFilter !== "child" && parentFilter !== "all") {
@@ -113,7 +114,15 @@ export default function Products() {
     }
   }, [typeFilter, parentFilter]);
 
+  useEffect(() => {
+    if (hierarchyParentId !== "all") {
+      if (typeFilter !== "all") setTypeFilter("all");
+      if (parentFilter !== "all") setParentFilter("all");
+    }
+  }, [hierarchyParentId, parentFilter, typeFilter]);
+
   const listInput = useMemo(() => {
+    if (hierarchyParentId !== "all") return { parentProductId: Number(hierarchyParentId) };
     if (typeFilter === "parent") return { isParent: true as const };
     if (typeFilter === "child")
       return {
@@ -121,7 +130,7 @@ export default function Products() {
         parentProductId: parentFilter === "all" ? undefined : Number(parentFilter),
       };
     return undefined;
-  }, [typeFilter, parentFilter]);
+  }, [hierarchyParentId, typeFilter, parentFilter]);
 
   const productsQueryOptions = listInput
     ? trpc.products.list.queryOptions(listInput)
@@ -129,6 +138,32 @@ export default function Products() {
 
   const { data: products = [], isLoading } = useQuery(productsQueryOptions);
   const { data: parentProducts = [] } = useQuery(trpc.products.list.queryOptions({ isParent: true }));
+
+  const primaryParentButtons = useMemo(() => {
+    const items = [
+      { key: "canal", label: "Canal de Cerdo", match: ["canal"] },
+      { key: "pierna", label: "Pierna de Cerdo", match: ["pierna"] },
+      { key: "espilomo", label: "Espilomo", match: ["espilomo"] },
+      { key: "paleta", label: "Paleta", match: ["paleta"] },
+    ] as const;
+
+    const lower = (s: string) => s.toLowerCase();
+    const findByAny = (needles: readonly string[]) =>
+      parentProducts.find((p) => needles.some((n) => lower(p.name).includes(lower(n))));
+
+    return items
+      .map((x) => {
+        const p = findByAny(x.match);
+        return p ? { id: String(p.id), label: x.label, name: p.name } : null;
+      })
+      .filter((x): x is { id: string; label: string; name: string } => x !== null);
+  }, [parentProducts]);
+
+  const selectedHierarchyParentName = useMemo(() => {
+    if (hierarchyParentId === "all") return null;
+    const p = parentProducts.find((p) => String(p.id) === hierarchyParentId);
+    return p?.name ?? null;
+  }, [hierarchyParentId, parentProducts]);
 
   const parentFilterOptions = useMemo<FilterOption[]>(() => {
     const opts: FilterOption[] = [{ label: tc("all"), value: "all" }];
@@ -260,6 +295,39 @@ export default function Products() {
     <>
       <Card className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
         <CardHeader className="p-0">
+          <div className="flex flex-wrap gap-2 pb-3">
+            <Button
+              size="sm"
+              variant={hierarchyParentId === "all" ? "default" : "outline"}
+              onClick={() => setHierarchyParentId("all")}
+            >
+              Todos
+            </Button>
+            {primaryParentButtons.map((b) => (
+              <Button
+                key={b.id}
+                size="sm"
+                variant={hierarchyParentId === b.id ? "default" : "outline"}
+                onClick={() => setHierarchyParentId(b.id)}
+              >
+                {b.label}
+              </Button>
+            ))}
+            {hierarchyParentId !== "all" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setHierarchyParentId("all")}
+              >
+                Limpiar
+              </Button>
+            )}
+          </div>
+          {selectedHierarchyParentName && (
+            <div className="pb-3 text-sm text-muted-foreground">
+              Mostrando hijos directos de: <span className="font-medium">{selectedHierarchyParentName}</span>
+            </div>
+          )}
           <SearchFilter
             search={searchTerm}
             onSearchChange={setSearchTerm}
