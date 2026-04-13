@@ -66,12 +66,16 @@ export default function POSPage() {
 	const { data: paymentMethods = [], isLoading: loadingMethods } = useQuery(
 		trpc.paymentMethods.list.queryOptions(),
 	);
+	const { data: priceLists = [], isLoading: loadingPriceLists } = useQuery(
+		trpc.inventory.priceListsList.queryOptions(),
+	);
 	const t = useTranslations("pos");
 	const tc = useTranslations("common");
 	const tOrders = useTranslations("orders");
 	const locale = useLocale();
 
-	const loading = loadingProducts || loadingCustomers || loadingMethods;
+	const loading =
+		loadingProducts || loadingCustomers || loadingMethods || loadingPriceLists;
 
 	const createOrderMutation = useMutation(
 		trpc.orders.create.mutationOptions({
@@ -104,6 +108,33 @@ export default function POSPage() {
 	} | null>(null);
 	const [productSearch, setProductSearch] = useState("");
 	const [emitNfce, setEmitNfce] = useState(false);
+	const [selectedPriceListId, setSelectedPriceListId] =
+		useState<string>("base");
+
+	const priceListItemsQuery = useQuery({
+		...trpc.inventory.priceListItemsByList.queryOptions({
+			priceListId: Number(selectedPriceListId),
+		}),
+		enabled: selectedPriceListId !== "base",
+	});
+
+	const priceOverrides = useMemo(() => {
+		const map = new Map<number, { kg?: number; piece?: number }>();
+		if (selectedPriceListId === "base") return map;
+		for (const item of priceListItemsQuery.data ?? []) {
+			const kg =
+				item.unit_price_per_kg !== null ? Number(item.unit_price_per_kg) : null;
+			const piece =
+				item.unit_price_per_piece !== null
+					? Number(item.unit_price_per_piece)
+					: null;
+			map.set(item.product_id, {
+				kg: kg !== null && Number.isFinite(kg) ? kg : undefined,
+				piece: piece !== null && Number.isFinite(piece) ? piece : undefined,
+			});
+		}
+		return map;
+	}, [priceListItemsQuery.data, selectedPriceListId]);
 
 	const filteredProducts = useMemo(() => {
 		if (!productSearch.trim()) return products;
@@ -114,6 +145,17 @@ export default function POSPage() {
 				(p.category ?? "").toLowerCase().includes(q),
 		);
 	}, [products, productSearch]);
+
+	const priceListOptions = useMemo(() => {
+		return [
+			{ id: "base", name: "Precio base" },
+			...priceLists.map((l) => ({ id: String(l.id), name: l.name })),
+		];
+	}, [priceLists]);
+
+	const handleSelectPriceList = (id: number | string) => {
+		setSelectedPriceListId(String(id));
+	};
 
 	const handleSelectProduct = (productId: number | string) => {
 		const product = products.find((p) => p.id === productId);
@@ -135,6 +177,9 @@ export default function POSPage() {
 				),
 			);
 		} else {
+			const override = priceOverrides.get(product.id);
+			const baseKg = Number(product.price_per_kg) || 0;
+			const basePiece = Number(product.price_per_piece) || 0;
 			setSelectedProducts([
 				...selectedProducts,
 				{
@@ -150,8 +195,8 @@ export default function POSPage() {
 					category: product.category ?? "",
 					quantityPieces: 1,
 					quantityKg: null,
-					unitPricePerKg: Number(product.price_per_kg) || 0,
-					unitPricePerPiece: Number(product.price_per_piece) || 0,
+					unitPricePerKg: override?.kg ?? baseKg,
+					unitPricePerPiece: override?.piece ?? basePiece,
 				},
 			]);
 		}
@@ -325,6 +370,13 @@ export default function POSPage() {
 							onSelect={handleSelectPaymentMethod}
 						/>
 					</div>
+					<div className="flex-1">
+						<Combobox
+							items={priceListOptions}
+							placeholder="Lista de precios"
+							onSelect={handleSelectPriceList}
+						/>
+					</div>
 				</CardContent>
 			</Card>
 			<Card>
@@ -344,7 +396,13 @@ export default function POSPage() {
 						<Combobox
 							items={filteredProducts.map((p) => ({
 								id: p.id,
-								name: `${p.name} — ${formatCurrency(Number(p.price_per_kg || p.price_per_piece || 0) * 100, locale)} (${p.stock_pieces} pzas / ${p.stock_kg} kg)`,
+								name: (() => {
+									const override = priceOverrides.get(p.id);
+									const price = p.is_sellable_by_weight
+										? (override?.kg ?? Number(p.price_per_kg || 0))
+										: (override?.piece ?? Number(p.price_per_piece || 0));
+									return `${p.name} — ${formatCurrency(price * 100, locale)} (${p.stock_pieces} pzas / ${p.stock_kg} kg)`;
+								})(),
 							}))}
 							placeholder={t("addProduct")}
 							noSelect

@@ -5,6 +5,8 @@ import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import {
 	inventoryTransactions,
+	priceListItems,
+	priceLists,
 	products,
 	productTransformations,
 } from "@/lib/db/schema";
@@ -47,6 +49,19 @@ const recipeSchema = z.object({
 		name: z.string(),
 		is_parent_product: z.boolean(),
 	}),
+});
+
+const priceListSchema = z.object({
+	id: z.number(),
+	code: z.string(),
+	name: z.string(),
+	is_default: z.boolean(),
+});
+
+const priceListItemSchema = z.object({
+	product_id: z.number(),
+	unit_price_per_kg: z.union([z.string(), z.number()]).nullable(),
+	unit_price_per_piece: z.union([z.string(), z.number()]).nullable(),
 });
 
 export const inventoryRouter = router({
@@ -464,5 +479,269 @@ export const inventoryRouter = router({
 				.where(eq(productTransformations.id, input.id));
 
 			return { success: true };
+		}),
+
+	priceListsList: protectedProcedure
+		.input(z.void())
+		.output(z.array(priceListSchema))
+		.query(async ({ ctx }) => {
+			if (ctx.user.id !== VALIDATION_USER_UID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Acceso no autorizado",
+				});
+			}
+			const uid = VALIDATION_USER_UID;
+
+			return db
+				.select({
+					id: priceLists.id,
+					code: priceLists.code,
+					name: priceLists.name,
+					is_default: priceLists.is_default,
+				})
+				.from(priceLists)
+				.where(eq(priceLists.user_uid, uid))
+				.orderBy(desc(priceLists.is_default), asc(priceLists.name));
+		}),
+
+	priceListItemsByList: protectedProcedure
+		.input(z.object({ priceListId: z.number() }))
+		.output(z.array(priceListItemSchema))
+		.query(async ({ ctx, input }) => {
+			if (ctx.user.id !== VALIDATION_USER_UID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Acceso no autorizado",
+				});
+			}
+			const uid = VALIDATION_USER_UID;
+
+			const [list] = await db
+				.select({ id: priceLists.id })
+				.from(priceLists)
+				.where(
+					and(
+						eq(priceLists.id, input.priceListId),
+						eq(priceLists.user_uid, uid),
+					),
+				)
+				.limit(1);
+
+			if (!list) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Lista de precios no encontrada",
+				});
+			}
+
+			return db
+				.select({
+					product_id: priceListItems.product_id,
+					unit_price_per_kg: priceListItems.unit_price_per_kg,
+					unit_price_per_piece: priceListItems.unit_price_per_piece,
+				})
+				.from(priceListItems)
+				.where(eq(priceListItems.price_list_id, input.priceListId));
+		}),
+
+	priceListImportCsv: protectedProcedure
+		.input(
+			z.object({
+				listCode: z.enum(["MAYOREO_CONTADO", "MAYOREO_CREDITO", "MENUDEO"]),
+				listName: z.string().min(1),
+				csvText: z.string().min(1),
+				priceIsPerKg: z.boolean().default(true),
+			}),
+		)
+		.output(
+			z.object({
+				success: z.boolean(),
+				priceListId: z.number(),
+				matched: z.number(),
+				unmatchedAliases: z.array(z.string()),
+				uniqueAliases: z.number(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			if (ctx.user.id !== VALIDATION_USER_UID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Acceso no autorizado",
+				});
+			}
+			const uid = VALIDATION_USER_UID;
+
+			const normalizeAlias = (s: string) =>
+				s
+					.trim()
+					.replace(/\s+/g, " ")
+					.replace(/\u00A0/g, " ")
+					.toUpperCase();
+
+			const parsePrice = (s: string) => {
+				const cleaned = s.trim().replace(/[^\d.,-]/g, "");
+				const normalized = cleaned.replace(/,/g, "");
+				const n = Number(normalized);
+				return Number.isFinite(n) ? n : null;
+			};
+
+			const lines = input.csvText
+				.split(/\r?\n/)
+				.map((l) => l.trim())
+				.filter((l) => l.length > 0);
+
+			const dataLines = lines.filter(
+				(l) => !/PIEZAS/i.test(l) && !/PRECIO/i.test(l),
+			);
+
+			const aliasToPriceCounts = new Map<string, Map<number, number>>();
+			const aliasToLastPrice = new Map<string, number>();
+
+			for (const line of dataLines) {
+				const parts = line
+					.split(",")
+					.map((p) => p.trim())
+					.filter(Boolean);
+				if (parts.length < 2) continue;
+				const alias = normalizeAlias(parts[0]);
+				const price = parsePrice(parts[1]);
+				if (!alias || price === null) continue;
+
+				let counts = aliasToPriceCounts.get(alias);
+				if (!counts) {
+					counts = new Map();
+					aliasToPriceCounts.set(alias, counts);
+				}
+				counts.set(price, (counts.get(price) ?? 0) + 1);
+				aliasToLastPrice.set(alias, price);
+			}
+
+			const aliasToChosenPrice = new Map<string, number>();
+			for (const [alias, counts] of aliasToPriceCounts) {
+				let bestPrice: number | null = null;
+				let bestCount = -1;
+				for (const [price, count] of counts) {
+					if (count > bestCount) {
+						bestCount = count;
+						bestPrice = price;
+					} else if (count === bestCount && bestPrice !== null) {
+						const last = aliasToLastPrice.get(alias) ?? bestPrice;
+						if (price === last) bestPrice = price;
+					}
+				}
+				if (bestPrice !== null) aliasToChosenPrice.set(alias, bestPrice);
+			}
+
+			const uniqueAliases = aliasToChosenPrice.size;
+
+			return db.transaction(async (tx) => {
+				let [list] = await tx
+					.select({ id: priceLists.id })
+					.from(priceLists)
+					.where(
+						and(
+							eq(priceLists.user_uid, uid),
+							eq(priceLists.code, input.listCode),
+						),
+					)
+					.limit(1);
+
+				if (!list) {
+					[list] = await tx
+						.insert(priceLists)
+						.values({
+							user_uid: uid,
+							code: input.listCode,
+							name: input.listName,
+							is_default: input.listCode === "MAYOREO_CONTADO",
+						})
+						.returning({ id: priceLists.id });
+				} else {
+					await tx
+						.update(priceLists)
+						.set({ name: input.listName, updated_at: new Date() })
+						.where(eq(priceLists.id, list.id));
+				}
+
+				const allProducts = await tx
+					.select({
+						id: products.id,
+						name: products.name,
+						is_sellable_by_weight: products.is_sellable_by_weight,
+						is_sellable_by_unit: products.is_sellable_by_unit,
+					})
+					.from(products)
+					.where(eq(products.user_uid, uid));
+
+				const normalizeProductKey = (name: string) => {
+					const trimmed = normalizeAlias(name);
+					return trimmed.replace(/^XX\d+\s*-\s*/i, "").trim();
+				};
+
+				const keyToProduct = new Map<string, (typeof allProducts)[number]>();
+				for (const p of allProducts) {
+					const key = normalizeProductKey(p.name);
+					if (key && !keyToProduct.has(key)) keyToProduct.set(key, p);
+					const full = normalizeAlias(p.name);
+					if (full && !keyToProduct.has(full)) keyToProduct.set(full, p);
+				}
+
+				const unmatchedAliases: string[] = [];
+				let matched = 0;
+
+				for (const [alias, price] of aliasToChosenPrice) {
+					const key = normalizeProductKey(alias);
+					const p =
+						keyToProduct.get(key) ?? keyToProduct.get(normalizeAlias(alias));
+					if (!p) {
+						unmatchedAliases.push(alias);
+						continue;
+					}
+
+					const useKg = input.priceIsPerKg && p.is_sellable_by_weight;
+					const usePiece = !useKg && p.is_sellable_by_unit;
+
+					const existing = await tx
+						.select({ id: priceListItems.id })
+						.from(priceListItems)
+						.where(
+							and(
+								eq(priceListItems.price_list_id, list.id),
+								eq(priceListItems.product_id, p.id),
+							),
+						)
+						.limit(1);
+
+					const updateData: Partial<typeof priceListItems.$inferInsert> = {
+						updated_at: new Date(),
+						unit_price_per_kg: useKg ? price.toFixed(2) : null,
+						unit_price_per_piece: usePiece ? price.toFixed(2) : null,
+					};
+
+					if (existing.length) {
+						await tx
+							.update(priceListItems)
+							.set(updateData)
+							.where(eq(priceListItems.id, existing[0].id));
+					} else {
+						await tx.insert(priceListItems).values({
+							price_list_id: list.id,
+							product_id: p.id,
+							unit_price_per_kg: updateData.unit_price_per_kg ?? null,
+							unit_price_per_piece: updateData.unit_price_per_piece ?? null,
+						});
+					}
+					matched += 1;
+				}
+
+				return {
+					success: true,
+					priceListId: list.id,
+					matched,
+					unmatchedAliases,
+					uniqueAliases,
+				};
+			});
 		}),
 });

@@ -76,3 +76,9 @@ apps/docs/.source/
 
 # Manual fiscal test scripts (contain sensitive data)
 packages/fiscal/src/manual-*.ts
+
+# Local business context files
+Contexto/*.xls
+Contexto/*.xlsx
+Contexto/*.csv
+Contexto/Organigrama*

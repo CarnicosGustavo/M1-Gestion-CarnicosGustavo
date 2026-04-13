@@ -33,7 +33,13 @@ import {
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useForm } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
-import { FilePenIcon, PackageIcon, PlusIcon, TrashIcon } from "lucide-react";
+import {
+	FilePenIcon,
+	PackageIcon,
+	PlusIcon,
+	TrashIcon,
+	UploadIcon,
+} from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod/v4";
@@ -128,6 +134,7 @@ export default function Products() {
 
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+	const [isImportOpen, setIsImportOpen] = useState(false);
 	const [editingId, setEditingId] = useState<number | null>(null);
 	const [deleteId, setDeleteId] = useState<number | null>(null);
 	const [searchTerm, setSearchTerm] = useState("");
@@ -288,6 +295,35 @@ export default function Products() {
 			} else {
 				createMutation.mutate(payload);
 			}
+		},
+	});
+
+	const priceImportMutation = useMutation(
+		trpc.inventory.priceListImportCsv.mutationOptions({
+			onSuccess: (res) => {
+				toast.success(`Importado: ${res.matched}/${res.uniqueAliases} aliases`);
+				if (res.unmatchedAliases.length) {
+					toast.warning(
+						`Sin match: ${res.unmatchedAliases.slice(0, 8).join(", ")}${
+							res.unmatchedAliases.length > 8 ? "…" : ""
+						}`,
+					);
+				}
+				setIsImportOpen(false);
+			},
+			onError: (e) => toast.error(e.message),
+		}),
+	);
+
+	const importForm = useForm({
+		defaultValues: {
+			listCode: "MAYOREO_CONTADO" as const,
+			listName: "Mayoreo contado",
+			priceIsPerKg: true,
+			csvText: "",
+		},
+		onSubmit: ({ value }) => {
+			priceImportMutation.mutate(value);
 		},
 	});
 
@@ -457,6 +493,18 @@ export default function Products() {
 						<Button size="sm" onClick={openCreate}>
 							<PlusIcon className="mr-2 h-4 w-4" />
 							{t("addProduct")}
+						</Button>
+						<Button
+							type="button"
+							size="sm"
+							variant="outline"
+							onClick={() => {
+								importForm.reset();
+								setIsImportOpen(true);
+							}}
+						>
+							<UploadIcon className="mr-2 h-4 w-4" />
+							Importar precios (CSV)
 						</Button>
 					</SearchFilter>
 				</CardHeader>
@@ -729,6 +777,141 @@ export default function Products() {
 									</Button>
 								)}
 							</form.Subscribe>
+						</DialogFooter>
+					</form>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+				<DialogContent className="max-w-2xl">
+					<DialogHeader>
+						<DialogTitle>Importar lista de precios</DialogTitle>
+						<DialogDescription>
+							Usa un CSV con columnas: PIEZAS, PRECIO. Se buscará el producto
+							por nombre (ignorando prefijos tipo "XX## -") y se usará el precio
+							más frecuente.
+						</DialogDescription>
+					</DialogHeader>
+
+					<form
+						onSubmit={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							importForm.handleSubmit();
+						}}
+					>
+						<div className="grid gap-4 py-4">
+							<importForm.Field name="listCode">
+								{(field) => (
+									<div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+										<Label className="sm:text-right">Lista</Label>
+										<Select
+											value={field.state.value}
+											onValueChange={(v) =>
+												field.handleChange(
+													v as
+														| "MAYOREO_CONTADO"
+														| "MAYOREO_CREDITO"
+														| "MENUDEO",
+												)
+											}
+										>
+											<SelectTrigger className="col-span-3">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="MAYOREO_CONTADO">
+													Mayoreo contado
+												</SelectItem>
+												<SelectItem value="MAYOREO_CREDITO">
+													Mayoreo crédito
+												</SelectItem>
+												<SelectItem value="MENUDEO">Menudeo</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+								)}
+							</importForm.Field>
+
+							<importForm.Field name="listName">
+								{(field) => (
+									<div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+										<Label className="sm:text-right">Nombre</Label>
+										<Input
+											className="col-span-3"
+											value={field.state.value}
+											onChange={(e) => field.handleChange(e.target.value)}
+										/>
+									</div>
+								)}
+							</importForm.Field>
+
+							<importForm.Field name="priceIsPerKg">
+								{(field) => (
+									<div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+										<Label className="sm:text-right">Unidad</Label>
+										<Select
+											value={field.state.value ? "kg" : "piece"}
+											onValueChange={(v) => field.handleChange(v === "kg")}
+										>
+											<SelectTrigger className="col-span-3">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="kg">Precio por kg</SelectItem>
+												<SelectItem value="piece">Precio por pieza</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+								)}
+							</importForm.Field>
+
+							<div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+								<Label className="sm:text-right">Archivo CSV</Label>
+								<input
+									className="col-span-3"
+									type="file"
+									accept=".csv,text/csv"
+									onChange={(e) => {
+										const f = e.target.files?.[0];
+										if (!f) return;
+										const reader = new FileReader();
+										reader.onload = () => {
+											importForm.setFieldValue(
+												"csvText",
+												String(reader.result ?? ""),
+											);
+										};
+										reader.readAsText(f);
+									}}
+								/>
+							</div>
+
+							<importForm.Field name="csvText">
+								{(field) => (
+									<div className="grid gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+										<Label className="sm:text-right">CSV</Label>
+										<textarea
+											className="col-span-3 min-h-40 rounded-md border bg-background px-3 py-2 text-sm"
+											value={field.state.value}
+											onChange={(e) => field.handleChange(e.target.value)}
+											placeholder="PIEZAS, PRECIO"
+										/>
+									</div>
+								)}
+							</importForm.Field>
+						</div>
+
+						<DialogFooter>
+							<Button
+								variant="secondary"
+								onClick={() => setIsImportOpen(false)}
+							>
+								{tc("cancel")}
+							</Button>
+							<Button type="submit" disabled={priceImportMutation.isPending}>
+								Importar
+							</Button>
 						</DialogFooter>
 					</form>
 				</DialogContent>

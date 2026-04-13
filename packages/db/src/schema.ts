@@ -122,6 +122,33 @@ export const products = pgTable("products", {
 	updated_at: timestamp("updated_at").defaultNow(),
 });
 
+export const priceLists = pgTable("price_lists", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	user_uid: varchar("user_uid", { length: 255 }).notNull(),
+	code: varchar("code", { length: 50 }).notNull(),
+	name: varchar("name", { length: 255 }).notNull(),
+	is_default: boolean("is_default").notNull().default(false),
+	created_at: timestamp("created_at").notNull().defaultNow(),
+	updated_at: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const priceListItems = pgTable("price_list_items", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	price_list_id: integer("price_list_id")
+		.notNull()
+		.references(() => priceLists.id),
+	product_id: integer("product_id")
+		.notNull()
+		.references(() => products.id),
+	unit_price_per_kg: numeric("unit_price_per_kg", { precision: 10, scale: 2 }),
+	unit_price_per_piece: numeric("unit_price_per_piece", {
+		precision: 10,
+		scale: 2,
+	}),
+	created_at: timestamp("created_at").notNull().defaultNow(),
+	updated_at: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const productTransformations = pgTable("product_transformations", {
 	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
 	parent_product_id: integer("parent_product_id")
@@ -406,6 +433,22 @@ export const productRelations = relations(products, ({ one, many }) => ({
 		relationName: "childProduct",
 	}),
 	inventoryTransactions: many(inventoryTransactions),
+	priceListItems: many(priceListItems),
+}));
+
+export const priceListRelations = relations(priceLists, ({ many }) => ({
+	items: many(priceListItems),
+}));
+
+export const priceListItemRelations = relations(priceListItems, ({ one }) => ({
+	priceList: one(priceLists, {
+		fields: [priceListItems.price_list_id],
+		references: [priceLists.id],
+	}),
+	product: one(products, {
+		fields: [priceListItems.product_id],
+		references: [products.id],
+	}),
 }));
 
 export const orderRelations = relations(orders, ({ one, many }) => ({
