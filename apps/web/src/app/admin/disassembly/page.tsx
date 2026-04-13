@@ -14,7 +14,7 @@ import {
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -67,18 +67,20 @@ export default function DisassemblyPage() {
     enabled: !!selectedParentId && !!selectedStyle,
   });
 
-  const disassemblyMutation = trpc.products.processDisassembly.useMutation({
-    onSuccess: () => {
-      toast.success(t("disassemblySuccess"));
-      setSelectedParentId("");
-      setSelectedStyle("");
-      setQuantity(1);
-      queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
-    },
-    onError: (error) => {
-      toast.error(t("disassemblyError") + ": " + error.message);
-    }
-  });
+  const disassemblyMutation = useMutation(
+    trpc.products.processDisassembly.mutationOptions({
+      onSuccess: () => {
+        toast.success(t("disassemblySuccess"));
+        setSelectedParentId("");
+        setSelectedStyle("");
+        setQuantity(1);
+        queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
+      },
+      onError: (error) => {
+        toast.error(t("disassemblyError") + ": " + error.message);
+      },
+    })
+  );
 
   const expectedPieces = (yieldQuantityPieces: unknown) => {
     const raw = Number(yieldQuantityPieces);

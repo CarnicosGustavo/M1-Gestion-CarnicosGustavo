@@ -7,7 +7,7 @@ import { ScaleIcon, CheckCircleIcon, ChevronRightIcon, MessageSquareIcon } from 
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import { useTRPC } from "@/lib/trpc/client";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
@@ -42,16 +42,18 @@ export default function WeighingStationPage() {
     }
   }, [nextItem, selectedOrderId, isLoadingOrders]);
 
-  const updateWeightMutation = trpc.orders.updateOrderItemWeight.useMutation({
-    onSuccess: () => {
-      toast.success(t("weighed"));
-      setActualWeight("");
-      refetchOrders();
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    }
-  });
+  const updateWeightMutation = useMutation(
+    trpc.orders.updateOrderItemWeight.mutationOptions({
+      onSuccess: () => {
+        toast.success(t("weighed"));
+        setActualWeight("");
+        refetchOrders();
+      },
+      onError: (error) => {
+        toast.error(error.message);
+      },
+    })
+  );
 
   const handleRegisterWeight = () => {
     if (!nextItem || !actualWeight || parseFloat(actualWeight) <= 0) return;
