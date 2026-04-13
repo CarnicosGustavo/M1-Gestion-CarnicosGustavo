@@ -149,13 +149,24 @@ export default function Products() {
 		}
 	}, [hierarchyParentId, parentFilter, typeFilter]);
 
+	const { data: parentProducts = [] } = useQuery(
+		trpc.products.list.queryOptions({ isParent: true }),
+	);
+
 	const listInput = useMemo(() => {
-		if (hierarchyParentId !== "all")
-			return {
-				parentProductId: Number(hierarchyParentId),
-				includeDescendants: true,
-				includeSelf: true,
-			};
+		if (hierarchyParentId !== "all") {
+			const selected = parentProducts.find(
+				(p) => String(p.id) === hierarchyParentId,
+			);
+			const isCanal = (selected?.name ?? "").toLowerCase().includes("canal");
+			if (!isCanal) {
+				return {
+					parentProductId: Number(hierarchyParentId),
+					includeDescendants: true,
+					includeSelf: true,
+				};
+			}
+		}
 		if (typeFilter === "parent") return { isParent: true as const };
 		if (typeFilter === "child")
 			return {
@@ -164,16 +175,13 @@ export default function Products() {
 					parentFilter === "all" ? undefined : Number(parentFilter),
 			};
 		return undefined;
-	}, [hierarchyParentId, typeFilter, parentFilter]);
+	}, [hierarchyParentId, typeFilter, parentFilter, parentProducts]);
 
 	const productsQueryOptions = listInput
 		? trpc.products.list.queryOptions(listInput)
 		: trpc.products.list.queryOptions();
 
 	const { data: products = [], isLoading } = useQuery(productsQueryOptions);
-	const { data: parentProducts = [] } = useQuery(
-		trpc.products.list.queryOptions({ isParent: true }),
-	);
 
 	const primaryParentButtons = useMemo(() => {
 		const items = [

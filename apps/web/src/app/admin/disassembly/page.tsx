@@ -173,6 +173,7 @@ export default function DisassemblyPage() {
 				quantityToProcess: s.qty,
 				transformationType: s.style,
 				realWeightMode,
+				entryMode: true,
 			});
 		}
 	};
@@ -184,6 +185,7 @@ export default function DisassemblyPage() {
 			quantityToProcess: primaryQuantity,
 			transformationType: selectedPrimaryStyle,
 			realWeightMode,
+			entryMode: false,
 		});
 	};
 
@@ -226,6 +228,10 @@ export default function DisassemblyPage() {
 								Despiece masivo de canal
 							</h3>
 						</div>
+						<div className="text-muted-foreground text-sm">
+							Este lote registra entrada de canal y genera piezas según recetas.
+							No requiere stock previo.
+						</div>
 
 						{!canalProduct ? (
 							<div className="text-muted-foreground text-sm">
@@ -248,7 +254,6 @@ export default function DisassemblyPage() {
 										<Input
 											type="number"
 											min={0}
-											max={canalProduct.stock_pieces}
 											value={batchNational}
 											onChange={(e) => setBatchNational(Number(e.target.value))}
 										/>
@@ -259,7 +264,6 @@ export default function DisassemblyPage() {
 										<Input
 											type="number"
 											min={0}
-											max={canalProduct.stock_pieces}
 											value={batchAmerican}
 											onChange={(e) => setBatchAmerican(Number(e.target.value))}
 										/>
@@ -270,7 +274,6 @@ export default function DisassemblyPage() {
 										<Input
 											type="number"
 											min={0}
-											max={canalProduct.stock_pieces}
 											value={batchPolynesian}
 											onChange={(e) =>
 												setBatchPolynesian(Number(e.target.value))

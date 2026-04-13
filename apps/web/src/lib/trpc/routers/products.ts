@@ -340,6 +340,7 @@ export const productsRouter = router({
 				quantityToProcess: z.number().int().positive(),
 				transformationType: z.string().min(1),
 				realWeightMode: z.boolean().optional(),
+				entryMode: z.boolean().optional(),
 			}),
 		)
 		.output(z.object({ success: z.boolean() }))
@@ -356,8 +357,10 @@ export const productsRouter = router({
 				quantityToProcess,
 				transformationType,
 				realWeightMode,
+				entryMode,
 			} = input;
 			const useRealWeightMode = realWeightMode !== false;
+			const useEntryMode = entryMode === true;
 
 			const normalizePieces = (value: number) =>
 				value > 50 ? value / 1000 : value;
@@ -381,7 +384,7 @@ export const productsRouter = router({
 					});
 				}
 
-				if (parent.stock_pieces < quantityToProcess) {
+				if (!useEntryMode && parent.stock_pieces < quantityToProcess) {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
 						message: "Stock de piezas insuficiente",
@@ -399,25 +402,25 @@ export const productsRouter = router({
 						: 0
 					: quantityToProcess * parentAvgWeight;
 
-				// 3. Descontar Padre
-				await tx
-					.update(products)
-					.set({
-						stock_pieces: parent.stock_pieces - quantityToProcess,
-						stock_kg: (stockKg - kgToRemove).toFixed(3),
-						in_stock: (currentInStockKg - kgToRemove).toFixed(3),
-					})
-					.where(eq(products.id, parentProductId));
+				if (!useEntryMode) {
+					await tx
+						.update(products)
+						.set({
+							stock_pieces: parent.stock_pieces - quantityToProcess,
+							stock_kg: (stockKg - kgToRemove).toFixed(3),
+							in_stock: (currentInStockKg - kgToRemove).toFixed(3),
+						})
+						.where(eq(products.id, parentProductId));
 
-				// 4. Registrar Transacción Padre
-				await tx.insert(inventoryTransactions).values({
-					product_id: parentProductId,
-					quantity_change_pieces: -quantityToProcess,
-					quantity_change_kg:
-						kgToRemove !== 0 ? (-kgToRemove).toFixed(3) : null,
-					transaction_type: "DESPIECE",
-					notes: `Salida por despiece ${transformationType}`,
-				});
+					await tx.insert(inventoryTransactions).values({
+						product_id: parentProductId,
+						quantity_change_pieces: -quantityToProcess,
+						quantity_change_kg:
+							kgToRemove !== 0 ? (-kgToRemove).toFixed(3) : null,
+						transaction_type: "DESPIECE",
+						notes: `Salida por despiece ${transformationType}`,
+					});
+				}
 
 				// 5. Obtener Recetas
 				const typesToApply =
@@ -485,7 +488,9 @@ export const productsRouter = router({
 								: childKgToAdd.toFixed(3),
 							transaction_type: "DESPIECE",
 							reference_id: parentProductId,
-							notes: `Entrada por despiece ${transformationType} de ${parent.name}`,
+							notes: useEntryMode
+								? `Entrada por despiece (recepción) ${transformationType} - ${parent.name}`
+								: `Entrada por despiece ${transformationType} de ${parent.name}`,
 						});
 					}
 				}
