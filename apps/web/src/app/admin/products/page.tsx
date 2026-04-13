@@ -106,8 +106,20 @@ export default function Products() {
 			key: "price",
 			header: tc("price"),
 			sortable: true,
-			accessorFn: (row) => Number(row.price_per_kg ?? 0),
-			render: (row) => formatCurrency(Number(row.price_per_kg ?? 0), locale),
+			accessorFn: (row) => {
+				const override = priceOverrides.get(row.id);
+				const price = row.is_sellable_by_weight
+					? override?.kg ?? Number(row.price_per_kg ?? 0)
+					: override?.piece ?? Number(row.price_per_piece ?? 0);
+				return Number(price) || 0;
+			},
+			render: (row) => {
+				const override = priceOverrides.get(row.id);
+				const price = row.is_sellable_by_weight
+					? override?.kg ?? Number(row.price_per_kg ?? 0)
+					: override?.piece ?? Number(row.price_per_piece ?? 0);
+				return formatCurrency((Number(price) || 0) * 100, locale);
+			},
 		},
 		{ key: "in_stock", header: t("stock"), sortable: true },
 	];
@@ -142,6 +154,7 @@ export default function Products() {
 	const [parentFilter, setParentFilter] = useState("all");
 	const [stockFilter, setStockFilter] = useState("all");
 	const [hierarchyParentId, setHierarchyParentId] = useState("all");
+	const [priceListView, setPriceListView] = useState<string>("base");
 
 	useEffect(() => {
 		if (typeFilter !== "child" && parentFilter !== "all") {
@@ -159,6 +172,34 @@ export default function Products() {
 	const { data: parentProducts = [] } = useQuery(
 		trpc.products.list.queryOptions({ isParent: true }),
 	);
+	const { data: priceLists = [] } = useQuery(
+		trpc.inventory.priceListsList.queryOptions(),
+	);
+
+	const priceListItemsQuery = useQuery({
+		...trpc.inventory.priceListItemsByList.queryOptions({
+			priceListId: Number(priceListView),
+		}),
+		enabled: priceListView !== "base",
+	});
+
+	const priceOverrides = useMemo(() => {
+		const map = new Map<number, { kg?: number; piece?: number }>();
+		if (priceListView === "base") return map;
+		for (const item of priceListItemsQuery.data ?? []) {
+			const kg =
+				item.unit_price_per_kg !== null ? Number(item.unit_price_per_kg) : null;
+			const piece =
+				item.unit_price_per_piece !== null
+					? Number(item.unit_price_per_piece)
+					: null;
+			map.set(item.product_id, {
+				kg: kg !== null && Number.isFinite(kg) ? kg : undefined,
+				piece: piece !== null && Number.isFinite(piece) ? piece : undefined,
+			});
+		}
+		return map;
+	}, [priceListItemsQuery.data, priceListView]);
 
 	const listInput = useMemo(() => {
 		if (hierarchyParentId !== "all") {
@@ -227,6 +268,12 @@ export default function Products() {
 		});
 		return opts;
 	}, [parentProducts, tc]);
+
+	const priceListOptions = useMemo<FilterOption[]>(() => {
+		const opts: FilterOption[] = [{ label: "Precio base", value: "base" }];
+		priceLists.forEach((l) => opts.push({ label: l.name, value: String(l.id) }));
+		return opts;
+	}, [priceLists]);
 
 	const isEditing = editingId !== null;
 	const invalidateKeys = trpc.products.list.queryOptions().queryKey;
@@ -301,7 +348,7 @@ export default function Products() {
 	const priceImportMutation = useMutation(
 		trpc.inventory.priceListImportCsv.mutationOptions({
 			onSuccess: (res) => {
-				toast.success(`Importado: ${res.matched}/${res.uniqueAliases} aliases`);
+				toast.success(`Importado: ${res.matched}/${res.uniqueAliases} productos`);
 				if (res.unmatchedAliases.length) {
 					toast.warning(
 						`Sin match: ${res.unmatchedAliases.slice(0, 8).join(", ")}${
@@ -461,6 +508,11 @@ export default function Products() {
 							typeFilter === "child"
 								? [
 										{
+											options: priceListOptions,
+											value: priceListView,
+											onChange: setPriceListView,
+										},
+										{
 											options: typeFilterOptions,
 											value: typeFilter,
 											onChange: setTypeFilter,
@@ -477,6 +529,11 @@ export default function Products() {
 										},
 									]
 								: [
+										{
+											options: priceListOptions,
+											value: priceListView,
+											onChange: setPriceListView,
+										},
 										{
 											options: typeFilterOptions,
 											value: typeFilter,
