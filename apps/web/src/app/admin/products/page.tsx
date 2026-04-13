@@ -134,7 +134,7 @@ export default function Products() {
 		{
 			key: "price",
 			header: tc("price"),
-			getValue: (p) => (Number(p.price_per_kg ?? 0) / 100).toFixed(2),
+			getValue: (p) => Number(p.price_per_kg ?? 0).toFixed(2),
 		},
 		{ key: "in_stock", header: t("stock"), getValue: (p) => p.in_stock },
 		{
@@ -327,7 +327,7 @@ export default function Products() {
 			const payload = {
 				name: value.name,
 				description: value.description || undefined,
-				price_per_kg: Math.round(value.price_per_kg * 100),
+				price_per_kg: value.price_per_kg,
 				in_stock: value.in_stock,
 				is_parent_product: value.is_parent_product,
 				ncm: value.ncm || undefined,
@@ -395,7 +395,7 @@ export default function Products() {
 		form.reset();
 		form.setFieldValue("name", p.name);
 		form.setFieldValue("description", p.description ?? "");
-		form.setFieldValue("price_per_kg", Number(p.price_per_kg ?? 0) / 100);
+		form.setFieldValue("price_per_kg", Number(p.price_per_kg ?? 0));
 		form.setFieldValue("in_stock", p.in_stock);
 		form.setFieldValue("is_parent_product", p.is_parent_product);
 		form.setFieldValue("ncm", p.ncm ?? "");
