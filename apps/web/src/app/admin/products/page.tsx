@@ -32,7 +32,7 @@ import {
 } from "@finopenpos/ui/components/select";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useForm } from "@tanstack/react-form";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
 	FilePenIcon,
 	PackageIcon,
