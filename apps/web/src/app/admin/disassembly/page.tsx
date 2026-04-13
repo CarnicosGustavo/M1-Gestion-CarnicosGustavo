@@ -1,222 +1,557 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { Button } from "@finopenpos/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@finopenpos/ui/components/card";
-import { ScissorsIcon, PackageIcon, CheckCircleIcon, ArrowRightIcon } from "lucide-react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@finopenpos/ui/components/select";
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@finopenpos/ui/components/card";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
-import { useTRPC } from "@/lib/trpc/client";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@finopenpos/ui/components/select";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircleIcon, PackageIcon, ScissorsIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useTRPC } from "@/lib/trpc/client";
+import type { RouterOutputs } from "@/lib/trpc/router";
 
-const cuttingStyles = [
-  "DESPIECE_NACIONAL",
-  "DESPIECE_AMERICANO",
-  "DESPIECE_POLINESIO",
-  "DESPIECE_PIERNA",
-  "DESPIECE_CABEZA",
-  "DESPIECE_CUERO",
-  "DESPIECE_ESPALDILLA",
-  "DESPIECE_COSTILLAR",
-];
+const cuttingStyles = ["BASE", "NACIONAL", "AMERICANO", "POLINESIO"] as const;
+
+type Transformation = RouterOutputs["products"]["getTransformations"][number];
 
 export default function DisassemblyPage() {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-  const t = useTranslations("pos");
-  const tc = useTranslations("common");
+	const trpc = useTRPC();
+	const queryClient = useQueryClient();
+	const t = useTranslations("pos");
+	const tc = useTranslations("common");
 
-  const [isClient, setIsClient] = useState(false);
-  const [selectedParentId, setSelectedParentId] = useState<string>("");
-  const [selectedStyle, setSelectedStyle] = useState<string>("");
-  const [quantity, setQuantity] = useState<number>(1);
+	const [isClient, setIsClient] = useState(false);
+	const [batchNational, setBatchNational] = useState<number>(0);
+	const [batchAmerican, setBatchAmerican] = useState<number>(0);
+	const [batchPolynesian, setBatchPolynesian] = useState<number>(0);
+	const [realWeightMode, setRealWeightMode] = useState(true);
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+	const [selectedPrimaryParentId, setSelectedPrimaryParentId] =
+		useState<string>("");
+	const [selectedPrimaryStyle, setSelectedPrimaryStyle] =
+		useState<(typeof cuttingStyles)[number]>("BASE");
+	const [primaryQuantity, setPrimaryQuantity] = useState<number>(1);
 
-  const { data: products = [], isLoading: isLoadingProducts } = useQuery(
-    trpc.products.list.queryOptions()
-  );
+	useEffect(() => {
+		setIsClient(true);
+	}, []);
 
-  const parentProducts = useMemo(() => 
-    products.filter(p => p.is_parent_product), 
-  [products]);
+	const { data: products = [], isLoading: isLoadingProducts } = useQuery(
+		trpc.products.list.queryOptions(),
+	);
 
-  const selectedParent = useMemo(() => 
-    parentProducts.find(p => p.id === Number(selectedParentId)),
-  [parentProducts, selectedParentId]);
+	const parentProducts = useMemo(
+		() => products.filter((p) => p.is_parent_product),
+		[products],
+	);
 
-  const transformationsQueryOptions = trpc.products.getTransformations.queryOptions({
-    parentProductId: Number(selectedParentId || 0),
-    transformationType: selectedStyle,
-  });
+	const canalProduct = useMemo(() => {
+		const lower = (s: string) => s.toLowerCase();
+		return parentProducts.find((p) => lower(p.name).includes("canal")) ?? null;
+	}, [parentProducts]);
 
-  const { data: transformations = [], isLoading: isLoadingTransformations } = useQuery({
-    ...transformationsQueryOptions,
-    enabled: !!selectedParentId && !!selectedStyle,
-  });
+	const primaryParentProducts = useMemo(() => {
+		if (canalProduct) {
+			const byHierarchy = parentProducts.filter(
+				(p) => p.parent_product_id === canalProduct.id,
+			);
+			if (byHierarchy.length) return byHierarchy;
+		}
 
-  const disassemblyMutation = useMutation(
-    trpc.products.processDisassembly.mutationOptions({
-      onSuccess: () => {
-        toast.success(t("disassemblySuccess"));
-        setSelectedParentId("");
-        setSelectedStyle("");
-        setQuantity(1);
-        queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
-      },
-      onError: (error) => {
-        toast.error(t("disassemblyError") + ": " + error.message);
-      },
-    })
-  );
+		const lower = (s: string) => s.toLowerCase();
+		const fallback = parentProducts.filter((p) => {
+			const n = lower(p.name);
+			if (canalProduct && p.id === canalProduct.id) return false;
+			return (
+				n.includes("pierna") ||
+				n.includes("espaldilla") ||
+				n.includes("lomo") ||
+				n.includes("espilomo")
+			);
+		});
+		if (fallback.length) return fallback;
 
-  const expectedPieces = (yieldQuantityPieces: unknown) => {
-    const raw = Number(yieldQuantityPieces);
-    const normalized = raw > 50 ? raw / 1000 : raw;
-    return Math.round(normalized * quantity);
-  };
+		return parentProducts.filter(
+			(p) => !canalProduct || p.id !== canalProduct.id,
+		);
+	}, [canalProduct, parentProducts]);
 
-  const expectedKg = (yieldWeightRatio: unknown) => {
-    const parentWeight = selectedParent ? Number(selectedParent.stock_kg) : 0;
-    const parentPieces = selectedParent ? selectedParent.stock_pieces : 0;
-    const avgWeight = parentPieces > 0 ? parentWeight / parentPieces : 0;
-    const raw = Number(yieldWeightRatio);
-    const normalized = raw > 1 ? raw / 1000 : raw;
-    return normalized * avgWeight * quantity;
-  };
+	const selectedPrimaryParent = useMemo(() => {
+		return (
+			primaryParentProducts.find(
+				(p) => p.id === Number(selectedPrimaryParentId),
+			) ?? null
+		);
+	}, [primaryParentProducts, selectedPrimaryParentId]);
 
-  const handleExecute = () => {
-    if (!selectedParentId || !selectedStyle || quantity <= 0) return;
-    disassemblyMutation.mutate({
-      parentProductId: Number(selectedParentId),
-      quantityToProcess: quantity,
-      transformationType: selectedStyle as any,
-    });
-  };
+	const canalNational = useQuery({
+		...trpc.products.getTransformations.queryOptions({
+			parentProductId: canalProduct?.id ?? 0,
+			transformationType: "NACIONAL",
+		}),
+		enabled: !!canalProduct,
+	});
+	const canalAmerican = useQuery({
+		...trpc.products.getTransformations.queryOptions({
+			parentProductId: canalProduct?.id ?? 0,
+			transformationType: "AMERICANO",
+		}),
+		enabled: !!canalProduct,
+	});
+	const canalPolynesian = useQuery({
+		...trpc.products.getTransformations.queryOptions({
+			parentProductId: canalProduct?.id ?? 0,
+			transformationType: "POLINESIO",
+		}),
+		enabled: !!canalProduct,
+	});
 
-  if (!isClient || isLoadingProducts) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-[200px] w-full" />
-        <Skeleton className="h-[400px] w-full" />
-      </div>
-    );
-  }
+	const primaryTransformations = useQuery({
+		...trpc.products.getTransformations.queryOptions({
+			parentProductId: Number(selectedPrimaryParentId || 0),
+			transformationType: selectedPrimaryStyle,
+		}),
+		enabled: !!selectedPrimaryParentId,
+	});
 
-  return (
-    <div className="flex flex-col gap-6 max-w-5xl mx-auto">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <ScissorsIcon className="w-6 h-6 text-primary" />
-            <CardTitle>{t("disassembly")}</CardTitle>
-          </div>
-          <CardDescription>{t("disassemblyDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <Label>{t("parentProduct")}</Label>
-              <Select value={selectedParentId} onValueChange={setSelectedParentId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={tc("search")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {parentProducts.map(p => (
-                    <SelectItem key={p.id} value={p.id.toString()}>
-                      {p.name} ({p.stock_pieces} {t("pieces")})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+	const disassemblyMutation = useMutation(
+		trpc.products.processDisassembly.mutationOptions({
+			onSuccess: () => {
+				toast.success(t("disassemblySuccess"));
+				setBatchNational(0);
+				setBatchAmerican(0);
+				setBatchPolynesian(0);
+				setSelectedPrimaryParentId("");
+				setSelectedPrimaryStyle("BASE");
+				setPrimaryQuantity(1);
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.list.queryKey(),
+				});
+			},
+			onError: (error) => {
+				toast.error(`${t("disassemblyError")}: ${error.message}`);
+			},
+		}),
+	);
 
-            <div className="space-y-2">
-              <Label>{t("cuttingStyle")}</Label>
-              <Select value={selectedStyle} onValueChange={setSelectedStyle}>
-                <SelectTrigger>
-                  <SelectValue placeholder={tc("all")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {cuttingStyles.map(style => (
-                    <SelectItem key={style} value={style}>
-                      {style.replace("DESPIECE_", "")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+	const expectedPieces = (yieldQuantityPieces: unknown, qty: number) => {
+		const raw = Number(yieldQuantityPieces);
+		const normalized = raw > 50 ? raw / 1000 : raw;
+		return Math.round(normalized * qty);
+	};
 
-            <div className="space-y-2">
-              <Label>{t("quantityToProcess")}</Label>
-              <Input 
-                type="number" 
-                min={1} 
-                max={selectedParent?.stock_pieces || 1}
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-              />
-            </div>
-          </div>
+	const executeCanalBatch = async () => {
+		if (!canalProduct) return;
 
-          {transformations.length > 0 && (
-            <div className="space-y-4 pt-4 border-t">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium flex items-center gap-2">
-                  <PackageIcon className="w-5 h-5" />
-                  {t("previewDisassembly")}
-                </h3>
-              </div>
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
-                    <tr>
-                      <th className="p-3 text-left font-medium">{t("childProduct")}</th>
-                      <th className="p-3 text-left font-medium">{t("expectedQty")}</th>
-                      <th className="p-3 text-left font-medium">{t("expectedWeight")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transformations.map((row: any) => (
-                      <tr key={row.id} className="border-t">
-                        <td className="p-3">{row.childProduct?.name ?? "-"}</td>
-                        <td className="p-3">{expectedPieces(row.yield_quantity_pieces)}</td>
-                        <td className="p-3">{expectedKg(row.yield_weight_ratio).toFixed(3)} kg</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex justify-end pt-4">
-                <Button 
-                  size="lg" 
-                  onClick={handleExecute}
-                  disabled={disassemblyMutation.isPending || quantity > (selectedParent?.stock_pieces || 0)}
-                >
-                  {disassemblyMutation.isPending ? tc("loading") : (
-                    <>
-                      <CheckCircleIcon className="w-5 h-5 mr-2" />
-                      {t("executeDisassembly")}
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
+		const steps: Array<{ qty: number; style: (typeof cuttingStyles)[number] }> =
+			[
+				{ qty: batchNational, style: "NACIONAL" },
+				{ qty: batchAmerican, style: "AMERICANO" },
+				{ qty: batchPolynesian, style: "POLINESIO" },
+			];
+
+		for (const s of steps) {
+			if (s.qty <= 0) continue;
+			await disassemblyMutation.mutateAsync({
+				parentProductId: canalProduct.id,
+				quantityToProcess: s.qty,
+				transformationType: s.style,
+				realWeightMode,
+			});
+		}
+	};
+
+	const executePrimaryDisassembly = () => {
+		if (!selectedPrimaryParent || primaryQuantity <= 0) return;
+		disassemblyMutation.mutate({
+			parentProductId: selectedPrimaryParent.id,
+			quantityToProcess: primaryQuantity,
+			transformationType: selectedPrimaryStyle,
+			realWeightMode,
+		});
+	};
+
+	if (!isClient || isLoadingProducts) {
+		return (
+			<div className="space-y-6">
+				<Skeleton className="h-[200px] w-full" />
+				<Skeleton className="h-[400px] w-full" />
+			</div>
+		);
+	}
+
+	return (
+		<div className="mx-auto flex max-w-5xl flex-col gap-6">
+			<Card>
+				<CardHeader>
+					<div className="flex items-center gap-2">
+						<ScissorsIcon className="h-6 w-6 text-primary" />
+						<CardTitle>{t("disassembly")}</CardTitle>
+					</div>
+					<CardDescription>{t("disassemblyDescription")}</CardDescription>
+				</CardHeader>
+				<CardContent className="space-y-6">
+					<div className="space-y-4">
+						<div className="flex items-center justify-end">
+							<Button
+								type="button"
+								variant={realWeightMode ? "default" : "outline"}
+								size="sm"
+								onClick={() => setRealWeightMode((v) => !v)}
+							>
+								{realWeightMode
+									? "Peso real (sin estimar kg)"
+									: "Modo estimado"}
+							</Button>
+						</div>
+						<div className="flex items-center justify-between">
+							<h3 className="flex items-center gap-2 font-medium text-lg">
+								<PackageIcon className="h-5 w-5" />
+								Despiece masivo de canal
+							</h3>
+						</div>
+
+						{!canalProduct ? (
+							<div className="text-muted-foreground text-sm">
+								No se encontró un producto padre que contenga “canal” en el
+								nombre.
+							</div>
+						) : (
+							<>
+								<div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+									<div className="space-y-2">
+										<Label>Canal (stock)</Label>
+										<div className="rounded-md border px-3 py-2 text-sm">
+											{canalProduct.name} ({canalProduct.stock_pieces}{" "}
+											{t("pieces")})
+										</div>
+									</div>
+
+									<div className="space-y-2">
+										<Label>Cantidad Nacional</Label>
+										<Input
+											type="number"
+											min={0}
+											max={canalProduct.stock_pieces}
+											value={batchNational}
+											onChange={(e) => setBatchNational(Number(e.target.value))}
+										/>
+									</div>
+
+									<div className="space-y-2">
+										<Label>Cantidad Americano</Label>
+										<Input
+											type="number"
+											min={0}
+											max={canalProduct.stock_pieces}
+											value={batchAmerican}
+											onChange={(e) => setBatchAmerican(Number(e.target.value))}
+										/>
+									</div>
+
+									<div className="space-y-2 md:col-span-3">
+										<Label>Cantidad Polinesio</Label>
+										<Input
+											type="number"
+											min={0}
+											max={canalProduct.stock_pieces}
+											value={batchPolynesian}
+											onChange={(e) =>
+												setBatchPolynesian(Number(e.target.value))
+											}
+										/>
+									</div>
+								</div>
+
+								<div className="space-y-4 border-t pt-4">
+									{batchNational > 0 && canalNational.data?.length ? (
+										<div className="overflow-x-auto rounded-md border">
+											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
+												Vista previa Nacional
+											</div>
+											<table className="w-full text-sm">
+												<thead className="bg-muted/50">
+													<tr>
+														<th className="p-3 text-left font-medium">
+															{t("childProduct")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedQty")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedWeight")}
+														</th>
+													</tr>
+												</thead>
+												<tbody>
+													{canalNational.data.map((row: Transformation) => (
+														<tr key={row.id} className="border-t">
+															<td className="p-3">
+																{row.childProduct?.name ?? "-"}
+															</td>
+															<td className="p-3">
+																{expectedPieces(
+																	row.yield_quantity_pieces,
+																	batchNational,
+																)}
+															</td>
+															<td className="p-3">
+																{realWeightMode ? "Pendiente de pesaje" : "-"}
+															</td>
+														</tr>
+													))}
+												</tbody>
+											</table>
+										</div>
+									) : null}
+
+									{batchAmerican > 0 && canalAmerican.data?.length ? (
+										<div className="overflow-x-auto rounded-md border">
+											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
+												Vista previa Americano
+											</div>
+											<table className="w-full text-sm">
+												<thead className="bg-muted/50">
+													<tr>
+														<th className="p-3 text-left font-medium">
+															{t("childProduct")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedQty")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedWeight")}
+														</th>
+													</tr>
+												</thead>
+												<tbody>
+													{canalAmerican.data.map((row: Transformation) => (
+														<tr key={row.id} className="border-t">
+															<td className="p-3">
+																{row.childProduct?.name ?? "-"}
+															</td>
+															<td className="p-3">
+																{expectedPieces(
+																	row.yield_quantity_pieces,
+																	batchAmerican,
+																)}
+															</td>
+															<td className="p-3">
+																{realWeightMode ? "Pendiente de pesaje" : "-"}
+															</td>
+														</tr>
+													))}
+												</tbody>
+											</table>
+										</div>
+									) : null}
+
+									{batchPolynesian > 0 && canalPolynesian.data?.length ? (
+										<div className="overflow-x-auto rounded-md border">
+											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
+												Vista previa Polinesio
+											</div>
+											<table className="w-full text-sm">
+												<thead className="bg-muted/50">
+													<tr>
+														<th className="p-3 text-left font-medium">
+															{t("childProduct")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedQty")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedWeight")}
+														</th>
+													</tr>
+												</thead>
+												<tbody>
+													{canalPolynesian.data.map((row: Transformation) => (
+														<tr key={row.id} className="border-t">
+															<td className="p-3">
+																{row.childProduct?.name ?? "-"}
+															</td>
+															<td className="p-3">
+																{expectedPieces(
+																	row.yield_quantity_pieces,
+																	batchPolynesian,
+																)}
+															</td>
+															<td className="p-3">
+																{realWeightMode ? "Pendiente de pesaje" : "-"}
+															</td>
+														</tr>
+													))}
+												</tbody>
+											</table>
+										</div>
+									) : null}
+
+									<div className="flex justify-end pt-4">
+										<Button
+											size="lg"
+											onClick={executeCanalBatch}
+											disabled={
+												disassemblyMutation.isPending ||
+												batchNational + batchAmerican + batchPolynesian <= 0
+											}
+										>
+											{disassemblyMutation.isPending ? (
+												tc("loading")
+											) : (
+												<>
+													<CheckCircleIcon className="mr-2 h-5 w-5" />
+													Procesar lote
+												</>
+											)}
+										</Button>
+									</div>
+								</div>
+							</>
+						)}
+					</div>
+
+					<div className="space-y-4 border-t pt-6">
+						<div className="flex items-center justify-between">
+							<h3 className="flex items-center gap-2 font-medium text-lg">
+								<PackageIcon className="h-5 w-5" />
+								Despiece de pieza primaria
+							</h3>
+						</div>
+
+						<div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+							<div className="space-y-2">
+								<Label>{t("parentProduct")}</Label>
+								<Select
+									value={selectedPrimaryParentId}
+									onValueChange={setSelectedPrimaryParentId}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder={tc("search")} />
+									</SelectTrigger>
+									<SelectContent>
+										{primaryParentProducts.map((p) => (
+											<SelectItem key={p.id} value={p.id.toString()}>
+												{p.name} ({p.stock_pieces} {t("pieces")})
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+
+							<div className="space-y-2">
+								<Label>{t("cuttingStyle")}</Label>
+								<Select
+									value={selectedPrimaryStyle}
+									onValueChange={(v) =>
+										setSelectedPrimaryStyle(v as (typeof cuttingStyles)[number])
+									}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder={tc("all")} />
+									</SelectTrigger>
+									<SelectContent>
+										{cuttingStyles.map((style) => (
+											<SelectItem key={style} value={style}>
+												{style}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+
+							<div className="space-y-2">
+								<Label>{t("quantityToProcess")}</Label>
+								<Input
+									type="number"
+									min={1}
+									max={selectedPrimaryParent?.stock_pieces || 1}
+									value={primaryQuantity}
+									onChange={(e) => setPrimaryQuantity(Number(e.target.value))}
+								/>
+							</div>
+						</div>
+
+						{selectedPrimaryParent && primaryTransformations.data?.length ? (
+							<div className="space-y-4 border-t pt-4">
+								<div className="overflow-x-auto rounded-md border">
+									<table className="w-full text-sm">
+										<thead className="bg-muted/50">
+											<tr>
+												<th className="p-3 text-left font-medium">
+													{t("childProduct")}
+												</th>
+												<th className="p-3 text-left font-medium">
+													{t("expectedQty")}
+												</th>
+												<th className="p-3 text-left font-medium">
+													{t("expectedWeight")}
+												</th>
+											</tr>
+										</thead>
+										<tbody>
+											{primaryTransformations.data.map(
+												(row: Transformation) => (
+													<tr key={row.id} className="border-t">
+														<td className="p-3">
+															{row.childProduct?.name ?? "-"}
+														</td>
+														<td className="p-3">
+															{expectedPieces(
+																row.yield_quantity_pieces,
+																primaryQuantity,
+															)}
+														</td>
+														<td className="p-3">
+															{realWeightMode ? "Pendiente de pesaje" : "-"}
+														</td>
+													</tr>
+												),
+											)}
+										</tbody>
+									</table>
+								</div>
+								<div className="flex justify-end pt-4">
+									<Button
+										size="lg"
+										onClick={executePrimaryDisassembly}
+										disabled={
+											disassemblyMutation.isPending ||
+											primaryQuantity >
+												(selectedPrimaryParent.stock_pieces || 0)
+										}
+									>
+										{disassemblyMutation.isPending ? (
+											tc("loading")
+										) : (
+											<>
+												<CheckCircleIcon className="mr-2 h-5 w-5" />
+												{t("executeDisassembly")}
+											</>
+										)}
+									</Button>
+								</div>
+							</div>
+						) : null}
+					</div>
+				</CardContent>
+			</Card>
+		</div>
+	);
 }

@@ -1,374 +1,556 @@
-import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
-import { db } from "@/lib/db";
-import { products, productTransformations, inventoryTransactions } from "@/lib/db/schema";
-import { eq, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { z } from "zod/v4";
+import { db } from "@/lib/db";
+import {
+	inventoryTransactions,
+	products,
+	productTransformations,
+} from "@/lib/db/schema";
+import { protectedProcedure, router } from "../init";
+
+const VALIDATION_USER_UID = "yT6H0ck1XlghSQWBZlDDXWUHWzDTbPCN";
 
 const productSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  description: z.string().nullable(),
-  price_per_kg: z.union([z.number(), z.string()]).nullable(),
-  unit: z.string().nullable(),
-  active: z.boolean(),
-  sort_order: z.number().nullable(),
-  in_stock: z.union([z.number(), z.string()]),
-  category: z.string().nullable(),
-  user_uid: z.string(),
-  ncm: z.string().nullable(),
-  cfop: z.string().nullable(),
-  icms_cst: z.string().nullable(),
-  pis_cst: z.string().nullable(),
-  cofins_cst: z.string().nullable(),
-  unit_of_measure: z.string().nullable(),
-  // New Inventory Dual Fields
-  stock_pieces: z.number(),
-  stock_kg: z.union([z.number(), z.string()]),
-  is_parent_product: z.boolean(),
-  is_sellable_by_unit: z.boolean(),
-  is_sellable_by_weight: z.boolean(),
-  default_sale_unit: z.string(),
-  price_per_piece: z.union([z.number(), z.string()]).nullable(),
-  created_at: z.date().nullable(),
-  updated_at: z.date().nullable(),
+	id: z.number(),
+	name: z.string(),
+	description: z.string().nullable(),
+	price_per_kg: z.union([z.number(), z.string()]).nullable(),
+	unit: z.string().nullable(),
+	active: z.boolean(),
+	sort_order: z.number().nullable(),
+	in_stock: z.union([z.number(), z.string()]),
+	category: z.string().nullable(),
+	user_uid: z.string(),
+	ncm: z.string().nullable(),
+	cfop: z.string().nullable(),
+	icms_cst: z.string().nullable(),
+	pis_cst: z.string().nullable(),
+	cofins_cst: z.string().nullable(),
+	unit_of_measure: z.string().nullable(),
+	// New Inventory Dual Fields
+	stock_pieces: z.number(),
+	stock_kg: z.union([z.number(), z.string()]),
+	is_parent_product: z.boolean(),
+	parent_product_id: z.number().nullable(),
+	is_sellable_by_unit: z.boolean(),
+	is_sellable_by_weight: z.boolean(),
+	default_sale_unit: z.string(),
+	price_per_piece: z.union([z.number(), z.string()]).nullable(),
+	created_at: z.date().nullable(),
+	updated_at: z.date().nullable(),
 });
 
 const productWithParentsSchema = productSchema.extend({
-  parent_product_ids: z.array(z.number()),
+	parent_product_ids: z.array(z.number()),
 });
 
 const productTransformationSchema = z.object({
-  id: z.number(),
-  parent_product_id: z.number(),
-  child_product_id: z.number(),
-  yield_quantity_pieces: z.union([z.string(), z.number()]),
-  yield_weight_ratio: z.union([z.string(), z.number()]),
-  transformation_type: z.string(),
-  is_active: z.boolean(),
-  created_at: z.date().nullable().optional(),
-  updated_at: z.date().nullable().optional(),
-  childProduct: z
-    .object({
-      id: z.number(),
-      name: z.string(),
-      category: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
+	id: z.number(),
+	parent_product_id: z.number(),
+	child_product_id: z.number(),
+	yield_quantity_pieces: z.union([z.string(), z.number()]),
+	yield_weight_ratio: z.union([z.string(), z.number()]),
+	transformation_type: z.string(),
+	is_active: z.boolean(),
+	created_at: z.date().nullable().optional(),
+	updated_at: z.date().nullable().optional(),
+	childProduct: z
+		.object({
+			id: z.number(),
+			name: z.string(),
+			category: z.string().nullable(),
+		})
+		.nullable()
+		.optional(),
 });
 
 export const productsRouter = router({
-  list: protectedProcedure
-    .meta({ openapi: { method: "GET", path: "/products", tags: ["Products"], summary: "List all products" } })
-    .input(
-      z
-        .object({
-          isParent: z.boolean().optional(),
-          parentProductId: z.number().optional(),
-        })
-        .optional()
-    )
-    .output(z.array(productWithParentsSchema))
-    .query(async ({ ctx, input }) => {
-      const uid = ctx.user.id;
-      const rows = await db
-        .select({
-          product: products,
-          parentId: productTransformations.parent_product_id,
-        })
-        .from(products)
-        .leftJoin(
-          productTransformations,
-          and(
-            eq(products.id, productTransformations.child_product_id),
-            eq(productTransformations.is_active, true)
+	list: protectedProcedure
+		.meta({
+			openapi: {
+				method: "GET",
+				path: "/products",
+				tags: ["Products"],
+				summary: "List all products",
+			},
+		})
+		.input(
+			z
+				.object({
+					isParent: z.boolean().optional(),
+					parentProductId: z.number().optional(),
+					includeDescendants: z.boolean().optional(),
+					includeSelf: z.boolean().optional(),
+				})
+				.optional(),
+		)
+		.output(z.array(productWithParentsSchema))
+		.query(async ({ ctx, input }) => {
+			if (ctx.user.id !== VALIDATION_USER_UID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Acceso no autorizado",
+				});
+			}
+			const uid = VALIDATION_USER_UID;
+
+			const includeDescendants = input?.includeDescendants === true;
+			const includeSelf = input?.includeSelf === true;
+
+			let familyIds: number[] | null = null;
+			if (input?.parentProductId !== undefined && includeDescendants) {
+				type ExecuteResult =
+					| { rows?: Array<{ id: unknown }> }
+					| Array<{ id: unknown }>;
+				const res = (await db.execute(sql`
+          with recursive descendants(id) as (
+            select id
+            from products
+            where id = ${input.parentProductId}
+              and user_uid = ${uid}
+            union
+            select p.id
+            from products p
+            join descendants d on p.parent_product_id = d.id
+            where p.user_uid = ${uid}
+            union
+            select child.id
+            from product_transformations pt
+            join descendants d on pt.parent_product_id = d.id
+            join products child on child.id = pt.child_product_id
+            where pt.is_active = true
+              and child.user_uid = ${uid}
           )
-        )
-        .where(
-          and(
-            eq(products.user_uid, uid),
-            input?.isParent !== undefined ? eq(products.is_parent_product, input.isParent) : undefined,
-            input?.parentProductId !== undefined
-              ? eq(productTransformations.parent_product_id, input.parentProductId)
-              : undefined
-          )
-        );
+          select id from descendants
+        `)) as unknown as ExecuteResult;
 
-      const byId = new Map<number, (typeof products.$inferSelect & { parent_product_ids: number[] })>();
+				const rows = Array.isArray(res) ? res : (res.rows ?? []);
+				familyIds = rows
+					.map((r) => Number(r.id))
+					.filter((n) => Number.isFinite(n));
+				if (!includeSelf)
+					familyIds = familyIds.filter((id) => id !== input.parentProductId);
+				familyIds = Array.from(new Set(familyIds));
+			}
 
-      for (const row of rows) {
-        const p = row.product;
-        const existing = byId.get(p.id);
+			if (familyIds && familyIds.length === 0) {
+				return [];
+			}
 
-        if (existing) {
-          if (row.parentId !== null && !existing.parent_product_ids.includes(row.parentId)) {
-            existing.parent_product_ids.push(row.parentId);
-          }
-          continue;
-        }
+			const rows = await db
+				.select()
+				.from(products)
+				.where(
+					and(
+						eq(products.user_uid, uid),
+						input?.isParent !== undefined
+							? eq(products.is_parent_product, input.isParent)
+							: undefined,
+						familyIds
+							? inArray(products.id, familyIds)
+							: input?.parentProductId !== undefined
+								? includeSelf
+									? or(
+											eq(products.id, input.parentProductId),
+											eq(products.parent_product_id, input.parentProductId),
+										)
+									: eq(products.parent_product_id, input.parentProductId)
+								: undefined,
+					),
+				);
 
-        byId.set(p.id, {
-          ...p,
-          parent_product_ids: row.parentId === null ? [] : [row.parentId],
-        });
-      }
+			return rows.map((p) => ({
+				...p,
+				parent_product_ids:
+					p.parent_product_id === null ? [] : [p.parent_product_id],
+			}));
+		}),
 
-      return Array.from(byId.values());
-    }),
+	create: protectedProcedure
+		.meta({
+			openapi: {
+				method: "POST",
+				path: "/products",
+				tags: ["Products"],
+				summary: "Create a product",
+			},
+		})
+		.input(
+			z.object({
+				name: z.string().min(1),
+				description: z.string().optional(),
+				price_per_kg: z.number().optional(),
+				unit: z.string().optional(),
+				active: z.boolean().default(true),
+				sort_order: z.number().optional(),
+				in_stock: z.number().min(0).default(0),
+				category: z.string().optional(),
+				ncm: z.string().max(8).optional(),
+				cfop: z.string().max(4).optional(),
+				icms_cst: z.string().max(3).optional(),
+				pis_cst: z.string().max(2).optional(),
+				cofins_cst: z.string().max(2).optional(),
+				unit_of_measure: z.string().max(6).optional(),
+				stock_pieces: z.number().int().default(0),
+				stock_kg: z.number().default(0),
+				is_parent_product: z.boolean().default(false),
+				is_sellable_by_unit: z.boolean().default(true),
+				is_sellable_by_weight: z.boolean().default(true),
+				default_sale_unit: z.string().max(10).default("KG"),
+				price_per_piece: z.number().optional(),
+			}),
+		)
+		.output(productSchema)
+		.mutation(async ({ ctx, input }) => {
+			if (ctx.user.id !== VALIDATION_USER_UID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Acceso no autorizado",
+				});
+			}
+			const { in_stock, stock_kg, price_per_kg, price_per_piece, ...rest } =
+				input;
+			const [data] = await db
+				.insert(products)
+				.values({
+					...rest,
+					in_stock: in_stock.toFixed(3),
+					stock_kg: stock_kg.toFixed(3),
+					price_per_kg: price_per_kg?.toFixed(2),
+					price_per_piece: price_per_piece?.toFixed(2),
+					user_uid: VALIDATION_USER_UID,
+				})
+				.returning();
+			return data;
+		}),
 
-  create: protectedProcedure
-    .meta({ openapi: { method: "POST", path: "/products", tags: ["Products"], summary: "Create a product" } })
-    .input(
-      z.object({
-        name: z.string().min(1),
-        description: z.string().optional(),
-        price_per_kg: z.number().optional(),
-        unit: z.string().optional(),
-        active: z.boolean().default(true),
-        sort_order: z.number().optional(),
-        in_stock: z.number().min(0).default(0),
-        category: z.string().optional(),
-        ncm: z.string().max(8).optional(),
-        cfop: z.string().max(4).optional(),
-        icms_cst: z.string().max(3).optional(),
-        pis_cst: z.string().max(2).optional(),
-        cofins_cst: z.string().max(2).optional(),
-        unit_of_measure: z.string().max(6).optional(),
-        stock_pieces: z.number().int().default(0),
-        stock_kg: z.number().default(0),
-        is_parent_product: z.boolean().default(false),
-        is_sellable_by_unit: z.boolean().default(true),
-        is_sellable_by_weight: z.boolean().default(true),
-        default_sale_unit: z.string().max(10).default("KG"),
-        price_per_piece: z.number().optional(),
-      })
-    )
-    .output(productSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { in_stock, stock_kg, price_per_kg, price_per_piece, ...rest } = input;
-      const [data] = await db
-        .insert(products)
-        .values({ 
-          ...rest, 
-          in_stock: in_stock.toFixed(3),
-          stock_kg: stock_kg.toFixed(3),
-          price_per_kg: price_per_kg?.toFixed(2),
-          price_per_piece: price_per_piece?.toFixed(2),
-          user_uid: ctx.user.id 
-        })
-        .returning();
-      return data;
-    }),
+	update: protectedProcedure
+		.meta({
+			openapi: {
+				method: "PATCH",
+				path: "/products/{id}",
+				tags: ["Products"],
+				summary: "Update a product",
+			},
+		})
+		.input(
+			z.object({
+				id: z.number(),
+				name: z.string().min(1).optional(),
+				description: z.string().optional(),
+				price_per_kg: z.number().optional(),
+				unit: z.string().optional(),
+				active: z.boolean().optional(),
+				sort_order: z.number().optional(),
+				in_stock: z.number().min(0).optional(),
+				category: z.string().optional(),
+				ncm: z.string().max(8).optional(),
+				cfop: z.string().max(4).optional(),
+				icms_cst: z.string().max(3).optional(),
+				pis_cst: z.string().max(2).optional(),
+				cofins_cst: z.string().max(2).optional(),
+				unit_of_measure: z.string().max(6).optional(),
+				stock_pieces: z.number().int().optional(),
+				stock_kg: z.number().optional(),
+				is_parent_product: z.boolean().optional(),
+				is_sellable_by_unit: z.boolean().optional(),
+				is_sellable_by_weight: z.boolean().optional(),
+				default_sale_unit: z.string().max(10).optional(),
+				price_per_piece: z.number().optional(),
+			}),
+		)
+		.output(productSchema)
+		.mutation(async ({ ctx, input }) => {
+			if (ctx.user.id !== VALIDATION_USER_UID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Acceso no autorizado",
+				});
+			}
+			const { id, in_stock, stock_kg, price_per_kg, price_per_piece, ...data } =
+				input;
+			const updateData: Partial<typeof products.$inferInsert> & {
+				user_uid: string;
+				updated_at: Date;
+			} = {
+				...data,
+				user_uid: VALIDATION_USER_UID,
+				updated_at: new Date(),
+			};
 
-  update: protectedProcedure
-    .meta({ openapi: { method: "PATCH", path: "/products/{id}", tags: ["Products"], summary: "Update a product" } })
-    .input(
-      z.object({
-        id: z.number(),
-        name: z.string().min(1).optional(),
-        description: z.string().optional(),
-        price_per_kg: z.number().optional(),
-        unit: z.string().optional(),
-        active: z.boolean().optional(),
-        sort_order: z.number().optional(),
-        in_stock: z.number().min(0).optional(),
-        category: z.string().optional(),
-        ncm: z.string().max(8).optional(),
-        cfop: z.string().max(4).optional(),
-        icms_cst: z.string().max(3).optional(),
-        pis_cst: z.string().max(2).optional(),
-        cofins_cst: z.string().max(2).optional(),
-        unit_of_measure: z.string().max(6).optional(),
-        stock_pieces: z.number().int().optional(),
-        stock_kg: z.number().optional(),
-        is_parent_product: z.boolean().optional(),
-        is_sellable_by_unit: z.boolean().optional(),
-        is_sellable_by_weight: z.boolean().optional(),
-        default_sale_unit: z.string().max(10).optional(),
-        price_per_piece: z.number().optional(),
-      })
-    )
-    .output(productSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { id, in_stock, stock_kg, price_per_kg, price_per_piece, ...data } = input;
-      const updateData: any = { ...data, user_uid: ctx.user.id, updated_at: new Date() };
-      
-      if (in_stock !== undefined) updateData.in_stock = in_stock.toFixed(3);
-      if (stock_kg !== undefined) updateData.stock_kg = stock_kg.toFixed(3);
-      if (price_per_kg !== undefined) updateData.price_per_kg = price_per_kg.toFixed(2);
-      if (price_per_piece !== undefined) updateData.price_per_piece = price_per_piece.toFixed(2);
+			if (in_stock !== undefined) updateData.in_stock = in_stock.toFixed(3);
+			if (stock_kg !== undefined) updateData.stock_kg = stock_kg.toFixed(3);
+			if (price_per_kg !== undefined)
+				updateData.price_per_kg = price_per_kg.toFixed(2);
+			if (price_per_piece !== undefined)
+				updateData.price_per_piece = price_per_piece.toFixed(2);
 
-      const [updated] = await db
-        .update(products)
-        .set(updateData)
-        .where(and(eq(products.id, id), eq(products.user_uid, ctx.user.id)))
-        .returning();
-      return updated;
-    }),
+			const [updated] = await db
+				.update(products)
+				.set(updateData)
+				.where(
+					and(eq(products.id, id), eq(products.user_uid, VALIDATION_USER_UID)),
+				)
+				.returning();
+			return updated;
+		}),
 
-  delete: protectedProcedure
-    .meta({ openapi: { method: "DELETE", path: "/products/{id}", tags: ["Products"], summary: "Delete a product" } })
-    .input(z.object({ id: z.number() }))
-    .output(z.object({ success: z.boolean() }))
-    .mutation(async ({ ctx, input }) => {
-      await db
-        .delete(products)
-        .where(and(eq(products.id, input.id), eq(products.user_uid, ctx.user.id)));
-      return { success: true };
-    }),
+	delete: protectedProcedure
+		.meta({
+			openapi: {
+				method: "DELETE",
+				path: "/products/{id}",
+				tags: ["Products"],
+				summary: "Delete a product",
+			},
+		})
+		.input(z.object({ id: z.number() }))
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ ctx, input }) => {
+			if (ctx.user.id !== VALIDATION_USER_UID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Acceso no autorizado",
+				});
+			}
+			await db
+				.delete(products)
+				.where(
+					and(
+						eq(products.id, input.id),
+						eq(products.user_uid, VALIDATION_USER_UID),
+					),
+				);
+			return { success: true };
+		}),
 
-  processDisassembly: protectedProcedure
-    .meta({ openapi: { method: "POST", path: "/products/disassembly", tags: ["Products"], summary: "Process product disassembly" } })
-    .input(
-      z.object({
-        parentProductId: z.number(),
-        quantityToProcess: z.number().int().positive(),
-        transformationType: z.enum([
-          "DESPIECE_NACIONAL",
-          "DESPIECE_AMERICANO",
-          "DESPIECE_POLINESIO",
-          "DESPIECE_PIERNA",
-          "DESPIECE_CABEZA",
-          "DESPIECE_CUERO",
-          "DESPIECE_ESPALDILLA",
-          "DESPIECE_COSTILLAR",
-        ]),
-      })
-    )
-    .output(z.object({ success: z.boolean() }))
-    .mutation(async ({ ctx, input }) => {
-      const uid = ctx.user.id;
-      const { parentProductId, quantityToProcess, transformationType } = input;
+	processDisassembly: protectedProcedure
+		.meta({
+			openapi: {
+				method: "POST",
+				path: "/products/disassembly",
+				tags: ["Products"],
+				summary: "Process product disassembly",
+			},
+		})
+		.input(
+			z.object({
+				parentProductId: z.number(),
+				quantityToProcess: z.number().int().positive(),
+				transformationType: z.string().min(1),
+				realWeightMode: z.boolean().optional(),
+			}),
+		)
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ ctx, input }) => {
+			if (ctx.user.id !== VALIDATION_USER_UID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Acceso no autorizado",
+				});
+			}
+			const uid = VALIDATION_USER_UID;
+			const {
+				parentProductId,
+				quantityToProcess,
+				transformationType,
+				realWeightMode,
+			} = input;
+			const useRealWeightMode = realWeightMode !== false;
 
-      const normalizePieces = (value: number) => (value > 50 ? value / 1000 : value);
-      const normalizeRatio = (value: number) => (value > 1 ? value / 1000 : value);
+			const normalizePieces = (value: number) =>
+				value > 50 ? value / 1000 : value;
+			const normalizeRatio = (value: number) =>
+				value > 1 ? value / 1000 : value;
 
-      return await db.transaction(async (tx) => {
-        // 1. Validar Stock Padre
-        const [parent] = await tx
-          .select()
-          .from(products)
-          .where(and(eq(products.id, parentProductId), eq(products.user_uid, uid)))
-          .limit(1);
+			return await db.transaction(async (tx) => {
+				// 1. Validar Stock Padre
+				const [parent] = await tx
+					.select()
+					.from(products)
+					.where(
+						and(eq(products.id, parentProductId), eq(products.user_uid, uid)),
+					)
+					.limit(1);
 
-        if (!parent) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Producto padre no encontrado" });
-        }
+				if (!parent) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Producto padre no encontrado",
+					});
+				}
 
-        if (parent.stock_pieces < quantityToProcess) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Stock de piezas insuficiente" });
-        }
+				if (parent.stock_pieces < quantityToProcess) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Stock de piezas insuficiente",
+					});
+				}
 
-        // 2. Calcular Peso Promedio Padre
-        // Evitar división por cero
-        const stockKg = Number(parent.stock_kg);
-        const parentAvgWeight = parent.stock_pieces > 0 
-          ? stockKg / parent.stock_pieces 
-          : 0;
-        
-        const kgToRemove = quantityToProcess * parentAvgWeight;
+				const stockKg = Number(parent.stock_kg);
+				const currentInStockKg = Number(parent.in_stock);
+				const parentAvgWeight =
+					parent.stock_pieces > 0 ? stockKg / parent.stock_pieces : 0;
+				const isFullDisassembly = quantityToProcess === parent.stock_pieces;
+				const kgToRemove = useRealWeightMode
+					? isFullDisassembly
+						? stockKg
+						: 0
+					: quantityToProcess * parentAvgWeight;
 
-        // 3. Descontar Padre
-        await tx
-          .update(products)
-          .set({
-            stock_pieces: parent.stock_pieces - quantityToProcess,
-            stock_kg: (stockKg - kgToRemove).toFixed(3),
-            in_stock: (Number(parent.in_stock) - kgToRemove).toFixed(3),
-          })
-          .where(eq(products.id, parentProductId));
+				// 3. Descontar Padre
+				await tx
+					.update(products)
+					.set({
+						stock_pieces: parent.stock_pieces - quantityToProcess,
+						stock_kg: (stockKg - kgToRemove).toFixed(3),
+						in_stock: (currentInStockKg - kgToRemove).toFixed(3),
+					})
+					.where(eq(products.id, parentProductId));
 
-        // 4. Registrar Transacción Padre
-        await tx.insert(inventoryTransactions).values({
-          product_id: parentProductId,
-          quantity_change_pieces: -quantityToProcess,
-          quantity_change_kg: (-kgToRemove).toFixed(3),
-          transaction_type: "DESPIECE",
-          notes: `Salida por despiece ${transformationType}`,
-        });
+				// 4. Registrar Transacción Padre
+				await tx.insert(inventoryTransactions).values({
+					product_id: parentProductId,
+					quantity_change_pieces: -quantityToProcess,
+					quantity_change_kg:
+						kgToRemove !== 0 ? (-kgToRemove).toFixed(3) : null,
+					transaction_type: "DESPIECE",
+					notes: `Salida por despiece ${transformationType}`,
+				});
 
-        // 5. Obtener Recetas
-        const recipes = await tx
-          .select()
-          .from(productTransformations)
-          .where(
-            and(
-              eq(productTransformations.parent_product_id, parentProductId),
-              eq(productTransformations.transformation_type, transformationType),
-              eq(productTransformations.is_active, true)
-            )
-          );
+				// 5. Obtener Recetas
+				const typesToApply =
+					transformationType === "BASE"
+						? ["BASE"]
+						: ["BASE", transformationType];
 
-        if (recipes.length === 0) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "No se encontraron recetas para este despiece" });
-        }
+				const recipes = await tx
+					.select()
+					.from(productTransformations)
+					.where(
+						and(
+							eq(productTransformations.parent_product_id, parentProductId),
+							inArray(productTransformations.transformation_type, typesToApply),
+							eq(productTransformations.is_active, true),
+						),
+					);
 
-        // 6. Incrementar Hijos
-        for (const recipe of recipes) {
-          const yieldPieces = normalizePieces(Number(recipe.yield_quantity_pieces));
-          const yieldRatio = normalizeRatio(Number(recipe.yield_weight_ratio));
+				if (recipes.length === 0) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "No se encontraron recetas para este despiece",
+					});
+				}
 
-          const childPiecesToAdd = Math.round(quantityToProcess * yieldPieces);
-          const childKgToAdd = quantityToProcess * yieldRatio * parentAvgWeight;
+				// 6. Incrementar Hijos
+				for (const recipe of recipes) {
+					const yieldPieces = normalizePieces(
+						Number(recipe.yield_quantity_pieces),
+					);
 
-          const [child] = await tx
-            .select()
-            .from(products)
-            .where(and(eq(products.id, recipe.child_product_id), eq(products.user_uid, uid)))
-            .limit(1);
+					const childPiecesToAdd = Math.round(quantityToProcess * yieldPieces);
+					const yieldRatio = useRealWeightMode
+						? 0
+						: normalizeRatio(Number(recipe.yield_weight_ratio));
+					const childKgToAdd = useRealWeightMode
+						? 0
+						: quantityToProcess * yieldRatio * parentAvgWeight;
+					const [child] = await tx
+						.select()
+						.from(products)
+						.where(
+							and(
+								eq(products.id, recipe.child_product_id),
+								eq(products.user_uid, uid),
+							),
+						)
+						.limit(1);
 
-          if (child) {
-            await tx
-              .update(products)
-              .set({
-                stock_pieces: child.stock_pieces + childPiecesToAdd,
-                stock_kg: (Number(child.stock_kg) + childKgToAdd).toFixed(3),
-                in_stock: (Number(child.in_stock) + childKgToAdd).toFixed(3),
-              })
-              .where(eq(products.id, recipe.child_product_id));
+					if (child) {
+						await tx
+							.update(products)
+							.set({
+								stock_pieces: child.stock_pieces + childPiecesToAdd,
+								stock_kg: (Number(child.stock_kg) + childKgToAdd).toFixed(3),
+								in_stock: (Number(child.in_stock) + childKgToAdd).toFixed(3),
+							})
+							.where(eq(products.id, recipe.child_product_id));
 
-            await tx.insert(inventoryTransactions).values({
-              product_id: recipe.child_product_id,
-              quantity_change_pieces: childPiecesToAdd,
-              quantity_change_kg: childKgToAdd.toFixed(3),
-              transaction_type: "DESPIECE",
-              reference_id: parentProductId,
-              notes: `Entrada por despiece ${transformationType} de ${parent.name}`,
-            });
-          }
-        }
+						await tx.insert(inventoryTransactions).values({
+							product_id: recipe.child_product_id,
+							quantity_change_pieces: childPiecesToAdd,
+							quantity_change_kg: useRealWeightMode
+								? null
+								: childKgToAdd.toFixed(3),
+							transaction_type: "DESPIECE",
+							reference_id: parentProductId,
+							notes: `Entrada por despiece ${transformationType} de ${parent.name}`,
+						});
+					}
+				}
 
-        return { success: true };
-      });
-    }),
+				return { success: true };
+			});
+		}),
 
-  getTransformations: protectedProcedure
-    .meta({ openapi: { method: "GET", path: "/products/transformations", tags: ["Products"], summary: "Get product transformations" } })
-    .input(z.object({ parentProductId: z.number(), transformationType: z.string() }))
-    .output(z.array(productTransformationSchema))
-    .query(async ({ ctx, input }) => {
-      const uid = ctx.user.id;
-      const [parent] = await db
-        .select({ id: products.id })
-        .from(products)
-        .where(and(eq(products.id, input.parentProductId), eq(products.user_uid, uid)))
-        .limit(1);
+	getTransformations: protectedProcedure
+		.meta({
+			openapi: {
+				method: "GET",
+				path: "/products/transformations",
+				tags: ["Products"],
+				summary: "Get product transformations",
+			},
+		})
+		.input(
+			z.object({
+				parentProductId: z.number(),
+				transformationType: z.string().optional(),
+			}),
+		)
+		.output(z.array(productTransformationSchema))
+		.query(async ({ ctx, input }) => {
+			if (ctx.user.id !== VALIDATION_USER_UID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Acceso no autorizado",
+				});
+			}
+			const uid = VALIDATION_USER_UID;
+			const [parent] = await db
+				.select({ id: products.id })
+				.from(products)
+				.where(
+					and(
+						eq(products.id, input.parentProductId),
+						eq(products.user_uid, uid),
+					),
+				)
+				.limit(1);
 
-      if (!parent) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Producto padre no encontrado" });
-      }
+			if (!parent) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Producto padre no encontrado",
+				});
+			}
 
-      return db.query.productTransformations.findMany({
-        where: and(
-          eq(productTransformations.parent_product_id, input.parentProductId),
-          eq(productTransformations.transformation_type, input.transformationType),
-          eq(productTransformations.is_active, true)
-        ),
-        with: {
-          childProduct: true,
-        },
-      });
-    }),
+			const typesToApply =
+				input.transformationType === undefined ||
+				input.transformationType === "BASE"
+					? ["BASE"]
+					: ["BASE", input.transformationType];
+
+			return db.query.productTransformations.findMany({
+				where: and(
+					eq(productTransformations.parent_product_id, input.parentProductId),
+					inArray(productTransformations.transformation_type, typesToApply),
+					eq(productTransformations.is_active, true),
+				),
+				with: {
+					childProduct: true,
+				},
+			});
+		}),
 });
-
