@@ -318,8 +318,15 @@ export default function Products() {
 		validators: {
 			onSubmit: ({ value }) => {
 				const res = productFormSchema.safeParse(value);
-				if (!res.success)
-					return res.error.errors.map((e) => e.message).join(", ");
+				if (!res.success) {
+					const issues =
+						(res.error as unknown as { issues?: Array<{ message: string }> })
+							.issues ??
+						(res.error as unknown as { errors?: Array<{ message: string }> })
+							.errors ??
+						[];
+					return issues.map((e) => e.message).join(", ");
+				}
 				return undefined;
 			},
 		},
