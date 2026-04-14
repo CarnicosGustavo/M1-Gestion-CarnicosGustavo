@@ -392,7 +392,6 @@ export const productsRouter = router({
 				}
 
 				const stockKg = Number(parent.stock_kg);
-				const currentInStockKg = Number(parent.in_stock);
 				const parentAvgWeight =
 					parent.stock_pieces > 0 ? stockKg / parent.stock_pieces : 0;
 				const isFullDisassembly = quantityToProcess === parent.stock_pieces;
@@ -403,12 +402,22 @@ export const productsRouter = router({
 					: quantityToProcess * parentAvgWeight;
 
 				if (!useEntryMode) {
+					// Validate that parent has enough kg to remove
+					const newStockKg = stockKg - kgToRemove;
+					if (newStockKg < 0) {
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message: `Stock insuficiente: se requieren ${kgToRemove.toFixed(3)} kg pero solo hay ${stockKg.toFixed(3)} kg disponibles`,
+						});
+					}
+
 					await tx
 						.update(products)
 						.set({
 							stock_pieces: parent.stock_pieces - quantityToProcess,
-							stock_kg: (stockKg - kgToRemove).toFixed(3),
-							in_stock: (currentInStockKg - kgToRemove).toFixed(3),
+							stock_kg: newStockKg.toFixed(3),
+							// Note: in_stock is deprecated and kept for compatibility
+							// It should only contain whole kg values (integer)
 						})
 						.where(eq(products.id, parentProductId));
 
@@ -476,12 +485,23 @@ export const productsRouter = router({
 						.limit(1);
 
 					if (child) {
+						const newChildStockKg = Number(child.stock_kg) + childKgToAdd;
+
+						// Validate that new stock doesn't exceed numeric limits
+						if (newChildStockKg > 9999999.999) {
+							throw new TRPCError({
+								code: "INVALID_DATA",
+								message: `Stock del producto ${child.name} excedería el límite máximo permitido`,
+							});
+						}
+
 						await tx
 							.update(products)
 							.set({
 								stock_pieces: child.stock_pieces + childPiecesToAdd,
-								stock_kg: (Number(child.stock_kg) + childKgToAdd).toFixed(3),
-								in_stock: (Number(child.in_stock) + childKgToAdd).toFixed(3),
+								stock_kg: newChildStockKg.toFixed(3),
+								// Note: in_stock is deprecated and kept for compatibility
+								// It should only contain whole kg values (integer)
 							})
 							.where(eq(products.id, recipe.child_product_id));
 
