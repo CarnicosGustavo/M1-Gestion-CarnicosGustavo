@@ -130,6 +130,68 @@ export default function DisassemblyPage() {
 		enabled: !!canalProduct,
 	});
 
+	// Query to get all possible styles (BASE + all named styles)
+	const allStylesQueries = useMemo(() => {
+		if (!selectedPrimaryParentId) return null;
+
+		const parentId = Number(selectedPrimaryParentId);
+		return {
+			base: { parentProductId: parentId, transformationType: "BASE" },
+			nacional: { parentProductId: parentId, transformationType: "NACIONAL" },
+			americano: { parentProductId: parentId, transformationType: "AMERICANO" },
+			polinesio: { parentProductId: parentId, transformationType: "POLINESIO" },
+		};
+	}, [selectedPrimaryParentId]);
+
+	// Query each style to check if it has recipes
+	const baseStyleQuery = useQuery({
+		...trpc.products.getTransformations.queryOptions(
+			allStylesQueries?.base ?? { parentProductId: 0, transformationType: "BASE" }
+		),
+		enabled: !!allStylesQueries,
+	});
+
+	const nacionalStyleQuery = useQuery({
+		...trpc.products.getTransformations.queryOptions(
+			allStylesQueries?.nacional ?? { parentProductId: 0, transformationType: "NACIONAL" }
+		),
+		enabled: !!allStylesQueries,
+	});
+
+	const americanoStyleQuery = useQuery({
+		...trpc.products.getTransformations.queryOptions(
+			allStylesQueries?.americano ?? { parentProductId: 0, transformationType: "AMERICANO" }
+		),
+		enabled: !!allStylesQueries,
+	});
+
+	const polinesioDstyleQuery = useQuery({
+		...trpc.products.getTransformations.queryOptions(
+			allStylesQueries?.polinesio ?? { parentProductId: 0, transformationType: "POLINESIO" }
+		),
+		enabled: !!allStylesQueries,
+	});
+
+	// Determine which cutting styles have recipes for the selected parent
+	const availableCuttingStyles = useMemo(() => {
+		if (!selectedPrimaryParent) return cuttingStyles;
+
+		const styles: (typeof cuttingStyles)[number][] = [];
+
+		if (baseStyleQuery.data?.length) styles.push("BASE");
+		if (nacionalStyleQuery.data?.length) styles.push("NACIONAL");
+		if (americanoStyleQuery.data?.length) styles.push("AMERICANO");
+		if (polinesioDstyleQuery.data?.length) styles.push("POLINESIO");
+
+		return styles.length > 0 ? styles : ["BASE"]; // Fallback to BASE
+	}, [
+		selectedPrimaryParent,
+		baseStyleQuery.data,
+		nacionalStyleQuery.data,
+		americanoStyleQuery.data,
+		polinesioDstyleQuery.data,
+	]);
+
 	const primaryTransformations = useQuery({
 		...trpc.products.getTransformations.queryOptions({
 			parentProductId: Number(selectedPrimaryParentId || 0),
@@ -137,15 +199,6 @@ export default function DisassemblyPage() {
 		}),
 		enabled: !!selectedPrimaryParentId,
 	});
-
-	// Determine which cutting styles have recipes for the selected parent
-	const availableCuttingStyles = useMemo(() => {
-		if (!selectedPrimaryParent) return cuttingStyles;
-
-		// For now, assume all styles are potentially available
-		// In a more advanced implementation, we could query recipes for each style
-		return cuttingStyles;
-	}, [selectedPrimaryParent]);
 
 	const purchaseMutation = useMutation(
 		trpc.products.registerChannelPurchase.mutationOptions({
