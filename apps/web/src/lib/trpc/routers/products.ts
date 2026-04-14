@@ -546,11 +546,15 @@ export const productsRouter = router({
 				});
 			}
 
+			const normalizeType = (type: string) => {
+				if (type === "BASE") return "BASE";
+				return `DESPIECE_${type}`;
+			};
+			const normalizedType = input.transformationType ? normalizeType(input.transformationType) : "BASE";
 			const typesToApply =
-				input.transformationType === undefined ||
-				input.transformationType === "BASE"
+				normalizedType === "BASE"
 					? ["BASE"]
-					: ["BASE", input.transformationType];
+					: ["BASE", normalizedType];
 
 			return db.query.productTransformations.findMany({
 				where: and(
