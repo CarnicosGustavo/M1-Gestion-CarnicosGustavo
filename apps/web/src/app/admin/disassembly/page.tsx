@@ -19,7 +19,7 @@ import {
 } from "@finopenpos/ui/components/select";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircleIcon, PackageIcon, ScissorsIcon } from "lucide-react";
+import { CheckCircleIcon, PackageIcon, ScissorsIcon, AlertCircleIcon, LoaderIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -129,6 +129,15 @@ export default function DisassemblyPage() {
 		}),
 		enabled: !!selectedPrimaryParentId,
 	});
+
+	// Determine which cutting styles have recipes for the selected parent
+	const availableCuttingStyles = useMemo(() => {
+		if (!selectedPrimaryParent) return cuttingStyles;
+
+		// For now, assume all styles are potentially available
+		// In a more advanced implementation, we could query recipes for each style
+		return cuttingStyles;
+	}, [selectedPrimaryParent]);
 
 	const disassemblyMutation = useMutation(
 		trpc.products.processDisassembly.mutationOptions({
@@ -449,13 +458,25 @@ export default function DisassemblyPage() {
 										<SelectValue placeholder={tc("search")} />
 									</SelectTrigger>
 									<SelectContent>
-										{primaryParentProducts.map((p) => (
-											<SelectItem key={p.id} value={p.id.toString()}>
-												{p.name} ({p.stock_pieces} {t("pieces")})
-											</SelectItem>
-										))}
+										{primaryParentProducts.length === 0 ? (
+											<div className="p-3 text-sm text-muted-foreground text-center">
+												No se encontraron productos padre
+											</div>
+										) : (
+											primaryParentProducts.map((p) => (
+												<SelectItem key={p.id} value={p.id.toString()}>
+													{p.name} ({p.stock_pieces} {t("pieces")})
+												</SelectItem>
+											))
+										)}
 									</SelectContent>
 								</Select>
+								{selectedPrimaryParent && selectedPrimaryParent.stock_pieces === 0 && (
+									<div className="flex items-center gap-2 text-xs text-amber-600">
+										<AlertCircleIcon className="h-3.5 w-3.5" />
+										Sin stock disponible
+									</div>
+								)}
 							</div>
 
 							<div className="space-y-2">
@@ -465,18 +486,25 @@ export default function DisassemblyPage() {
 									onValueChange={(v) =>
 										setSelectedPrimaryStyle(v as (typeof cuttingStyles)[number])
 									}
+									disabled={!selectedPrimaryParent}
 								>
 									<SelectTrigger>
 										<SelectValue placeholder={tc("all")} />
 									</SelectTrigger>
 									<SelectContent>
-										{cuttingStyles.map((style) => (
+										{availableCuttingStyles.map((style) => (
 											<SelectItem key={style} value={style}>
 												{style}
 											</SelectItem>
 										))}
 									</SelectContent>
 								</Select>
+								{primaryTransformations.isFetching && (
+									<div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+										<LoaderIcon className="h-3.5 w-3.5 animate-spin" />
+										Cargando recetas...
+									</div>
+								)}
 							</div>
 
 							<div className="space-y-2">
@@ -487,69 +515,95 @@ export default function DisassemblyPage() {
 									max={selectedPrimaryParent?.stock_pieces || 1}
 									value={primaryQuantity}
 									onChange={(e) => setPrimaryQuantity(Number(e.target.value))}
+									disabled={!selectedPrimaryParent}
 								/>
+								{selectedPrimaryParent && primaryQuantity > selectedPrimaryParent.stock_pieces && (
+									<div className="flex items-center gap-2 text-xs text-red-600">
+										<AlertCircleIcon className="h-3.5 w-3.5" />
+										Cantidad excede el stock
+									</div>
+								)}
 							</div>
 						</div>
 
-						{selectedPrimaryParent && primaryTransformations.data?.length ? (
+						{selectedPrimaryParent ? (
 							<div className="space-y-4 border-t pt-4">
-								<div className="overflow-x-auto rounded-md border">
-									<table className="w-full text-sm">
-										<thead className="bg-muted/50">
-											<tr>
-												<th className="p-3 text-left font-medium">
-													{t("childProduct")}
-												</th>
-												<th className="p-3 text-left font-medium">
-													{t("expectedQty")}
-												</th>
-												<th className="p-3 text-left font-medium">
-													{t("expectedWeight")}
-												</th>
-											</tr>
-										</thead>
-										<tbody>
-											{primaryTransformations.data.map(
-												(row: Transformation) => (
-													<tr key={row.id} className="border-t">
-														<td className="p-3">
-															{row.childProduct?.name ?? "-"}
-														</td>
-														<td className="p-3">
-															{expectedPieces(
-																row.yield_quantity_pieces,
-																primaryQuantity,
-															)}
-														</td>
-														<td className="p-3">
-															{realWeightMode ? "Pendiente de pesaje" : "-"}
-														</td>
+								{primaryTransformations.isLoading ? (
+									<div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
+										<LoaderIcon className="h-5 w-5 animate-spin" />
+										Cargando recetas...
+									</div>
+								) : primaryTransformations.data?.length ? (
+									<>
+										<div className="overflow-x-auto rounded-md border">
+											<table className="w-full text-sm">
+												<thead className="bg-muted/50">
+													<tr>
+														<th className="p-3 text-left font-medium">
+															{t("childProduct")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedQty")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedWeight")}
+														</th>
 													</tr>
-												),
-											)}
-										</tbody>
-									</table>
-								</div>
-								<div className="flex justify-end pt-4">
-									<Button
-										size="lg"
-										onClick={executePrimaryDisassembly}
-										disabled={
-											disassemblyMutation.isPending ||
-											primaryQuantity >
-												(selectedPrimaryParent.stock_pieces || 0)
-										}
-									>
-										{disassemblyMutation.isPending ? (
-											tc("loading")
-										) : (
-											<>
-												<CheckCircleIcon className="mr-2 h-5 w-5" />
-												{t("executeDisassembly")}
-											</>
-										)}
-									</Button>
-								</div>
+												</thead>
+												<tbody>
+													{primaryTransformations.data.map(
+														(row: Transformation) => (
+															<tr key={row.id} className="border-t">
+																<td className="p-3">
+																	{row.childProduct?.name ?? "-"}
+																</td>
+																<td className="p-3">
+																	{expectedPieces(
+																		row.yield_quantity_pieces,
+																		primaryQuantity,
+																	)}
+																</td>
+																<td className="p-3">
+																	{realWeightMode ? "Pendiente de pesaje" : "-"}
+																</td>
+															</tr>
+														),
+													)}
+												</tbody>
+											</table>
+										</div>
+										<div className="flex justify-end pt-4">
+											<Button
+												size="lg"
+												onClick={executePrimaryDisassembly}
+												disabled={
+													disassemblyMutation.isPending ||
+													primaryQuantity >
+														(selectedPrimaryParent.stock_pieces || 0)
+												}
+											>
+												{disassemblyMutation.isPending ? (
+													tc("loading")
+												) : (
+													<>
+														<CheckCircleIcon className="mr-2 h-5 w-5" />
+														{t("executeDisassembly")}
+													</>
+												)}
+											</Button>
+										</div>
+									</>
+								) : (
+									<div className="flex flex-col items-center justify-center gap-2 rounded-md border border-amber-200 bg-amber-50 py-6 px-4 text-amber-900">
+										<AlertCircleIcon className="h-5 w-5" />
+										<div className="text-sm font-medium">
+											No se encontraron recetas
+										</div>
+										<p className="text-xs text-amber-800">
+											El estilo de despiece "{selectedPrimaryStyle}" no tiene recetas configuradas para el producto {selectedPrimaryParent.name}. Por favor, selecciona otro estilo o configura las recetas.
+										</p>
+									</div>
+								)}
 							</div>
 						) : null}
 					</div>
