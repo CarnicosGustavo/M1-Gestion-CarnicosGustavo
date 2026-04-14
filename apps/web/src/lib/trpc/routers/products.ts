@@ -423,10 +423,15 @@ export const productsRouter = router({
 				}
 
 				// 5. Obtener Recetas
+				const normalizeType = (type: string) => {
+					if (type === "BASE") return "BASE";
+					return `DESPIECE_${type}`;
+				};
+				const normalizedType = normalizeType(transformationType);
 				const typesToApply =
-					transformationType === "BASE"
+					normalizedType === "BASE"
 						? ["BASE"]
-						: ["BASE", transformationType];
+						: ["BASE", normalizedType];
 
 				const recipes = await tx
 					.select()
