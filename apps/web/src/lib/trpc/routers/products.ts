@@ -660,4 +660,24 @@ export const productsRouter = router({
 				};
 			});
 		}),
+
+	getAvailableTransformationTypes: protectedProcedure
+		.input(z.object({ parentProductId: z.number() }))
+		.query(async ({ input }) => {
+			// Get all unique transformation types for this parent product
+			const transformationTypes = await db
+				.selectDistinct({
+					type: productTransformations.transformation_type,
+				})
+				.from(productTransformations)
+				.where(
+					and(
+						eq(productTransformations.parent_product_id, input.parentProductId),
+						eq(productTransformations.is_active, true),
+					),
+				)
+				.orderBy(productTransformations.transformation_type);
+
+			return transformationTypes.map((t) => t.type).filter((t) => t !== null);
+		}),
 });

@@ -176,14 +176,27 @@ export default function DisassemblyPage() {
 	const availableCuttingStyles = useMemo(() => {
 		if (!selectedPrimaryParent) return cuttingStyles;
 
-		const styles: (typeof cuttingStyles)[number][] = [];
+		const styles: string[] = [];
 
 		if (baseStyleQuery.data?.length) styles.push("BASE");
 		if (nacionalStyleQuery.data?.length) styles.push("NACIONAL");
 		if (americanoStyleQuery.data?.length) styles.push("AMERICANO");
 		if (polinesioDstyleQuery.data?.length) styles.push("POLINESIO");
 
-		return styles.length > 0 ? styles : ["BASE"]; // Fallback to BASE
+		// If no generic styles have recipes, try custom style based on product name
+		// E.g., PIERNA → DESPIECE_PIERNA, CABEZA → DESPIECE_CABEZA, etc.
+		if (styles.length === 0 && selectedPrimaryParent) {
+			const productName = selectedPrimaryParent.name
+				.toUpperCase()
+				.replace(/^XX\d+\s*-\s*/, "") // Remove XX# prefix
+				.trim();
+
+			// Check if this custom style exists in any of the queries
+			// This is a temporary fallback - in production, we'd query for DESPIECE_<NAME>
+			styles.push(`DESPIECE_${productName}`);
+		}
+
+		return styles.length > 0 ? styles : cuttingStyles; // Fallback to all styles
 	}, [
 		selectedPrimaryParent,
 		baseStyleQuery.data,
