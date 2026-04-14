@@ -329,14 +329,22 @@ export const ordersRouter = router({
             if (product) {
               const currentStockKg = Number(product.stock_kg);
               const itemQuantityKg = item.quantity_kg ? Number(item.quantity_kg) : 0;
-              const currentInStock = Number(product.in_stock);
+              const newStockKg = currentStockKg - itemQuantityKg;
+
+              if (newStockKg < 0) {
+                throw new TRPCError({
+                  code: "PRECONDITION_FAILED",
+                  message: `Stock insuficiente de ${product.name}: se requieren ${itemQuantityKg.toFixed(3)} kg pero solo hay ${currentStockKg.toFixed(3)} kg disponibles`,
+                });
+              }
 
               await tx
                 .update(products)
                 .set({
                   stock_pieces: item.quantity_pieces ? product.stock_pieces - item.quantity_pieces : product.stock_pieces,
-                  stock_kg: (currentStockKg - itemQuantityKg).toFixed(3),
-                  in_stock: (currentInStock - itemQuantityKg).toFixed(3),
+                  stock_kg: newStockKg.toFixed(3),
+                  // Note: in_stock is deprecated and kept for compatibility
+                  // It should only contain whole kg values (integer)
                 })
                 .where(eq(products.id, item.product_id));
 

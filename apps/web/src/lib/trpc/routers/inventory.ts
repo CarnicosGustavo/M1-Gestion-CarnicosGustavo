@@ -168,12 +168,10 @@ export const inventoryRouter = router({
 				}
 
 				const currentStockKg = Number(p.stock_kg);
-				const currentInStock = Number(p.in_stock);
 				const nextPieces = p.stock_pieces + deltaPieces;
 				const nextStockKg = currentStockKg + deltaKg;
-				const nextInStock = currentInStock + deltaKg;
 
-				if (nextPieces < 0 || nextStockKg < 0 || nextInStock < 0) {
+				if (nextPieces < 0 || nextStockKg < 0) {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
 						message: "Stock insuficiente para el ajuste",
@@ -185,7 +183,8 @@ export const inventoryRouter = router({
 					.set({
 						stock_pieces: nextPieces,
 						stock_kg: nextStockKg.toFixed(3),
-						in_stock: nextInStock.toFixed(3),
+						// Note: in_stock is deprecated and kept for compatibility
+						// It should only contain whole kg values (integer)
 						updated_at: new Date(),
 					})
 					.where(eq(products.id, input.productId));
