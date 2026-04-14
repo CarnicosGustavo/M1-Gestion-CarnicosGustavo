@@ -587,4 +587,77 @@ export const productsRouter = router({
 				},
 			});
 		}),
+
+	registerChannelPurchase: protectedProcedure
+		.input(
+			z.object({
+				quantityPieces: z.number().int().positive("Debe ser mayor a 0"),
+				totalWeightKg: z.number().positive("Debe ser mayor a 0"),
+				notes: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const { uid } = ctx;
+			if (!uid) {
+				throw new TRPCError({
+					code: "UNAUTHORIZED",
+					message: "Usuario no autenticado",
+				});
+			}
+
+			return await db.transaction(async (tx) => {
+				// 1. Encontrar producto CANAL
+				const [canalProduct] = await tx
+					.select()
+					.from(products)
+					.where(
+						and(
+							sql`LOWER(${products.name}) LIKE '%canal%'`,
+							eq(products.user_uid, uid),
+						),
+					)
+					.limit(1);
+
+				if (!canalProduct) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "No se encontró producto CANAL",
+					});
+				}
+
+				// 2. Actualizar stock
+				const currentStock = Number(canalProduct.stock_pieces);
+				const currentKg = Number(canalProduct.stock_kg);
+				const newStock = currentStock + input.quantityPieces;
+				const newKg = currentKg + input.totalWeightKg;
+
+				await tx
+					.update(products)
+					.set({
+						stock_pieces: newStock,
+						stock_kg: newKg.toFixed(3),
+					})
+					.where(eq(products.id, canalProduct.id));
+
+				// 3. Registrar transacción
+				await tx.insert(inventoryTransactions).values({
+					product_id: canalProduct.id,
+					quantity_change_pieces: input.quantityPieces,
+					quantity_change_kg: input.totalWeightKg.toFixed(3),
+					transaction_type: "COMPRA",
+					notes: input.notes
+						? `Compra de canales: ${input.notes}`
+						: `Compra de ${input.quantityPieces} canales`,
+				});
+
+				return {
+					success: true,
+					product: canalProduct.name,
+					previousStock: currentStock,
+					newStock: newStock,
+					previousKg: currentKg,
+					newKg: newKg.toFixed(3),
+				};
+			});
+		}),
 });

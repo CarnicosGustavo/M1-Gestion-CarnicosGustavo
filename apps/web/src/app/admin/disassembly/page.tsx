@@ -37,11 +37,19 @@ export default function DisassemblyPage() {
 	const tc = useTranslations("common");
 
 	const [isClient, setIsClient] = useState(false);
+
+	// Ingreso de compra de canales
+	const [purchaseQuantity, setPurchaseQuantity] = useState<number>(0);
+	const [purchaseWeightKg, setPurchaseWeightKg] = useState<number>(0);
+	const [purchaseNotes, setPurchaseNotes] = useState<string>("");
+
+	// Despiece masivo
 	const [batchNational, setBatchNational] = useState<number>(0);
 	const [batchAmerican, setBatchAmerican] = useState<number>(0);
 	const [batchPolynesian, setBatchPolynesian] = useState<number>(0);
 	const [realWeightMode, setRealWeightMode] = useState(true);
 
+	// Despiece de pieza primaria
 	const [selectedPrimaryParentId, setSelectedPrimaryParentId] =
 		useState<string>("");
 	const [selectedPrimaryStyle, setSelectedPrimaryStyle] =
@@ -139,6 +147,26 @@ export default function DisassemblyPage() {
 		return cuttingStyles;
 	}, [selectedPrimaryParent]);
 
+	const purchaseMutation = useMutation(
+		trpc.products.registerChannelPurchase.mutationOptions({
+			onSuccess: (data) => {
+				toast.success(
+					`Compra registrada: ${data.newStock} canales, ${data.newKg} kg total`,
+				);
+				setPurchaseQuantity(0);
+				setPurchaseWeightKg(0);
+				setPurchaseNotes("");
+				// Refrescar lista de productos
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.list.queryKey(),
+				});
+			},
+			onError: (error) => {
+				toast.error(`Error al registrar compra: ${error.message}`);
+			},
+		}),
+	);
+
 	const disassemblyMutation = useMutation(
 		trpc.products.processDisassembly.mutationOptions({
 			onSuccess: () => {
@@ -218,6 +246,89 @@ export default function DisassemblyPage() {
 					<CardDescription>{t("disassemblyDescription")}</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-6">
+					{/* SECCIÓN 0: INGRESO DE COMPRA DE CANALES */}
+					<div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+						<div className="flex items-center gap-2">
+							<PackageIcon className="h-5 w-5 text-blue-600" />
+							<h3 className="font-medium text-lg text-blue-900">
+								Ingreso de Compra de Canales
+							</h3>
+						</div>
+						<p className="text-sm text-blue-800">
+							Registra la compra inicial de canales. Los datos ingresados serán el stock disponible para despiece.
+						</p>
+
+						<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+							<div className="space-y-2">
+								<Label className="text-blue-900">Cantidad de Canales</Label>
+								<Input
+									type="number"
+									min={0}
+									step={1}
+									value={purchaseQuantity}
+									onChange={(e) => setPurchaseQuantity(Number(e.target.value))}
+									placeholder="Ej: 50"
+									className="border-blue-200"
+								/>
+							</div>
+
+							<div className="space-y-2">
+								<Label className="text-blue-900">Peso Total (kg)</Label>
+								<Input
+									type="number"
+									min={0}
+									step={0.001}
+									value={purchaseWeightKg}
+									onChange={(e) => setPurchaseWeightKg(Number(e.target.value))}
+									placeholder="Ej: 25.500"
+									className="border-blue-200"
+								/>
+								{purchaseQuantity > 0 && purchaseWeightKg > 0 && (
+									<div className="text-xs text-blue-700">
+										Promedio: {(purchaseWeightKg / purchaseQuantity).toFixed(3)} kg/pieza
+									</div>
+								)}
+							</div>
+
+							<div className="space-y-2">
+								<Label className="text-blue-900">Notas (opcional)</Label>
+								<Input
+									type="text"
+									value={purchaseNotes}
+									onChange={(e) => setPurchaseNotes(e.target.value)}
+									placeholder="Proveedor, fecha, etc."
+									className="border-blue-200"
+								/>
+							</div>
+						</div>
+
+						<div className="flex justify-end pt-2">
+							<Button
+								onClick={() => {
+									purchaseMutation.mutate({
+										quantityPieces: purchaseQuantity,
+										totalWeightKg: purchaseWeightKg,
+										notes: purchaseNotes || undefined,
+									});
+								}}
+								disabled={purchaseQuantity <= 0 || purchaseWeightKg <= 0 || purchaseMutation.isPending}
+								className="bg-blue-600 hover:bg-blue-700"
+							>
+								{purchaseMutation.isPending ? (
+									<>
+										<LoaderIcon className="mr-2 h-5 w-5 animate-spin" />
+										Registrando...
+									</>
+								) : (
+									<>
+										<CheckCircleIcon className="mr-2 h-5 w-5" />
+										Registrar Compra
+									</>
+								)}
+							</Button>
+						</div>
+					</div>
+
 					<div className="space-y-4">
 						<div className="flex items-center justify-end">
 							<Button
@@ -443,9 +554,29 @@ export default function DisassemblyPage() {
 						<div className="flex items-center justify-between">
 							<h3 className="flex items-center gap-2 font-medium text-lg">
 								<PackageIcon className="h-5 w-5" />
-								Despiece de pieza primaria
+								Despiece de Pieza Primaria
 							</h3>
 						</div>
+
+						<div className="text-muted-foreground text-sm">
+							Procesa piezas secundarias (Pierna, Espaldilla, Cabeza, etc.) generadas desde el despiece masivo de canal.
+						</div>
+
+						{selectedPrimaryParent && (
+							<div className="rounded-md bg-amber-50 border border-amber-200 p-3">
+								<div className="text-sm text-amber-900">
+									<strong>Consejo:</strong> Para <strong>{selectedPrimaryParent.name}</strong>,
+									{selectedPrimaryParent.name.toLowerCase().includes("pierna")
+										? ' usa el estilo "DESPIECE_PIERNA"'
+										: selectedPrimaryParent.name.toLowerCase().includes("espaldilla")
+										? ' usa el estilo "DESPIECE_ESPALDILLA"'
+										: selectedPrimaryParent.name.toLowerCase().includes("cabeza")
+										? ' usa el estilo "DESPIECE_CABEZA"'
+										: ' selecciona el estilo disponible'}
+									.
+								</div>
+							</div>
+						)}
 
 						<div className="grid grid-cols-1 gap-6 md:grid-cols-3">
 							<div className="space-y-2">
