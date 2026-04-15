@@ -7,9 +7,7 @@ import {
 	products,
 	productTransformations,
 } from "@/lib/db/schema";
-import { protectedProcedure, router } from "../init";
-
-const VALIDATION_USER_UID = "yT6H0ck1XlghSQWBZlDDXWUHWzDTbPCN";
+import { protectedProcedure, adminProcedure, almacenProcedure, router } from "../init";
 
 const productSchema = z.object({
 	id: z.number(),
@@ -87,13 +85,7 @@ export const productsRouter = router({
 		)
 		.output(z.array(productWithParentsSchema))
 		.query(async ({ ctx, input }) => {
-			if (ctx.user.id !== VALIDATION_USER_UID) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Acceso no autorizado",
-				});
-			}
-			const uid = VALIDATION_USER_UID;
+			const uid = ctx.user.id;
 
 			const includeDescendants = input?.includeDescendants === true;
 			const includeSelf = input?.includeSelf === true;
@@ -167,7 +159,7 @@ export const productsRouter = router({
 			}));
 		}),
 
-	create: protectedProcedure
+	create: adminProcedure
 		.meta({
 			openapi: {
 				method: "POST",
@@ -203,12 +195,6 @@ export const productsRouter = router({
 		)
 		.output(productSchema)
 		.mutation(async ({ ctx, input }) => {
-			if (ctx.user.id !== VALIDATION_USER_UID) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Acceso no autorizado",
-				});
-			}
 			const { in_stock, stock_kg, price_per_kg, price_per_piece, ...rest } =
 				input;
 			const [data] = await db
@@ -219,13 +205,13 @@ export const productsRouter = router({
 					stock_kg: stock_kg.toFixed(3),
 					price_per_kg: price_per_kg?.toFixed(2),
 					price_per_piece: price_per_piece?.toFixed(2),
-					user_uid: VALIDATION_USER_UID,
+					user_uid: ctx.user.id,
 				})
 				.returning();
 			return data;
 		}),
 
-	update: protectedProcedure
+	update: adminProcedure
 		.meta({
 			openapi: {
 				method: "PATCH",
@@ -262,12 +248,6 @@ export const productsRouter = router({
 		)
 		.output(productSchema)
 		.mutation(async ({ ctx, input }) => {
-			if (ctx.user.id !== VALIDATION_USER_UID) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Acceso no autorizado",
-				});
-			}
 			const { id, in_stock, stock_kg, price_per_kg, price_per_piece, ...data } =
 				input;
 			const updateData: Partial<typeof products.$inferInsert> & {
@@ -275,7 +255,7 @@ export const productsRouter = router({
 				updated_at: Date;
 			} = {
 				...data,
-				user_uid: VALIDATION_USER_UID,
+				user_uid: ctx.user.id,
 				updated_at: new Date(),
 			};
 
@@ -290,13 +270,13 @@ export const productsRouter = router({
 				.update(products)
 				.set(updateData)
 				.where(
-					and(eq(products.id, id), eq(products.user_uid, VALIDATION_USER_UID)),
+					and(eq(products.id, id), eq(products.user_uid, ctx.user.id)),
 				)
 				.returning();
 			return updated;
 		}),
 
-	delete: protectedProcedure
+	delete: adminProcedure
 		.meta({
 			openapi: {
 				method: "DELETE",
@@ -308,24 +288,18 @@ export const productsRouter = router({
 		.input(z.object({ id: z.number() }))
 		.output(z.object({ success: z.boolean() }))
 		.mutation(async ({ ctx, input }) => {
-			if (ctx.user.id !== VALIDATION_USER_UID) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Acceso no autorizado",
-				});
-			}
 			await db
 				.delete(products)
 				.where(
 					and(
 						eq(products.id, input.id),
-						eq(products.user_uid, VALIDATION_USER_UID),
+						eq(products.user_uid, ctx.user.id),
 					),
 				);
 			return { success: true };
 		}),
 
-	processDisassembly: protectedProcedure
+	processDisassembly: almacenProcedure
 		.meta({
 			openapi: {
 				method: "POST",
@@ -345,13 +319,7 @@ export const productsRouter = router({
 		)
 		.output(z.object({ success: z.boolean() }))
 		.mutation(async ({ ctx, input }) => {
-			if (ctx.user.id !== VALIDATION_USER_UID) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Acceso no autorizado",
-				});
-			}
-			const uid = VALIDATION_USER_UID;
+			const uid = ctx.user.id;
 			const {
 				parentProductId,
 				quantityToProcess,
@@ -541,13 +509,7 @@ export const productsRouter = router({
 		)
 		.output(z.array(productTransformationSchema))
 		.query(async ({ ctx, input }) => {
-			if (ctx.user.id !== VALIDATION_USER_UID) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Acceso no autorizado",
-				});
-			}
-			const uid = VALIDATION_USER_UID;
+			const uid = ctx.user.id;
 			const [parent] = await db
 				.select({ id: products.id })
 				.from(products)
@@ -588,7 +550,7 @@ export const productsRouter = router({
 			});
 		}),
 
-	registerChannelPurchase: protectedProcedure
+	registerChannelPurchase: almacenProcedure
 		.input(
 			z.object({
 				quantityPieces: z.number().int().positive("Debe ser mayor a 0"),
@@ -597,13 +559,7 @@ export const productsRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const { uid } = ctx;
-			if (!uid) {
-				throw new TRPCError({
-					code: "UNAUTHORIZED",
-					message: "Usuario no autenticado",
-				});
-			}
+			const uid = ctx.user.id;
 
 			return await db.transaction(async (tx) => {
 				// 1. Encontrar producto CANAL (parent product only)
