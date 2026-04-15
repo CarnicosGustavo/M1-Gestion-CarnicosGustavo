@@ -581,7 +581,7 @@ export default function POSPage() {
 									className="h-4 w-4 rounded border-gray-300"
 								/>
 								<ReceiptTextIcon className="h-4 w-4 text-muted-foreground" />
-								NFC-e
+								Factura
 							</label>
 							<Button
 								onClick={handleCreateOrder}

@@ -10,6 +10,7 @@ import { SettingsIcon } from "lucide-react";
 import dynamic from "next/dynamic";
 const FiscalSettingsTab = dynamic(() => import("./tabs/fiscal-settings"), { ssr: false });
 const RecipesTab = dynamic(() => import("./tabs/recipes"), { ssr: false });
+const PaymentsTab = dynamic(() => import("./tabs/payments"), { ssr: false });
 
 type SettingTab = "billing" | "recipes" | "payments";
 
@@ -59,12 +60,7 @@ export default function SettingsPage() {
           <div className="min-h-[400px]">
             {activeTab === "billing" && <FiscalSettingsTab />}
             {activeTab === "recipes" && <RecipesTab />}
-            {activeTab === "payments" && (
-              <div className="flex flex-col items-center justify-center gap-2 py-12">
-                <p className="text-muted-foreground">Métodos de pago en construcción</p>
-                <p className="text-xs text-muted-foreground">Esta sección estará disponible próximamente</p>
-              </div>
-            )}
+            {activeTab === "payments" && <PaymentsTab />}
           </div>
         </CardContent>
       </Card>
