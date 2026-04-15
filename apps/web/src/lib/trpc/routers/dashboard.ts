@@ -51,11 +51,7 @@ export const dashboardRouter = router({
         .filter((t) => t.type === "expense")
         .reduce((s, t) => s + safeNumber(t.amount), 0);
 
-      const totalSelling = allCompleted
-        .filter((t) => t.category === "selling")
-        .reduce((s, t) => s + safeNumber(t.amount), 0);
-
-      const totalProfit = totalSelling - totalExpenses;
+      const totalProfit = totalRevenue - totalExpenses;
 
       // New revenue breakdown by product category
       const revenueByProductCategory = await db
@@ -106,21 +102,21 @@ export const dashboardRouter = router({
 function calculateProfitMarginSeries(
   txns: { amount: number; type: string | null; category: string | null; created_at: Date | null }[]
 ) {
-  const dailyData: Record<string, { selling: number; expense: number }> = {};
+  const dailyData: Record<string, { income: number; expense: number }> = {};
 
   for (const t of txns) {
     const date = t.created_at
       ? new Date(t.created_at).toISOString().split("T")[0]
       : "unknown";
-    dailyData[date] ??= { selling: 0, expense: 0 };
+    dailyData[date] ??= { income: 0, expense: 0 };
 
-    if (t.category === "selling") dailyData[date].selling += t.amount;
+    if (t.type === "income") dailyData[date].income += t.amount;
     else if (t.type === "expense") dailyData[date].expense += t.amount;
   }
 
-  return Object.entries(dailyData).map(([date, { selling, expense }]) => {
-    const profit = selling - expense;
-    const margin = selling > 0 ? (profit / selling) * 100 : 0;
+  return Object.entries(dailyData).map(([date, { income, expense }]) => {
+    const profit = income - expense;
+    const margin = income > 0 ? (profit / income) * 100 : 0;
     return { date, margin: parseFloat(margin.toFixed(2)) };
   });
 }

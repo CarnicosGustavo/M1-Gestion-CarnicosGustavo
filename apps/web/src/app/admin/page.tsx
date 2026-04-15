@@ -413,7 +413,7 @@ function CashFlowChart({
               <YAxis
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(v) => formatCurrency(v * 100, locale)}
+                tickFormatter={(v) => formatCurrency(v, locale)}
                 width={60}
               />
               <ChartTooltip

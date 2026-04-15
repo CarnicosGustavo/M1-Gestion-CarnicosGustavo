@@ -249,7 +249,7 @@ export const ordersRouter = router({
           await tx.insert(transactions).values({
             order_id: orderData.id,
             payment_method_id: input.paymentMethodId,
-            amount: Math.round(totalAmount * 100), // transactions still use cents? let's check.
+            amount: Math.round(totalAmount * 100),
             user_uid: ctx.user.id,
             status: "completed",
             category: "selling",
@@ -329,15 +329,15 @@ export const ordersRouter = router({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       return db.transaction(async (tx) => {
+        // Atomic status check: only one request can transition from LISTA_PARA_COBRO
         const [orderData] = await tx
-          .select()
-          .from(orders)
-          .where(and(eq(orders.id, input.orderId), eq(orders.user_uid, ctx.user.id)))
-          .limit(1);
+          .update(orders)
+          .set({ status: "PROCESANDO_PAGO" })
+          .where(and(eq(orders.id, input.orderId), eq(orders.user_uid, ctx.user.id), eq(orders.status, "LISTA_PARA_COBRO")))
+          .returning();
 
-        if (!orderData) throw new TRPCError({ code: "NOT_FOUND", message: "Orden no encontrada" });
-        if (orderData.status !== "LISTA_PARA_COBRO") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "La orden debe estar lista para cobro" });
+        if (!orderData) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Orden no encontrada o no disponible para cobro (ya fue pagada o no está lista)" });
         }
 
         const items = await tx

@@ -377,6 +377,13 @@ export const inventoryRouter = router({
 					});
 				}
 
+				if (input.parentProductId === input.childProductId) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Un producto no puede ser receta de sí mismo",
+					});
+				}
+
 				if (input.childName || childRow.parent_product_id === null) {
 					const updateData: Partial<typeof products.$inferInsert> = {
 						updated_at: new Date(),

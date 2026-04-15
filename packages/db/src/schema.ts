@@ -9,6 +9,7 @@ import {
 	text,
 	timestamp,
 	varchar,
+	type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 // --- ENUMS ---
@@ -117,7 +118,7 @@ export const products = pgTable("products", {
 		.notNull()
 		.default("0.000"),
 	is_parent_product: boolean("is_parent_product").notNull().default(false),
-	parent_product_id: integer("parent_product_id").references(() => products.id),
+	parent_product_id: integer("parent_product_id").references((): AnyPgColumn => products.id),
 	is_sellable_by_unit: boolean("is_sellable_by_unit").notNull().default(true),
 	is_sellable_by_weight: boolean("is_sellable_by_weight")
 		.notNull()

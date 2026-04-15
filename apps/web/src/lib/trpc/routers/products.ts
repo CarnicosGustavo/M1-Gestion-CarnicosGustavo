@@ -606,13 +606,14 @@ export const productsRouter = router({
 			}
 
 			return await db.transaction(async (tx) => {
-				// 1. Encontrar producto CANAL
+				// 1. Encontrar producto CANAL (parent product only)
 				const [canalProduct] = await tx
 					.select()
 					.from(products)
 					.where(
 						and(
 							sql`LOWER(${products.name}) LIKE '%canal%'`,
+							eq(products.is_parent_product, true),
 							eq(products.user_uid, uid),
 						),
 					)
