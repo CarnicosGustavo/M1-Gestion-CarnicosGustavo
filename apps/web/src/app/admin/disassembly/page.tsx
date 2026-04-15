@@ -8,6 +8,14 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@finopenpos/ui/components/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+	DialogFooter,
+} from "@finopenpos/ui/components/dialog";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import {
@@ -19,7 +27,7 @@ import {
 } from "@finopenpos/ui/components/select";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircleIcon, PackageIcon, ScissorsIcon, AlertCircleIcon, LoaderIcon } from "lucide-react";
+import { CheckCircleIcon, PackageIcon, ScissorsIcon, AlertCircleIcon, LoaderIcon, PrinterIcon, XIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -55,6 +63,15 @@ export default function DisassemblyPage() {
 	const [selectedPrimaryStyle, setSelectedPrimaryStyle] =
 		useState<(typeof cuttingStyles)[number]>("BASE");
 	const [primaryQuantity, setPrimaryQuantity] = useState<number>(1);
+
+	// Resumen post-despiece
+	const [disassemblySummary, setDisassemblySummary] = useState<{
+		parentProduct: string;
+		quantity: number;
+		style: string;
+		totalItems: number;
+		timestamp: Date;
+	} | null>(null);
 
 	useEffect(() => {
 		setIsClient(true);
@@ -235,17 +252,19 @@ export default function DisassemblyPage() {
 
 	const disassemblyMutation = useMutation(
 		trpc.products.processDisassembly.mutationOptions({
-			onSuccess: () => {
+			onSuccess: (_data, variables) => {
+				// Mostrar resumen en modal
+				const parent = products.find(p => p.id === variables.parentProductId);
+				if (parent && primaryTransformations.data) {
+					setDisassemblySummary({
+						parentProduct: parent.name,
+						quantity: variables.quantityToProcess,
+						style: variables.transformationType,
+						totalItems: primaryTransformations.data.length,
+						timestamp: new Date(),
+					});
+				}
 				toast.success(t("disassemblySuccess"));
-				setBatchNational(0);
-				setBatchAmerican(0);
-				setBatchPolynesian(0);
-				setSelectedPrimaryParentId("");
-				setSelectedPrimaryStyle("BASE");
-				setPrimaryQuantity(1);
-				queryClient.invalidateQueries({
-					queryKey: trpc.products.list.queryKey(),
-				});
 			},
 			onError: (error) => {
 				toast.error(`${t("disassemblyError")}: ${error.message}`);
@@ -806,6 +825,111 @@ export default function DisassemblyPage() {
 					</div>
 				</CardContent>
 			</Card>
+
+			{/* Dialog de Resumen Post-Despiece */}
+			<Dialog open={!!disassemblySummary} onOpenChange={(open) => {
+				if (!open) {
+					setDisassemblySummary(null);
+					// Reset forms cuando se cierra
+					setBatchNational(0);
+					setBatchAmerican(0);
+					setBatchPolynesian(0);
+					setSelectedPrimaryParentId("");
+					setSelectedPrimaryStyle("BASE");
+					setPrimaryQuantity(1);
+					queryClient.invalidateQueries({
+						queryKey: trpc.products.list.queryKey(),
+					});
+				}
+			}}>
+				<DialogContent className="max-w-2xl">
+					<DialogHeader>
+						<DialogTitle className="flex items-center gap-2">
+							<CheckCircleIcon className="h-5 w-5 text-green-600" />
+							Despiece Completado
+						</DialogTitle>
+						<DialogDescription>
+							Resumen de la operación realizada
+						</DialogDescription>
+					</DialogHeader>
+
+					{disassemblySummary && (
+						<div className="space-y-4">
+							{/* Consolidado */}
+							<div className="grid grid-cols-2 gap-4">
+								<div className="rounded-lg border bg-slate-50 p-4">
+									<p className="text-xs text-muted-foreground">Producto Padre</p>
+									<p className="font-semibold text-lg">{disassemblySummary.parentProduct}</p>
+								</div>
+								<div className="rounded-lg border bg-slate-50 p-4">
+									<p className="text-xs text-muted-foreground">Estilo Aplicado</p>
+									<p className="font-semibold text-lg">{disassemblySummary.style}</p>
+								</div>
+								<div className="rounded-lg border bg-slate-50 p-4">
+									<p className="text-xs text-muted-foreground">Cantidad Procesada</p>
+									<p className="font-semibold text-lg">{disassemblySummary.quantity} piezas</p>
+								</div>
+								<div className="rounded-lg border bg-slate-50 p-4">
+									<p className="text-xs text-muted-foreground">Items Creados</p>
+									<p className="font-semibold text-lg text-green-600">{disassemblySummary.totalItems}</p>
+								</div>
+							</div>
+
+							{/* Timestamp y Usuario */}
+							<div className="rounded-lg border bg-blue-50 p-3">
+								<div className="grid grid-cols-2 gap-4 text-sm">
+									<div>
+										<p className="text-xs text-muted-foreground">Fecha y Hora</p>
+										<p className="font-medium">
+											{disassemblySummary.timestamp.toLocaleString('es-ES')}
+										</p>
+									</div>
+									<div>
+										<p className="text-xs text-muted-foreground">Estado</p>
+										<p className="font-medium text-green-600">✓ Completado</p>
+									</div>
+								</div>
+							</div>
+
+							{/* Recetas Aplicadas */}
+							{primaryTransformations.data && primaryTransformations.data.length > 0 && (
+								<div className="rounded-lg border p-3">
+									<p className="mb-2 text-sm font-semibold">Productos Generados:</p>
+									<div className="space-y-1 text-sm">
+										{primaryTransformations.data.map((trans) => (
+											<div key={trans.id} className="flex items-center gap-2">
+												<CheckCircleIcon className="h-4 w-4 text-green-600" />
+												<span>{trans.childProduct?.name}</span>
+												<span className="ml-auto text-muted-foreground">
+													+{expectedPieces(trans.yield_quantity_pieces, disassemblySummary.quantity)} piezas
+												</span>
+											</div>
+										))}
+									</div>
+								</div>
+							)}
+						</div>
+					)}
+
+					<DialogFooter className="flex gap-2 justify-end">
+						<Button
+							variant="outline"
+							onClick={() => window.print()}
+							className="flex gap-2"
+						>
+							<PrinterIcon className="h-4 w-4" />
+							Imprimir
+						</Button>
+						<Button
+							onClick={() => setDisassemblySummary(null)}
+							className="flex gap-2"
+						>
+							<CheckCircleIcon className="h-4 w-4" />
+							Aceptar y Continuar
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }
