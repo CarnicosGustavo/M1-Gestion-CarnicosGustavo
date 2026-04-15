@@ -21,6 +21,14 @@ export const orderStatusEnum = pgEnum("order_status", [
 	"delivered",
 	"cancelled",
 ]);
+export const orderItemStatusEnum = pgEnum("order_item_status", [
+	"COMPLETADO",
+	"PENDIENTE_PESAJE",
+	"PENDIENTE_COMPRA",
+	"PESADO",
+	"PENDING",
+	"WEIGHED",
+]);
 export const messageDirectionEnum = pgEnum("message_direction", [
 	"inbound",
 	"outbound",
@@ -231,8 +239,21 @@ export const orderItems = pgTable("order_items", {
 	quantity_kg: numeric("quantity_kg", { precision: 10, scale: 3 }),
 	unit_price: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
 	subtotal: numeric("subtotal", { precision: 10, scale: 2 }).notNull(),
-	status: varchar("status", { length: 50 }).notNull().default("PENDING"), // 'PENDING', 'WEIGHED'
+	status: orderItemStatusEnum("status").notNull().default("COMPLETADO"),
 	created_at: timestamp("created_at").defaultNow(),
+});
+
+// Tabla para rastrear órdenes con items pendientes de compra
+export const purchaseOrders = pgTable("purchase_orders", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	order_id: integer("order_id")
+		.notNull()
+		.references(() => orders.id),
+	status: varchar("status", { length: 20 }).notNull().default("PENDIENTE"), // PENDIENTE, PARCIAL, COMPLETO
+	notes: text("notes"),
+	created_by: varchar("created_by", { length: 255 }).notNull(),
+	created_at: timestamp("created_at").defaultNow(),
+	updated_at: timestamp("updated_at").defaultNow(),
 });
 
 export const whatsappSessions = pgTable("whatsapp_sessions", {

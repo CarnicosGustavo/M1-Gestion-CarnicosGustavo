@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
-import { orders, orderItems, transactions, customers, products, inventoryTransactions } from "@/lib/db/schema";
+import { orders, orderItems, transactions, customers, products, inventoryTransactions, purchaseOrders } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
@@ -144,6 +144,7 @@ export const ordersRouter = router({
             quantityPieces: z.number().int().optional(),
             quantityKg: z.number().int().optional(),
             unitPrice: z.number().int(),
+            requiresPurchase: z.boolean().optional(), // NUEVO: indica si el item está pendiente de compra
           })
         ),
         notes: z.string().optional(),
@@ -155,6 +156,7 @@ export const ordersRouter = router({
     .mutation(async ({ ctx, input }) => {
       return db.transaction(async (tx) => {
         let requiresWeighing = false;
+        let hasPendingPurchase = false;
         const processedItems = [];
 
         for (const item of input.items) {
@@ -170,7 +172,18 @@ export const ordersRouter = router({
           let quantityKg = item.quantityKg;
           let subtotal = 0;
 
-          if (product.is_sellable_by_weight && (!quantityKg || quantityKg === 0)) {
+          // NUEVO: Si requiresPurchase, marcar como PENDIENTE_COMPRA
+          if (item.requiresPurchase) {
+            itemStatus = "PENDIENTE_COMPRA";
+            hasPendingPurchase = true;
+            // El subtotal se calcula pero no se incluye en el total hasta que se compre
+            if (quantityKg) {
+              subtotal = (quantityKg / 1000) * item.unitPrice;
+              quantityKg = (quantityKg / 1000).toFixed(3) as any;
+            } else if (item.quantityPieces && product.price_per_piece) {
+              subtotal = item.quantityPieces * Number(product.price_per_piece);
+            }
+          } else if (product.is_sellable_by_weight && (!quantityKg || quantityKg === 0)) {
             itemStatus = "PENDIENTE_PESAJE";
             requiresWeighing = true;
             quantityKg = null;
@@ -194,8 +207,11 @@ export const ordersRouter = router({
           });
         }
 
-        const totalAmount = processedItems.reduce((sum, i) => sum + Number(i.subtotal), 0);
-        const orderStatus = requiresWeighing ? "PENDIENTE_PESAJE" : "LISTA_PARA_COBRO";
+        // Calcular total: solo incluir items que NO están PENDIENTE_COMPRA
+        const totalAmount = processedItems
+          .filter(i => i.status !== "PENDIENTE_COMPRA")
+          .reduce((sum, i) => sum + Number(i.subtotal), 0);
+        const orderStatus = requiresWeighing ? "PENDIENTE_PESAJE" : hasPendingPurchase ? "PARCIAL_DISPONIBLE" : "LISTA_PARA_COBRO";
 
         const [orderData] = await tx
           .insert(orders)
@@ -218,7 +234,18 @@ export const ordersRouter = router({
           }))
         );
 
-        if (!requiresWeighing && input.paymentMethodId) {
+        // NUEVO: Si hay items PENDIENTE_COMPRA, crear entrada en purchaseOrders
+        const purchaseItems = processedItems.filter(i => i.status === "PENDIENTE_COMPRA");
+        if (purchaseItems.length > 0) {
+          await tx.insert(purchaseOrders).values({
+            order_id: orderData.id,
+            status: "PENDIENTE",
+            notes: `${purchaseItems.length} productos sin stock en pedido #${orderData.id}`,
+            created_by: ctx.user.id,
+          });
+        }
+
+        if (!requiresWeighing && !hasPendingPurchase && input.paymentMethodId) {
           await tx.insert(transactions).values({
             order_id: orderData.id,
             payment_method_id: input.paymentMethodId,

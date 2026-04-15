@@ -289,20 +289,31 @@ export default function POSPage() {
 		const customerId = selectedCustomer?.id;
 		if (!customerId) return;
 
+		// CAMBIO: En lugar de rechazar, clasificar productos por stock disponible
+		const productsWithStock = [];
+		const productsPendingPurchase = [];
+
 		for (const p of selectedProducts) {
-			if (p.quantityKg !== null) {
-				if (p.quantityKg > Number(p.stock_kg)) {
-					toast.error("Stock insuficiente");
-					return;
-				}
+			const hasEnoughStock = p.quantityKg !== null
+				? p.quantityKg <= Number(p.stock_kg)
+				: p.quantityPieces <= p.stock_pieces;
+
+			if (hasEnoughStock) {
+				productsWithStock.push(p);
 			} else {
-				if (p.quantityPieces > p.stock_pieces) {
-					toast.error("Stock insuficiente");
-					return;
-				}
+				productsPendingPurchase.push(p);
 			}
 		}
 
+		// Si hay productos sin stock, advertir al usuario
+		if (productsPendingPurchase.length > 0) {
+			const pendingNames = productsPendingPurchase.map(p => p.name).join(", ");
+			toast.warning(
+				`${productsPendingPurchase.length} producto(s) sin stock serán marcados como pendiente de compra: ${pendingNames}`
+			);
+		}
+
+		// Crear orden con TODOS los productos (incluir ambas listas)
 		createOrderMutation.mutate({
 			customerId,
 			paymentMethodId: paymentMethod?.id,
@@ -313,6 +324,8 @@ export default function POSPage() {
 				unitPrice: p.quantityKg
 					? Math.round((p.unitPricePerKg || 0) * 100)
 					: Math.round((p.unitPricePerPiece || 0) * 100),
+				// NUEVO: Indicar si este producto está pendiente de compra
+				requiresPurchase: productsPendingPurchase.some(pp => pp.id === p.id),
 			})),
 		});
 	};
