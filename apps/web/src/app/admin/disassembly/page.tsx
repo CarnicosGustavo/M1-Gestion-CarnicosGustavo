@@ -348,10 +348,17 @@ export default function DisassemblyPage() {
 								<Label className="text-blue-900">Cantidad de Canales</Label>
 								<Input
 									type="number"
-									min={0}
-									step={1}
-									value={purchaseQuantity}
-									onChange={(e) => setPurchaseQuantity(Number(e.target.value))}
+									min="0"
+									step="1"
+									value={purchaseQuantity || ""}
+									onChange={(e) => {
+											const val = e.target.value;
+											if (val === "") setPurchaseQuantity(0);
+											else {
+												const num = parseInt(val, 10);
+												if (!isNaN(num) && num >= 0) setPurchaseQuantity(num);
+											}
+										}}
 									placeholder="Ej: 50"
 									className="border-blue-200"
 								/>
@@ -361,10 +368,17 @@ export default function DisassemblyPage() {
 								<Label className="text-blue-900">Peso Total (kg)</Label>
 								<Input
 									type="number"
-									min={0}
-									step={0.001}
-									value={purchaseWeightKg}
-									onChange={(e) => setPurchaseWeightKg(Number(e.target.value))}
+									min="0"
+									step="0.001"
+									value={purchaseWeightKg || ""}
+									onChange={(e) => {
+											const val = e.target.value;
+											if (val === "") setPurchaseWeightKg(0);
+											else {
+												const num = parseFloat(val);
+												if (!isNaN(num) && num >= 0) setPurchaseWeightKg(num);
+											}
+										}}
 									placeholder="Ej: 25.500"
 									className="border-blue-200"
 								/>
@@ -458,9 +472,17 @@ export default function DisassemblyPage() {
 										<Label>Cantidad Nacional</Label>
 										<Input
 											type="number"
-											min={0}
-											value={batchNational}
-											onChange={(e) => setBatchNational(Number(e.target.value))}
+											min="0"
+											step="1"
+											value={batchNational || ""}
+											onChange={(e) => {
+												const val = e.target.value;
+												if (val === "") setBatchNational(0);
+												else {
+													const num = parseInt(val, 10);
+													if (!isNaN(num) && num >= 0) setBatchNational(num);
+												}
+											}}
 										/>
 									</div>
 
@@ -468,9 +490,17 @@ export default function DisassemblyPage() {
 										<Label>Cantidad Americano</Label>
 										<Input
 											type="number"
-											min={0}
-											value={batchAmerican}
-											onChange={(e) => setBatchAmerican(Number(e.target.value))}
+											min="0"
+											step="1"
+											value={batchAmerican || ""}
+											onChange={(e) => {
+												const val = e.target.value;
+												if (val === "") setBatchAmerican(0);
+												else {
+													const num = parseInt(val, 10);
+													if (!isNaN(num) && num >= 0) setBatchAmerican(num);
+												}
+											}}
 										/>
 									</div>
 
@@ -478,11 +508,17 @@ export default function DisassemblyPage() {
 										<Label>Cantidad Polinesio</Label>
 										<Input
 											type="number"
-											min={0}
-											value={batchPolynesian}
-											onChange={(e) =>
-												setBatchPolynesian(Number(e.target.value))
-											}
+											min="0"
+											step="1"
+											value={batchPolynesian || ""}
+											onChange={(e) => {
+												const val = e.target.value;
+												if (val === "") setBatchPolynesian(0);
+												else {
+													const num = parseInt(val, 10);
+													if (!isNaN(num) && num >= 0) setBatchPolynesian(num);
+												}
+											}}
 										/>
 									</div>
 								</div>
@@ -727,10 +763,17 @@ export default function DisassemblyPage() {
 								<Label>{t("quantityToProcess")}</Label>
 								<Input
 									type="number"
-									min={1}
-									max={selectedPrimaryParent?.stock_pieces || 1}
-									value={primaryQuantity}
-									onChange={(e) => setPrimaryQuantity(Number(e.target.value))}
+									min="1"
+									max={String(selectedPrimaryParent?.stock_pieces || 1)}
+									value={primaryQuantity || ""}
+									onChange={(e) => {
+										const val = e.target.value;
+										if (val === "") setPrimaryQuantity(1);
+										else {
+											const num = parseInt(val, 10);
+											if (!isNaN(num) && num >= 1) setPrimaryQuantity(num);
+										}
+									}}
 									disabled={!selectedPrimaryParent}
 								/>
 								{selectedPrimaryParent && primaryQuantity > selectedPrimaryParent.stock_pieces && (
