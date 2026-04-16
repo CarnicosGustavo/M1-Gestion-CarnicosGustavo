@@ -101,7 +101,7 @@ export default function RecipesPage() {
 		parentProductId: z.number().int().positive(),
 		childProductId: z.number().int().positive(),
 		childName: z.string().min(1),
-		transformationType: z.enum(["BASE", "NACIONAL", "AMERICANO", "POLINESIO"]),
+		transformationType: z.string().min(1),
 		yieldQuantityPieces: z.number().min(0),
 		yieldWeightRatio: z.number().min(0),
 		isActive: z.boolean().default(true),
@@ -137,7 +137,7 @@ export default function RecipesPage() {
 			parentProductId: 0,
 			childProductId: 0,
 			childName: "",
-			transformationType: "BASE" as const,
+			transformationType: "BASE",
 			yieldQuantityPieces: 0,
 			yieldWeightRatio: 0,
 			isActive: true,
@@ -145,8 +145,15 @@ export default function RecipesPage() {
 		validators: {
 			onSubmit: ({ value }) => {
 				const res = recipeFormSchema.safeParse(value);
-				if (!res.success)
-					return res.error.errors.map((e) => e.message).join(", ");
+				if (!res.success) {
+					const issues =
+						(res.error as unknown as { issues?: Array<{ message: string }> })
+							.issues ??
+						(res.error as unknown as { errors?: Array<{ message: string }> })
+							.errors ??
+						[];
+					return issues.map((e) => e.message).join(", ");
+				}
 				return undefined;
 			},
 		},
@@ -487,28 +494,13 @@ export default function RecipesPage() {
 								{(field) => (
 									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label className="sm:text-right">Estilo</Label>
-										<Select
+										<Input
+											className="col-span-3"
 											value={field.state.value}
-											onValueChange={(value) =>
-												field.handleChange(
-													value as
-														| "BASE"
-														| "NACIONAL"
-														| "AMERICANO"
-														| "POLINESIO",
-												)
-											}
-										>
-											<SelectTrigger className="col-span-3">
-												<SelectValue placeholder="Selecciona estilo" />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="BASE">BASE</SelectItem>
-												<SelectItem value="NACIONAL">NACIONAL</SelectItem>
-												<SelectItem value="AMERICANO">AMERICANO</SelectItem>
-												<SelectItem value="POLINESIO">POLINESIO</SelectItem>
-											</SelectContent>
-										</Select>
+											onChange={(e) => field.handleChange(e.target.value)}
+											onBlur={field.handleBlur}
+											placeholder="Ej. BASE / NACIONAL / AMERICANO / POLINESIO / DESPIECE_ESPALDILLA"
+										/>
 									</div>
 								)}
 							</form.Field>

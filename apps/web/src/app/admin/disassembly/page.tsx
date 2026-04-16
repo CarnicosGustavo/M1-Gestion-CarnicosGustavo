@@ -12,9 +12,9 @@ import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
+	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	DialogFooter,
 } from "@finopenpos/ui/components/dialog";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
@@ -27,7 +27,14 @@ import {
 } from "@finopenpos/ui/components/select";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircleIcon, PackageIcon, ScissorsIcon, AlertCircleIcon, LoaderIcon, PrinterIcon, XIcon } from "lucide-react";
+import {
+	AlertCircleIcon,
+	CheckCircleIcon,
+	LoaderIcon,
+	PackageIcon,
+	PrinterIcon,
+	ScissorsIcon,
+} from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -61,7 +68,7 @@ export default function DisassemblyPage() {
 	const [selectedPrimaryParentId, setSelectedPrimaryParentId] =
 		useState<string>("");
 	const [selectedPrimaryStyle, setSelectedPrimaryStyle] =
-		useState<(typeof cuttingStyles)[number]>("BASE");
+		useState<string>("BASE");
 	const [primaryQuantity, setPrimaryQuantity] = useState<number>(1);
 
 	// Resumen post-despiece
@@ -147,80 +154,30 @@ export default function DisassemblyPage() {
 		enabled: !!canalProduct,
 	});
 
-	// Query to get all possible styles (BASE + all named styles)
-	const allStylesQueries = useMemo(() => {
-		if (!selectedPrimaryParentId) return null;
-
-		const parentId = Number(selectedPrimaryParentId);
-		return {
-			base: { parentProductId: parentId, transformationType: "BASE" },
-			nacional: { parentProductId: parentId, transformationType: "NACIONAL" },
-			americano: { parentProductId: parentId, transformationType: "AMERICANO" },
-			polinesio: { parentProductId: parentId, transformationType: "POLINESIO" },
-		};
-	}, [selectedPrimaryParentId]);
-
-	// Query each style to check if it has recipes
-	const baseStyleQuery = useQuery({
-		...trpc.products.getTransformations.queryOptions(
-			allStylesQueries?.base ?? { parentProductId: 0, transformationType: "BASE" }
-		),
-		enabled: !!allStylesQueries,
+	const availableTypesQuery = useQuery({
+		...trpc.products.getAvailableTransformationTypes.queryOptions({
+			parentProductId: Number(selectedPrimaryParentId || 0),
+		}),
+		enabled: !!selectedPrimaryParentId,
 	});
 
-	const nacionalStyleQuery = useQuery({
-		...trpc.products.getTransformations.queryOptions(
-			allStylesQueries?.nacional ?? { parentProductId: 0, transformationType: "NACIONAL" }
-		),
-		enabled: !!allStylesQueries,
-	});
-
-	const americanoStyleQuery = useQuery({
-		...trpc.products.getTransformations.queryOptions(
-			allStylesQueries?.americano ?? { parentProductId: 0, transformationType: "AMERICANO" }
-		),
-		enabled: !!allStylesQueries,
-	});
-
-	const polinesioDstyleQuery = useQuery({
-		...trpc.products.getTransformations.queryOptions(
-			allStylesQueries?.polinesio ?? { parentProductId: 0, transformationType: "POLINESIO" }
-		),
-		enabled: !!allStylesQueries,
-	});
-
-	// Determine which cutting styles have recipes for the selected parent
 	const availableCuttingStyles = useMemo(() => {
-		if (!selectedPrimaryParent) return cuttingStyles;
-
-		const styles: string[] = [];
-
-		if (baseStyleQuery.data?.length) styles.push("BASE");
-		if (nacionalStyleQuery.data?.length) styles.push("NACIONAL");
-		if (americanoStyleQuery.data?.length) styles.push("AMERICANO");
-		if (polinesioDstyleQuery.data?.length) styles.push("POLINESIO");
-
-		// If no generic styles have recipes, try custom style based on product name
-		// E.g., PIERNA → DESPIECE_PIERNA, CABEZA → DESPIECE_CABEZA, etc.
-		if (styles.length === 0 && selectedPrimaryParent) {
-			const productName = selectedPrimaryParent.name
-				.toUpperCase()
-				.replace(/^XX\d+\s*-\s*/, "") // Remove XX# prefix
-				.trim();
-
-			// Check if this custom style exists in any of the queries
-			// This is a temporary fallback - in production, we'd query for DESPIECE_<NAME>
-			styles.push(`DESPIECE_${productName}`);
+		const types = availableTypesQuery.data ?? [];
+		if (!types.length) return [...cuttingStyles];
+		const unique = Array.from(new Set(types));
+		unique.sort((a, b) => a.localeCompare(b));
+		if (unique.includes("BASE")) {
+			return ["BASE", ...unique.filter((x) => x !== "BASE")];
 		}
+		return unique;
+	}, [availableTypesQuery.data]);
 
-		return styles.length > 0 ? styles : cuttingStyles; // Fallback to all styles
-	}, [
-		selectedPrimaryParent,
-		baseStyleQuery.data,
-		nacionalStyleQuery.data,
-		americanoStyleQuery.data,
-		polinesioDstyleQuery.data,
-	]);
+	useEffect(() => {
+		if (!availableCuttingStyles.length) return;
+		if (!availableCuttingStyles.includes(selectedPrimaryStyle)) {
+			setSelectedPrimaryStyle(availableCuttingStyles[0]);
+		}
+	}, [availableCuttingStyles, selectedPrimaryStyle]);
 
 	const primaryTransformations = useQuery({
 		...trpc.products.getTransformations.queryOptions({
@@ -254,7 +211,7 @@ export default function DisassemblyPage() {
 		trpc.products.processDisassembly.mutationOptions({
 			onSuccess: (_data, variables) => {
 				// Mostrar resumen en modal
-				const parent = products.find(p => p.id === variables.parentProductId);
+				const parent = products.find((p) => p.id === variables.parentProductId);
 				if (parent && primaryTransformations.data) {
 					setDisassemblySummary({
 						parentProduct: parent.name,
@@ -335,12 +292,13 @@ export default function DisassemblyPage() {
 					<div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
 						<div className="flex items-center gap-2">
 							<PackageIcon className="h-5 w-5 text-blue-600" />
-							<h3 className="font-medium text-lg text-blue-900">
+							<h3 className="font-medium text-blue-900 text-lg">
 								Ingreso de Compra de Canales
 							</h3>
 						</div>
-						<p className="text-sm text-blue-800">
-							Registra la compra inicial de canales. Los datos ingresados serán el stock disponible para despiece.
+						<p className="text-blue-800 text-sm">
+							Registra la compra inicial de canales. Los datos ingresados serán
+							el stock disponible para despiece.
 						</p>
 
 						<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -352,13 +310,14 @@ export default function DisassemblyPage() {
 									step="1"
 									value={purchaseQuantity || ""}
 									onChange={(e) => {
-											const val = e.target.value;
-											if (val === "") setPurchaseQuantity(0);
-											else {
-												const num = parseInt(val, 10);
-												if (!isNaN(num) && num >= 0) setPurchaseQuantity(num);
-											}
-										}}
+										const val = e.target.value;
+										if (val === "") setPurchaseQuantity(0);
+										else {
+											const num = Number.parseInt(val, 10);
+											if (!Number.isNaN(num) && num >= 0)
+												setPurchaseQuantity(num);
+										}
+									}}
 									placeholder="Ej: 50"
 									className="border-blue-200"
 								/>
@@ -372,19 +331,21 @@ export default function DisassemblyPage() {
 									step="0.001"
 									value={purchaseWeightKg || ""}
 									onChange={(e) => {
-											const val = e.target.value;
-											if (val === "") setPurchaseWeightKg(0);
-											else {
-												const num = parseFloat(val);
-												if (!isNaN(num) && num >= 0) setPurchaseWeightKg(num);
-											}
-										}}
+										const val = e.target.value;
+										if (val === "") setPurchaseWeightKg(0);
+										else {
+											const num = Number.parseFloat(val);
+											if (!Number.isNaN(num) && num >= 0)
+												setPurchaseWeightKg(num);
+										}
+									}}
 									placeholder="Ej: 25.500"
 									className="border-blue-200"
 								/>
 								{purchaseQuantity > 0 && purchaseWeightKg > 0 && (
-									<div className="text-xs text-blue-700">
-										Promedio: {(purchaseWeightKg / purchaseQuantity).toFixed(3)} kg/pieza
+									<div className="text-blue-700 text-xs">
+										Promedio: {(purchaseWeightKg / purchaseQuantity).toFixed(3)}{" "}
+										kg/pieza
 									</div>
 								)}
 							</div>
@@ -410,7 +371,11 @@ export default function DisassemblyPage() {
 										notes: purchaseNotes || undefined,
 									});
 								}}
-								disabled={purchaseQuantity <= 0 || purchaseWeightKg <= 0 || purchaseMutation.isPending}
+								disabled={
+									purchaseQuantity <= 0 ||
+									purchaseWeightKg <= 0 ||
+									purchaseMutation.isPending
+								}
 								className="bg-blue-600 hover:bg-blue-700"
 							>
 								{purchaseMutation.isPending ? (
@@ -479,8 +444,9 @@ export default function DisassemblyPage() {
 												const val = e.target.value;
 												if (val === "") setBatchNational(0);
 												else {
-													const num = parseInt(val, 10);
-													if (!isNaN(num) && num >= 0) setBatchNational(num);
+													const num = Number.parseInt(val, 10);
+													if (!Number.isNaN(num) && num >= 0)
+														setBatchNational(num);
 												}
 											}}
 										/>
@@ -497,8 +463,9 @@ export default function DisassemblyPage() {
 												const val = e.target.value;
 												if (val === "") setBatchAmerican(0);
 												else {
-													const num = parseInt(val, 10);
-													if (!isNaN(num) && num >= 0) setBatchAmerican(num);
+													const num = Number.parseInt(val, 10);
+													if (!Number.isNaN(num) && num >= 0)
+														setBatchAmerican(num);
 												}
 											}}
 										/>
@@ -515,8 +482,9 @@ export default function DisassemblyPage() {
 												const val = e.target.value;
 												if (val === "") setBatchPolynesian(0);
 												else {
-													const num = parseInt(val, 10);
-													if (!isNaN(num) && num >= 0) setBatchPolynesian(num);
+													const num = Number.parseInt(val, 10);
+													if (!Number.isNaN(num) && num >= 0)
+														setBatchPolynesian(num);
 												}
 											}}
 										/>
@@ -680,21 +648,16 @@ export default function DisassemblyPage() {
 						</div>
 
 						<div className="text-muted-foreground text-sm">
-							Procesa piezas secundarias (Pierna, Espaldilla, Cabeza, etc.) generadas desde el despiece masivo de canal.
+							Procesa piezas secundarias (Pierna, Espaldilla, Cabeza, etc.)
+							generadas desde el despiece masivo de canal.
 						</div>
 
 						{selectedPrimaryParent && (
-							<div className="rounded-md bg-amber-50 border border-amber-200 p-3">
-								<div className="text-sm text-amber-900">
-									<strong>Consejo:</strong> Para <strong>{selectedPrimaryParent.name}</strong>,
-									{selectedPrimaryParent.name.toLowerCase().includes("pierna")
-										? ' usa el estilo "DESPIECE_PIERNA"'
-										: selectedPrimaryParent.name.toLowerCase().includes("espaldilla")
-										? ' usa el estilo "DESPIECE_ESPALDILLA"'
-										: selectedPrimaryParent.name.toLowerCase().includes("cabeza")
-										? ' usa el estilo "DESPIECE_CABEZA"'
-										: ' selecciona el estilo disponible'}
-									.
+							<div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+								<div className="text-amber-900 text-sm">
+									<strong>Consejo:</strong> Selecciona un estilo que tenga
+									recetas configuradas. Si no aparece el estilo que necesitas,
+									créalo en Recetas y luego vuelve aquí.
 								</div>
 							</div>
 						)}
@@ -711,7 +674,7 @@ export default function DisassemblyPage() {
 									</SelectTrigger>
 									<SelectContent>
 										{primaryParentProducts.length === 0 ? (
-											<div className="p-3 text-sm text-muted-foreground text-center">
+											<div className="p-3 text-center text-muted-foreground text-sm">
 												No se encontraron productos padre
 											</div>
 										) : (
@@ -723,12 +686,13 @@ export default function DisassemblyPage() {
 										)}
 									</SelectContent>
 								</Select>
-								{selectedPrimaryParent && selectedPrimaryParent.stock_pieces === 0 && (
-									<div className="flex items-center gap-2 text-xs text-amber-600">
-										<AlertCircleIcon className="h-3.5 w-3.5" />
-										Sin stock disponible
-									</div>
-								)}
+								{selectedPrimaryParent &&
+									selectedPrimaryParent.stock_pieces === 0 && (
+										<div className="flex items-center gap-2 text-amber-600 text-xs">
+											<AlertCircleIcon className="h-3.5 w-3.5" />
+											Sin stock disponible
+										</div>
+									)}
 							</div>
 
 							<div className="space-y-2">
@@ -752,7 +716,7 @@ export default function DisassemblyPage() {
 									</SelectContent>
 								</Select>
 								{primaryTransformations.isFetching && (
-									<div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+									<div className="flex items-center gap-1.5 text-muted-foreground text-xs">
 										<LoaderIcon className="h-3.5 w-3.5 animate-spin" />
 										Cargando recetas...
 									</div>
@@ -770,18 +734,20 @@ export default function DisassemblyPage() {
 										const val = e.target.value;
 										if (val === "") setPrimaryQuantity(1);
 										else {
-											const num = parseInt(val, 10);
-											if (!isNaN(num) && num >= 1) setPrimaryQuantity(num);
+											const num = Number.parseInt(val, 10);
+											if (!Number.isNaN(num) && num >= 1)
+												setPrimaryQuantity(num);
 										}
 									}}
 									disabled={!selectedPrimaryParent}
 								/>
-								{selectedPrimaryParent && primaryQuantity > selectedPrimaryParent.stock_pieces && (
-									<div className="flex items-center gap-2 text-xs text-red-600">
-										<AlertCircleIcon className="h-3.5 w-3.5" />
-										Cantidad excede el stock
-									</div>
-								)}
+								{selectedPrimaryParent &&
+									primaryQuantity > selectedPrimaryParent.stock_pieces && (
+										<div className="flex items-center gap-2 text-red-600 text-xs">
+											<AlertCircleIcon className="h-3.5 w-3.5" />
+											Cantidad excede el stock
+										</div>
+									)}
 							</div>
 						</div>
 
@@ -853,13 +819,16 @@ export default function DisassemblyPage() {
 										</div>
 									</>
 								) : (
-									<div className="flex flex-col items-center justify-center gap-2 rounded-md border border-amber-200 bg-amber-50 py-6 px-4 text-amber-900">
+									<div className="flex flex-col items-center justify-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-6 text-amber-900">
 										<AlertCircleIcon className="h-5 w-5" />
-										<div className="text-sm font-medium">
+										<div className="font-medium text-sm">
 											No se encontraron recetas
 										</div>
-										<p className="text-xs text-amber-800">
-											El estilo de despiece "{selectedPrimaryStyle}" no tiene recetas configuradas para el producto {selectedPrimaryParent.name}. Por favor, selecciona otro estilo o configura las recetas.
+										<p className="text-amber-800 text-xs">
+											El estilo de despiece "{selectedPrimaryStyle}" no tiene
+											recetas configuradas para el producto{" "}
+											{selectedPrimaryParent.name}. Por favor, selecciona otro
+											estilo o configura las recetas.
 										</p>
 									</div>
 								)}
@@ -870,21 +839,24 @@ export default function DisassemblyPage() {
 			</Card>
 
 			{/* Dialog de Resumen Post-Despiece */}
-			<Dialog open={!!disassemblySummary} onOpenChange={(open) => {
-				if (!open) {
-					setDisassemblySummary(null);
-					// Reset forms cuando se cierra
-					setBatchNational(0);
-					setBatchAmerican(0);
-					setBatchPolynesian(0);
-					setSelectedPrimaryParentId("");
-					setSelectedPrimaryStyle("BASE");
-					setPrimaryQuantity(1);
-					queryClient.invalidateQueries({
-						queryKey: trpc.products.list.queryKey(),
-					});
-				}
-			}}>
+			<Dialog
+				open={!!disassemblySummary}
+				onOpenChange={(open) => {
+					if (!open) {
+						setDisassemblySummary(null);
+						// Reset forms cuando se cierra
+						setBatchNational(0);
+						setBatchAmerican(0);
+						setBatchPolynesian(0);
+						setSelectedPrimaryParentId("");
+						setSelectedPrimaryStyle("BASE");
+						setPrimaryQuantity(1);
+						queryClient.invalidateQueries({
+							queryKey: trpc.products.list.queryKey(),
+						});
+					}
+				}}
+			>
 				<DialogContent className="max-w-2xl">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
@@ -901,20 +873,34 @@ export default function DisassemblyPage() {
 							{/* Consolidado */}
 							<div className="grid grid-cols-2 gap-4">
 								<div className="rounded-lg border bg-slate-50 p-4">
-									<p className="text-xs text-muted-foreground">Producto Padre</p>
-									<p className="font-semibold text-lg">{disassemblySummary.parentProduct}</p>
+									<p className="text-muted-foreground text-xs">
+										Producto Padre
+									</p>
+									<p className="font-semibold text-lg">
+										{disassemblySummary.parentProduct}
+									</p>
 								</div>
 								<div className="rounded-lg border bg-slate-50 p-4">
-									<p className="text-xs text-muted-foreground">Estilo Aplicado</p>
-									<p className="font-semibold text-lg">{disassemblySummary.style}</p>
+									<p className="text-muted-foreground text-xs">
+										Estilo Aplicado
+									</p>
+									<p className="font-semibold text-lg">
+										{disassemblySummary.style}
+									</p>
 								</div>
 								<div className="rounded-lg border bg-slate-50 p-4">
-									<p className="text-xs text-muted-foreground">Cantidad Procesada</p>
-									<p className="font-semibold text-lg">{disassemblySummary.quantity} piezas</p>
+									<p className="text-muted-foreground text-xs">
+										Cantidad Procesada
+									</p>
+									<p className="font-semibold text-lg">
+										{disassemblySummary.quantity} piezas
+									</p>
 								</div>
 								<div className="rounded-lg border bg-slate-50 p-4">
-									<p className="text-xs text-muted-foreground">Items Creados</p>
-									<p className="font-semibold text-lg text-green-600">{disassemblySummary.totalItems}</p>
+									<p className="text-muted-foreground text-xs">Items Creados</p>
+									<p className="font-semibold text-green-600 text-lg">
+										{disassemblySummary.totalItems}
+									</p>
 								</div>
 							</div>
 
@@ -922,39 +908,49 @@ export default function DisassemblyPage() {
 							<div className="rounded-lg border bg-blue-50 p-3">
 								<div className="grid grid-cols-2 gap-4 text-sm">
 									<div>
-										<p className="text-xs text-muted-foreground">Fecha y Hora</p>
+										<p className="text-muted-foreground text-xs">
+											Fecha y Hora
+										</p>
 										<p className="font-medium">
-											{disassemblySummary.timestamp.toLocaleString('es-ES')}
+											{disassemblySummary.timestamp.toLocaleString("es-ES")}
 										</p>
 									</div>
 									<div>
-										<p className="text-xs text-muted-foreground">Estado</p>
+										<p className="text-muted-foreground text-xs">Estado</p>
 										<p className="font-medium text-green-600">✓ Completado</p>
 									</div>
 								</div>
 							</div>
 
 							{/* Recetas Aplicadas */}
-							{primaryTransformations.data && primaryTransformations.data.length > 0 && (
-								<div className="rounded-lg border p-3">
-									<p className="mb-2 text-sm font-semibold">Productos Generados:</p>
-									<div className="space-y-1 text-sm">
-										{primaryTransformations.data.map((trans) => (
-											<div key={trans.id} className="flex items-center gap-2">
-												<CheckCircleIcon className="h-4 w-4 text-green-600" />
-												<span>{trans.childProduct?.name}</span>
-												<span className="ml-auto text-muted-foreground">
-													+{expectedPieces(trans.yield_quantity_pieces, disassemblySummary.quantity)} piezas
-												</span>
-											</div>
-										))}
+							{primaryTransformations.data &&
+								primaryTransformations.data.length > 0 && (
+									<div className="rounded-lg border p-3">
+										<p className="mb-2 font-semibold text-sm">
+											Productos Generados:
+										</p>
+										<div className="space-y-1 text-sm">
+											{primaryTransformations.data.map((trans) => (
+												<div key={trans.id} className="flex items-center gap-2">
+													<CheckCircleIcon className="h-4 w-4 text-green-600" />
+													<span>{trans.childProduct?.name}</span>
+													<span className="ml-auto text-muted-foreground">
+														+
+														{expectedPieces(
+															trans.yield_quantity_pieces,
+															disassemblySummary.quantity,
+														)}{" "}
+														piezas
+													</span>
+												</div>
+											))}
+										</div>
 									</div>
-								</div>
-							)}
+								)}
 						</div>
 					)}
 
-					<DialogFooter className="flex gap-2 justify-end">
+					<DialogFooter className="flex justify-end gap-2">
 						<Button
 							variant="outline"
 							onClick={() => window.print()}

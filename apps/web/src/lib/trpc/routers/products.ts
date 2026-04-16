@@ -7,7 +7,12 @@ import {
 	products,
 	productTransformations,
 } from "@/lib/db/schema";
-import { protectedProcedure, adminProcedure, almacenProcedure, router } from "../init";
+import {
+	adminProcedure,
+	almacenProcedure,
+	protectedProcedure,
+	router,
+} from "../init";
 
 const productSchema = z.object({
 	id: z.number(),
@@ -269,9 +274,7 @@ export const productsRouter = router({
 			const [updated] = await db
 				.update(products)
 				.set(updateData)
-				.where(
-					and(eq(products.id, id), eq(products.user_uid, ctx.user.id)),
-				)
+				.where(and(eq(products.id, id), eq(products.user_uid, ctx.user.id)))
 				.returning();
 			return updated;
 		}),
@@ -291,10 +294,7 @@ export const productsRouter = router({
 			await db
 				.delete(products)
 				.where(
-					and(
-						eq(products.id, input.id),
-						eq(products.user_uid, ctx.user.id),
-					),
+					and(eq(products.id, input.id), eq(products.user_uid, ctx.user.id)),
 				);
 			return { success: true };
 		}),
@@ -406,9 +406,7 @@ export const productsRouter = router({
 				};
 				const normalizedType = normalizeType(transformationType);
 				const typesToApply =
-					normalizedType === "BASE"
-						? ["BASE"]
-						: ["BASE", normalizedType];
+					normalizedType === "BASE" ? ["BASE"] : ["BASE", normalizedType];
 
 				const recipes = await tx
 					.select()
@@ -528,15 +526,9 @@ export const productsRouter = router({
 				});
 			}
 
-			const normalizeType = (type: string) => {
-				if (type === "BASE") return "BASE";
-				return `DESPIECE_${type}`;
-			};
-			const normalizedType = input.transformationType ? normalizeType(input.transformationType) : "BASE";
+			const selectedType = input.transformationType ?? "BASE";
 			const typesToApply =
-				normalizedType === "BASE"
-					? ["BASE"]
-					: ["BASE", normalizedType];
+				selectedType === "BASE" ? ["BASE"] : ["BASE", selectedType];
 
 			return db.query.productTransformations.findMany({
 				where: and(
