@@ -36,12 +36,19 @@ import {
 	ScissorsIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 
-const cuttingStyles = ["BASE", "NACIONAL", "AMERICANO", "POLINESIO"] as const;
+const cuttingStyles = [
+	"BASE",
+	"SEPARAR",
+	"SIN_HUESO",
+	"AMERICANO",
+	"NACIONAL_POLINESIA_LOMO",
+	"NACIONAL_POLINESIA_ESPILOMO",
+] as const;
 
 type Transformation = RouterOutputs["products"]["getTransformations"][number];
 
@@ -54,14 +61,17 @@ export default function DisassemblyPage() {
 	const [isClient, setIsClient] = useState(false);
 
 	// Ingreso de compra de canales
-	const [purchaseQuantity, setPurchaseQuantity] = useState<number>(0);
+	const [purchaseAmericanQty, setPurchaseAmericanQty] = useState<number>(0);
+	const [purchaseNationalPolynesiaQty, setPurchaseNationalPolynesiaQty] =
+		useState<number>(0);
 	const [purchaseWeightKg, setPurchaseWeightKg] = useState<number>(0);
 	const [purchaseNotes, setPurchaseNotes] = useState<string>("");
+	const purchaseQuantity = purchaseAmericanQty + purchaseNationalPolynesiaQty;
 
 	// Despiece masivo
-	const [batchNational, setBatchNational] = useState<number>(0);
 	const [batchAmerican, setBatchAmerican] = useState<number>(0);
-	const [batchPolynesian, setBatchPolynesian] = useState<number>(0);
+	const [batchNationalPolynesia, setBatchNationalPolynesia] =
+		useState<number>(0);
 	const [realWeightMode, setRealWeightMode] = useState(true);
 
 	// Despiece de pieza primaria
@@ -132,10 +142,14 @@ export default function DisassemblyPage() {
 		);
 	}, [primaryParentProducts, selectedPrimaryParentId]);
 
-	const canalNational = useQuery({
+	const hasAnyPrimaryStock = useMemo(() => {
+		return primaryParentProducts.some((p) => p.stock_pieces > 0);
+	}, [primaryParentProducts]);
+
+	const canalNationalPolynesiaLomo = useQuery({
 		...trpc.products.getTransformations.queryOptions({
 			parentProductId: canalProduct?.id ?? 0,
-			transformationType: "NACIONAL",
+			transformationType: "NACIONAL_POLINESIA_LOMO",
 		}),
 		enabled: !!canalProduct,
 	});
@@ -146,10 +160,10 @@ export default function DisassemblyPage() {
 		}),
 		enabled: !!canalProduct,
 	});
-	const canalPolynesian = useQuery({
+	const canalNationalPolynesiaEspilomo = useQuery({
 		...trpc.products.getTransformations.queryOptions({
 			parentProductId: canalProduct?.id ?? 0,
-			transformationType: "POLINESIO",
+			transformationType: "NACIONAL_POLINESIA_ESPILOMO",
 		}),
 		enabled: !!canalProduct,
 	});
@@ -193,7 +207,10 @@ export default function DisassemblyPage() {
 				toast.success(
 					`Compra registrada: ${data.newStock} canales, ${data.newKg} kg total`,
 				);
-				setPurchaseQuantity(0);
+				setBatchAmerican(purchaseAmericanQty);
+				setBatchNationalPolynesia(purchaseNationalPolynesiaQty);
+				setPurchaseAmericanQty(0);
+				setPurchaseNationalPolynesiaQty(0);
 				setPurchaseWeightKg(0);
 				setPurchaseNotes("");
 				// Refrescar lista de productos
@@ -212,7 +229,13 @@ export default function DisassemblyPage() {
 			onSuccess: (_data, variables) => {
 				// Mostrar resumen en modal
 				const parent = products.find((p) => p.id === variables.parentProductId);
-				if (parent && primaryTransformations.data) {
+				if (
+					variables.entryMode !== true &&
+					parent &&
+					selectedPrimaryParent &&
+					variables.parentProductId === selectedPrimaryParent.id &&
+					primaryTransformations.data
+				) {
 					setDisassemblySummary({
 						parentProduct: parent.name,
 						quantity: variables.quantityToProcess,
@@ -229,21 +252,71 @@ export default function DisassemblyPage() {
 		}),
 	);
 
-	const expectedPieces = (yieldQuantityPieces: unknown, qty: number) => {
-		const raw = Number(yieldQuantityPieces);
-		const normalized = raw > 50 ? raw / 1000 : raw;
-		return Math.round(normalized * qty);
-	};
+	const expectedPieces = useCallback(
+		(yieldQuantityPieces: unknown, qty: number) => {
+			const raw = Number(yieldQuantityPieces);
+			const normalized = raw > 50 ? raw / 1000 : raw;
+			return Math.round(normalized * qty);
+		},
+		[],
+	);
+
+	const npLomoQty = useMemo(() => {
+		return Math.ceil(batchNationalPolynesia / 2);
+	}, [batchNationalPolynesia]);
+
+	const npEspilomoQty = useMemo(() => {
+		return Math.max(0, batchNationalPolynesia - npLomoQty);
+	}, [batchNationalPolynesia, npLomoQty]);
+
+	const canalNpPreview = useMemo(() => {
+		const map = new Map<number, { name: string; pieces: number }>();
+
+		for (const row of canalNationalPolynesiaLomo.data ?? []) {
+			const id = row.child_product_id;
+			const name = row.childProduct?.name ?? "-";
+			const pieces = expectedPieces(row.yield_quantity_pieces, npLomoQty);
+			const prev = map.get(id);
+			map.set(id, { name, pieces: (prev?.pieces ?? 0) + pieces });
+		}
+
+		for (const row of canalNationalPolynesiaEspilomo.data ?? []) {
+			const id = row.child_product_id;
+			const name = row.childProduct?.name ?? "-";
+			const pieces = expectedPieces(row.yield_quantity_pieces, npEspilomoQty);
+			const prev = map.get(id);
+			map.set(id, { name, pieces: (prev?.pieces ?? 0) + pieces });
+		}
+
+		return Array.from(map.entries())
+			.map(([id, v]) => ({ id, ...v }))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}, [
+		canalNationalPolynesiaEspilomo.data,
+		canalNationalPolynesiaLomo.data,
+		expectedPieces,
+		npEspilomoQty,
+		npLomoQty,
+	]);
 
 	const executeCanalBatch = async () => {
 		if (!canalProduct) return;
 
-		const steps: Array<{ qty: number; style: (typeof cuttingStyles)[number] }> =
-			[
-				{ qty: batchNational, style: "NACIONAL" },
-				{ qty: batchAmerican, style: "AMERICANO" },
-				{ qty: batchPolynesian, style: "POLINESIO" },
-			];
+		const totalToProcess = batchAmerican + batchNationalPolynesia;
+		if (totalToProcess <= 0) return;
+
+		if (canalProduct.stock_pieces < totalToProcess) {
+			toast.error("Cantidad excede el stock de canal");
+			return;
+		}
+
+		const steps: Array<{ qty: number; style: string }> = [];
+		if (batchAmerican > 0)
+			steps.push({ qty: batchAmerican, style: "AMERICANO" });
+		if (npLomoQty > 0)
+			steps.push({ qty: npLomoQty, style: "NACIONAL_POLINESIA_LOMO" });
+		if (npEspilomoQty > 0)
+			steps.push({ qty: npEspilomoQty, style: "NACIONAL_POLINESIA_ESPILOMO" });
 
 		for (const s of steps) {
 			if (s.qty <= 0) continue;
@@ -252,9 +325,11 @@ export default function DisassemblyPage() {
 				quantityToProcess: s.qty,
 				transformationType: s.style,
 				realWeightMode,
-				entryMode: true,
+				entryMode: false,
 			});
 		}
+
+		queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
 	};
 
 	const executePrimaryDisassembly = () => {
@@ -301,26 +376,52 @@ export default function DisassemblyPage() {
 							el stock disponible para despiece.
 						</p>
 
-						<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+						<div className="grid grid-cols-1 gap-4 md:grid-cols-4">
 							<div className="space-y-2">
-								<Label className="text-blue-900">Cantidad de Canales</Label>
+								<Label className="text-blue-900">
+									Cantidad Nacional/Polinesia
+								</Label>
 								<Input
 									type="number"
 									min="0"
 									step="1"
-									value={purchaseQuantity || ""}
+									value={purchaseNationalPolynesiaQty || ""}
 									onChange={(e) => {
 										const val = e.target.value;
-										if (val === "") setPurchaseQuantity(0);
+										if (val === "") setPurchaseNationalPolynesiaQty(0);
 										else {
 											const num = Number.parseInt(val, 10);
 											if (!Number.isNaN(num) && num >= 0)
-												setPurchaseQuantity(num);
+												setPurchaseNationalPolynesiaQty(num);
 										}
 									}}
-									placeholder="Ej: 50"
+									placeholder="Ej: 20"
 									className="border-blue-200"
 								/>
+							</div>
+
+							<div className="space-y-2">
+								<Label className="text-blue-900">Cantidad Americano</Label>
+								<Input
+									type="number"
+									min="0"
+									step="1"
+									value={purchaseAmericanQty || ""}
+									onChange={(e) => {
+										const val = e.target.value;
+										if (val === "") setPurchaseAmericanQty(0);
+										else {
+											const num = Number.parseInt(val, 10);
+											if (!Number.isNaN(num) && num >= 0)
+												setPurchaseAmericanQty(num);
+										}
+									}}
+									placeholder="Ej: 10"
+									className="border-blue-200"
+								/>
+								<div className="text-blue-700 text-xs">
+									Total: {purchaseQuantity} canales
+								</div>
 							</div>
 
 							<div className="space-y-2">
@@ -365,10 +466,14 @@ export default function DisassemblyPage() {
 						<div className="flex justify-end pt-2">
 							<Button
 								onClick={() => {
+									const breakdown = `N/P:${purchaseNationalPolynesiaQty} AM:${purchaseAmericanQty}`;
+									const notes = purchaseNotes
+										? `${purchaseNotes} (${breakdown})`
+										: breakdown;
 									purchaseMutation.mutate({
 										quantityPieces: purchaseQuantity,
 										totalWeightKg: purchaseWeightKg,
-										notes: purchaseNotes || undefined,
+										notes,
 									});
 								}}
 								disabled={
@@ -413,8 +518,8 @@ export default function DisassemblyPage() {
 							</h3>
 						</div>
 						<div className="text-muted-foreground text-sm">
-							Este lote registra entrada de canal y genera piezas según recetas.
-							No requiere stock previo.
+							Procesa el stock de canal y genera piezas según recetas. Primero
+							registra la compra de canales.
 						</div>
 
 						{!canalProduct ? (
@@ -434,22 +539,28 @@ export default function DisassemblyPage() {
 									</div>
 
 									<div className="space-y-2">
-										<Label>Cantidad Nacional</Label>
+										<Label>Cantidad Nacional/Polinesia</Label>
 										<Input
 											type="number"
 											min="0"
 											step="1"
-											value={batchNational || ""}
+											value={batchNationalPolynesia || ""}
 											onChange={(e) => {
 												const val = e.target.value;
-												if (val === "") setBatchNational(0);
+												if (val === "") setBatchNationalPolynesia(0);
 												else {
 													const num = Number.parseInt(val, 10);
 													if (!Number.isNaN(num) && num >= 0)
-														setBatchNational(num);
+														setBatchNationalPolynesia(num);
 												}
 											}}
 										/>
+										{batchNationalPolynesia > 0 ? (
+											<div className="text-muted-foreground text-xs">
+												Se divide automáticamente: {npLomoQty} lado lomo +{" "}
+												{npEspilomoQty} lado espilomo
+											</div>
+										) : null}
 									</div>
 
 									<div className="space-y-2">
@@ -470,32 +581,13 @@ export default function DisassemblyPage() {
 											}}
 										/>
 									</div>
-
-									<div className="space-y-2 md:col-span-3">
-										<Label>Cantidad Polinesio</Label>
-										<Input
-											type="number"
-											min="0"
-											step="1"
-											value={batchPolynesian || ""}
-											onChange={(e) => {
-												const val = e.target.value;
-												if (val === "") setBatchPolynesian(0);
-												else {
-													const num = Number.parseInt(val, 10);
-													if (!Number.isNaN(num) && num >= 0)
-														setBatchPolynesian(num);
-												}
-											}}
-										/>
-									</div>
 								</div>
 
 								<div className="space-y-4 border-t pt-4">
-									{batchNational > 0 && canalNational.data?.length ? (
+									{batchNationalPolynesia > 0 && canalNpPreview.length ? (
 										<div className="overflow-x-auto rounded-md border">
 											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
-												Vista previa Nacional
+												Vista previa Nacional/Polinesia
 											</div>
 											<table className="w-full text-sm">
 												<thead className="bg-muted/50">
@@ -512,17 +604,10 @@ export default function DisassemblyPage() {
 													</tr>
 												</thead>
 												<tbody>
-													{canalNational.data.map((row: Transformation) => (
+													{canalNpPreview.map((row) => (
 														<tr key={row.id} className="border-t">
-															<td className="p-3">
-																{row.childProduct?.name ?? "-"}
-															</td>
-															<td className="p-3">
-																{expectedPieces(
-																	row.yield_quantity_pieces,
-																	batchNational,
-																)}
-															</td>
+															<td className="p-3">{row.name}</td>
+															<td className="p-3">{row.pieces}</td>
 															<td className="p-3">
 																{realWeightMode ? "Pendiente de pesaje" : "-"}
 															</td>
@@ -574,54 +659,22 @@ export default function DisassemblyPage() {
 										</div>
 									) : null}
 
-									{batchPolynesian > 0 && canalPolynesian.data?.length ? (
-										<div className="overflow-x-auto rounded-md border">
-											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
-												Vista previa Polinesio
-											</div>
-											<table className="w-full text-sm">
-												<thead className="bg-muted/50">
-													<tr>
-														<th className="p-3 text-left font-medium">
-															{t("childProduct")}
-														</th>
-														<th className="p-3 text-left font-medium">
-															{t("expectedQty")}
-														</th>
-														<th className="p-3 text-left font-medium">
-															{t("expectedWeight")}
-														</th>
-													</tr>
-												</thead>
-												<tbody>
-													{canalPolynesian.data.map((row: Transformation) => (
-														<tr key={row.id} className="border-t">
-															<td className="p-3">
-																{row.childProduct?.name ?? "-"}
-															</td>
-															<td className="p-3">
-																{expectedPieces(
-																	row.yield_quantity_pieces,
-																	batchPolynesian,
-																)}
-															</td>
-															<td className="p-3">
-																{realWeightMode ? "Pendiente de pesaje" : "-"}
-															</td>
-														</tr>
-													))}
-												</tbody>
-											</table>
-										</div>
-									) : null}
-
 									<div className="flex justify-end pt-4">
+										{batchAmerican + batchNationalPolynesia >
+											canalProduct.stock_pieces && (
+											<div className="mr-auto flex items-center gap-2 text-red-600 text-xs">
+												<AlertCircleIcon className="h-3.5 w-3.5" />
+												Cantidad excede el stock de canal
+											</div>
+										)}
 										<Button
 											size="lg"
 											onClick={executeCanalBatch}
 											disabled={
 												disassemblyMutation.isPending ||
-												batchNational + batchAmerican + batchPolynesian <= 0
+												batchAmerican + batchNationalPolynesia <= 0 ||
+												batchAmerican + batchNationalPolynesia >
+													canalProduct.stock_pieces
 											}
 										>
 											{disassemblyMutation.isPending ? (
@@ -652,6 +705,13 @@ export default function DisassemblyPage() {
 							generadas desde el despiece masivo de canal.
 						</div>
 
+						{!hasAnyPrimaryStock ? (
+							<div className="rounded-md border bg-muted/30 p-3 text-muted-foreground text-sm">
+								Primero registra la compra y procesa el lote de canal para
+								generar stock de piezas primarias.
+							</div>
+						) : null}
+
 						{selectedPrimaryParent && (
 							<div className="rounded-md border border-amber-200 bg-amber-50 p-3">
 								<div className="text-amber-900 text-sm">
@@ -666,6 +726,7 @@ export default function DisassemblyPage() {
 							<div className="space-y-2">
 								<Label>{t("parentProduct")}</Label>
 								<Select
+									disabled={!hasAnyPrimaryStock}
 									value={selectedPrimaryParentId}
 									onValueChange={setSelectedPrimaryParentId}
 								>
@@ -699,10 +760,8 @@ export default function DisassemblyPage() {
 								<Label>{t("cuttingStyle")}</Label>
 								<Select
 									value={selectedPrimaryStyle}
-									onValueChange={(v) =>
-										setSelectedPrimaryStyle(v as (typeof cuttingStyles)[number])
-									}
-									disabled={!selectedPrimaryParent}
+									onValueChange={setSelectedPrimaryStyle}
+									disabled={!selectedPrimaryParent || !hasAnyPrimaryStock}
 								>
 									<SelectTrigger>
 										<SelectValue placeholder={tc("all")} />
