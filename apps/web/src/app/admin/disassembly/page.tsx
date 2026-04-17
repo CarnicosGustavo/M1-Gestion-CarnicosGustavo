@@ -69,7 +69,7 @@ export default function DisassemblyPage() {
 	const [selectedPrimaryParentId, setSelectedPrimaryParentId] =
 		useState<string>("");
 	const [selectedPrimaryStyle, setSelectedPrimaryStyle] = useState<string>("");
-	useState<string>("BASE");
+	const [primaryQuantity, setPrimaryQuantity] = useState<number>(1);
 
 	// Resumen post-despiece
 	const [disassemblySummary, setDisassemblySummary] = useState<{
