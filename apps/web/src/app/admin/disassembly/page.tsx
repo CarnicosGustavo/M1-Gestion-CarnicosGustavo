@@ -41,15 +41,6 @@ import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 
-const cuttingStyles = [
-	"BASE",
-	"SEPARAR",
-	"SIN_HUESO",
-	"AMERICANO",
-	"NACIONAL_POLINESIA_LOMO",
-	"NACIONAL_POLINESIA_ESPILOMO",
-] as const;
-
 type Transformation = RouterOutputs["products"]["getTransformations"][number];
 
 export default function DisassemblyPage() {
@@ -77,9 +68,8 @@ export default function DisassemblyPage() {
 	// Despiece de pieza primaria
 	const [selectedPrimaryParentId, setSelectedPrimaryParentId] =
 		useState<string>("");
-	const [selectedPrimaryStyle, setSelectedPrimaryStyle] =
-		useState<string>("BASE");
-	const [primaryQuantity, setPrimaryQuantity] = useState<number>(1);
+	const [selectedPrimaryStyle, setSelectedPrimaryStyle] = useState<string>("");
+	useState<string>("BASE");
 
 	// Resumen post-despiece
 	const [disassemblySummary, setDisassemblySummary] = useState<{
@@ -177,7 +167,7 @@ export default function DisassemblyPage() {
 
 	const availableCuttingStyles = useMemo(() => {
 		const types = availableTypesQuery.data ?? [];
-		if (!types.length) return [...cuttingStyles];
+		if (!types.length) return [];
 		const unique = Array.from(new Set(types));
 		unique.sort((a, b) => a.localeCompare(b));
 		if (unique.includes("BASE")) {
@@ -187,16 +177,20 @@ export default function DisassemblyPage() {
 	}, [availableTypesQuery.data]);
 
 	useEffect(() => {
+		if (!selectedPrimaryParentId) {
+			if (selectedPrimaryStyle) setSelectedPrimaryStyle("");
+			return;
+		}
 		if (!availableCuttingStyles.length) return;
 		if (!availableCuttingStyles.includes(selectedPrimaryStyle)) {
 			setSelectedPrimaryStyle(availableCuttingStyles[0]);
 		}
-	}, [availableCuttingStyles, selectedPrimaryStyle]);
+	}, [availableCuttingStyles, selectedPrimaryParentId, selectedPrimaryStyle]);
 
 	const primaryTransformations = useQuery({
 		...trpc.products.getTransformations.queryOptions({
 			parentProductId: Number(selectedPrimaryParentId || 0),
-			transformationType: selectedPrimaryStyle,
+			transformationType: selectedPrimaryStyle || "BASE",
 		}),
 		enabled: !!selectedPrimaryParentId,
 	});
@@ -767,11 +761,17 @@ export default function DisassemblyPage() {
 										<SelectValue placeholder={tc("all")} />
 									</SelectTrigger>
 									<SelectContent>
-										{availableCuttingStyles.map((style) => (
-											<SelectItem key={style} value={style}>
-												{style}
-											</SelectItem>
-										))}
+										{availableCuttingStyles.length ? (
+											availableCuttingStyles.map((style) => (
+												<SelectItem key={style} value={style}>
+													{style}
+												</SelectItem>
+											))
+										) : (
+											<div className="p-3 text-center text-muted-foreground text-sm">
+												No hay estilos disponibles
+											</div>
+										)}
 									</SelectContent>
 								</Select>
 								{primaryTransformations.isFetching && (
