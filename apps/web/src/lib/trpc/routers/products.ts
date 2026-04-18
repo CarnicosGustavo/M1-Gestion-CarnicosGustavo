@@ -541,13 +541,29 @@ export const productsRouter = router({
 	registerChannelPurchase: almacenProcedure
 		.input(
 			z.object({
-				quantityPieces: z.number().int().positive("Debe ser mayor a 0"),
+				purchaseMode: z
+					.enum(["CANAL_COMPLETO", "MEDIA_CANAL"])
+					.default("CANAL_COMPLETO"),
+				qtyNacional: z.number().int().min(0),
+				qtyAmericano: z.number().int().min(0),
 				totalWeightKg: z.number().positive("Debe ser mayor a 0"),
+				supplier: z.string().optional(),
 				notes: z.string().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			const uid = ctx.user.id;
+			const channelsTotal = input.qtyNacional + input.qtyAmericano;
+			if (channelsTotal <= 0) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Debe registrar al menos 1 canal",
+				});
+			}
+			const factor = input.purchaseMode === "CANAL_COMPLETO" ? 2 : 1;
+			const mediasNacional = input.qtyNacional * factor;
+			const mediasAmericano = input.qtyAmericano * factor;
+			const quantityPieces = mediasNacional + mediasAmericano;
 
 			return await db.transaction(async (tx) => {
 				// 1. Encontrar producto CANAL (parent product only)
@@ -573,7 +589,7 @@ export const productsRouter = router({
 				// 2. Actualizar stock
 				const currentStock = Number(canalProduct.stock_pieces);
 				const currentKg = Number(canalProduct.stock_kg);
-				const newStock = currentStock + input.quantityPieces;
+				const newStock = currentStock + quantityPieces;
 				const newKg = currentKg + input.totalWeightKg;
 
 				await tx
@@ -587,17 +603,30 @@ export const productsRouter = router({
 				// 3. Registrar transacción
 				await tx.insert(inventoryTransactions).values({
 					product_id: canalProduct.id,
-					quantity_change_pieces: input.quantityPieces,
+					quantity_change_pieces: quantityPieces,
 					quantity_change_kg: input.totalWeightKg.toFixed(3),
 					transaction_type: "COMPRA",
-					notes: input.notes
-						? `Compra de canales: ${input.notes}`
-						: `Compra de ${input.quantityPieces} canales`,
+					notes: [
+						`Compra ${input.purchaseMode === "CANAL_COMPLETO" ? "canal completo" : "media canal"}`,
+						`N:${input.qtyNacional}`,
+						`A:${input.qtyAmericano}`,
+						`medias N:${mediasNacional}`,
+						`medias A:${mediasAmericano}`,
+						input.supplier ? `Proveedor: ${input.supplier}` : null,
+						input.notes ?? null,
+					]
+						.filter(Boolean)
+						.join(" | "),
 				});
 
 				return {
 					success: true,
 					product: canalProduct.name,
+					purchaseMode: input.purchaseMode,
+					qtyNacional: input.qtyNacional,
+					qtyAmericano: input.qtyAmericano,
+					mediasNacional,
+					mediasAmericano,
 					previousStock: currentStock,
 					newStock: newStock,
 					previousKg: currentKg,

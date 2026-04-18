@@ -52,18 +52,26 @@ export default function DisassemblyPage() {
 	const [isClient, setIsClient] = useState(false);
 
 	// Ingreso de compra de canales
+	const [purchaseMode, setPurchaseMode] = useState<
+		"CANAL_COMPLETO" | "MEDIA_CANAL"
+	>("CANAL_COMPLETO");
 	const [purchaseAmericanQty, setPurchaseAmericanQty] = useState<number>(0);
 	const [purchaseNationalPolynesiaQty, setPurchaseNationalPolynesiaQty] =
 		useState<number>(0);
 	const [purchaseWeightKg, setPurchaseWeightKg] = useState<number>(0);
+	const [purchaseSupplier, setPurchaseSupplier] = useState<string>("");
 	const [purchaseNotes, setPurchaseNotes] = useState<string>("");
+	const purchaseFactor = purchaseMode === "CANAL_COMPLETO" ? 2 : 1;
 	const purchaseQuantity =
-		(purchaseAmericanQty + purchaseNationalPolynesiaQty) * 2;
+		(purchaseAmericanQty + purchaseNationalPolynesiaQty) * purchaseFactor;
 
 	// Despiece masivo
 	const [batchAmerican, setBatchAmerican] = useState<number>(0);
 	const [batchNationalPolynesia, setBatchNationalPolynesia] =
 		useState<number>(0);
+	const [batchMode, setBatchMode] = useState<"CANAL_COMPLETO" | "MEDIA_CANAL">(
+		"CANAL_COMPLETO",
+	);
 	const [realWeightMode, setRealWeightMode] = useState(true);
 
 	// Despiece de pieza primaria
@@ -200,13 +208,15 @@ export default function DisassemblyPage() {
 		trpc.products.registerChannelPurchase.mutationOptions({
 			onSuccess: (data) => {
 				toast.success(
-					`Compra registrada: ${data.newStock} canales, ${data.newKg} kg total`,
+					`Compra registrada: +${data.mediasNacional + data.mediasAmericano} medias canales, ${data.newKg} kg total`,
 				);
-				setBatchAmerican(purchaseAmericanQty);
-				setBatchNationalPolynesia(purchaseNationalPolynesiaQty);
+				setBatchAmerican(data.qtyAmericano);
+				setBatchNationalPolynesia(data.qtyNacional);
+				setBatchMode(data.purchaseMode);
 				setPurchaseAmericanQty(0);
 				setPurchaseNationalPolynesiaQty(0);
 				setPurchaseWeightKg(0);
+				setPurchaseSupplier("");
 				setPurchaseNotes("");
 				// Refrescar lista de productos
 				queryClient.invalidateQueries({
@@ -256,8 +266,16 @@ export default function DisassemblyPage() {
 		[],
 	);
 
-	const npLomoQty = batchNationalPolynesia;
-	const npEspilomoQty = batchNationalPolynesia;
+	const batchFactor = batchMode === "CANAL_COMPLETO" ? 2 : 1;
+	const mediasAmerican = batchAmerican * batchFactor;
+	const npLomoQty =
+		batchMode === "CANAL_COMPLETO"
+			? batchNationalPolynesia
+			: Math.ceil(batchNationalPolynesia / 2);
+	const npEspilomoQty =
+		batchMode === "CANAL_COMPLETO"
+			? batchNationalPolynesia
+			: Math.floor(batchNationalPolynesia / 2);
 
 	const canalNpPreview = useMemo(() => {
 		const map = new Map<number, { name: string; pieces: number }>();
@@ -293,7 +311,7 @@ export default function DisassemblyPage() {
 	const executeCanalBatch = async () => {
 		if (!canalProduct) return;
 
-		const totalToProcess = (batchAmerican + batchNationalPolynesia) * 2;
+		const totalToProcess = mediasAmerican + npLomoQty + npEspilomoQty;
 		if (totalToProcess <= 0) return;
 
 		if (canalProduct.stock_pieces < totalToProcess) {
@@ -302,15 +320,15 @@ export default function DisassemblyPage() {
 		}
 
 		const steps: Array<{ qty: number; style: string }> = [];
-		if (batchAmerican > 0)
-			steps.push({ qty: batchAmerican * 2, style: "AMERICANO" });
-		if (batchNationalPolynesia > 0) {
+		if (mediasAmerican > 0)
+			steps.push({ qty: mediasAmerican, style: "AMERICANO" });
+		if (npLomoQty > 0 || npEspilomoQty > 0) {
 			steps.push({
-				qty: batchNationalPolynesia,
+				qty: npLomoQty,
 				style: "NACIONAL_POLINESIA_LOMO",
 			});
 			steps.push({
-				qty: batchNationalPolynesia,
+				qty: npEspilomoQty,
 				style: "NACIONAL_POLINESIA_ESPILOMO",
 			});
 		}
@@ -373,11 +391,29 @@ export default function DisassemblyPage() {
 							el stock disponible para despiece.
 						</p>
 
-						<div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+						<div className="grid grid-cols-1 gap-4 md:grid-cols-5">
 							<div className="space-y-2">
-								<Label className="text-blue-900">
-									Cantidad Nacional/Polinesia (canales completos)
-								</Label>
+								<Label className="text-blue-900">Tipo de compra</Label>
+								<Select
+									value={purchaseMode}
+									onValueChange={(v) =>
+										setPurchaseMode(v as "CANAL_COMPLETO" | "MEDIA_CANAL")
+									}
+								>
+									<SelectTrigger className="border-blue-200">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="CANAL_COMPLETO">
+											Canal completo
+										</SelectItem>
+										<SelectItem value="MEDIA_CANAL">Media canal</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+
+							<div className="space-y-2">
+								<Label className="text-blue-900">Cantidad Nacional</Label>
 								<Input
 									type="number"
 									min="0"
@@ -392,15 +428,13 @@ export default function DisassemblyPage() {
 												setPurchaseNationalPolynesiaQty(num);
 										}
 									}}
-									placeholder="Ej: 20"
+									placeholder="Ej: 10"
 									className="border-blue-200"
 								/>
 							</div>
 
 							<div className="space-y-2">
-								<Label className="text-blue-900">
-									Cantidad Americano (canales completos)
-								</Label>
+								<Label className="text-blue-900">Cantidad Americano</Label>
 								<Input
 									type="number"
 									min="0"
@@ -451,6 +485,17 @@ export default function DisassemblyPage() {
 							</div>
 
 							<div className="space-y-2">
+								<Label className="text-blue-900">Proveedor (opcional)</Label>
+								<Input
+									type="text"
+									value={purchaseSupplier}
+									onChange={(e) => setPurchaseSupplier(e.target.value)}
+									placeholder="Ej: Granjas del Norte"
+									className="border-blue-200"
+								/>
+							</div>
+
+							<div className="space-y-2">
 								<Label className="text-blue-900">Notas (opcional)</Label>
 								<Input
 									type="text"
@@ -465,13 +510,16 @@ export default function DisassemblyPage() {
 						<div className="flex justify-end pt-2">
 							<Button
 								onClick={() => {
-									const breakdown = `N/P:${purchaseNationalPolynesiaQty} AM:${purchaseAmericanQty}`;
+									const breakdown = `MODO:${purchaseMode} N:${purchaseNationalPolynesiaQty} AM:${purchaseAmericanQty}`;
 									const notes = purchaseNotes
-										? `${purchaseNotes} (${breakdown})`
+										? `${purchaseNotes} | ${breakdown}`
 										: breakdown;
 									purchaseMutation.mutate({
-										quantityPieces: purchaseQuantity,
+										purchaseMode,
+										qtyNacional: purchaseNationalPolynesiaQty,
+										qtyAmericano: purchaseAmericanQty,
 										totalWeightKg: purchaseWeightKg,
+										supplier: purchaseSupplier || undefined,
 										notes,
 									});
 								}}
@@ -538,49 +586,26 @@ export default function DisassemblyPage() {
 									</div>
 
 									<div className="space-y-2">
-										<Label>
-											Cantidad Nacional/Polinesia (canales completos)
-										</Label>
-										<Input
-											type="number"
-											min="0"
-											step="1"
-											value={batchNationalPolynesia || ""}
-											onChange={(e) => {
-												const val = e.target.value;
-												if (val === "") setBatchNationalPolynesia(0);
-												else {
-													const num = Number.parseInt(val, 10);
-													if (!Number.isNaN(num) && num >= 0)
-														setBatchNationalPolynesia(num);
-												}
-											}}
-										/>
-										{batchNationalPolynesia > 0 ? (
-											<div className="text-muted-foreground text-xs">
-												Se procesa en medias canales: {npLomoQty} lado lomo +{" "}
-												{npEspilomoQty} lado espilomo
-											</div>
-										) : null}
+										<Label>Última compra cargada</Label>
+										<div className="rounded-md border px-3 py-2 text-sm">
+											{batchMode === "CANAL_COMPLETO"
+												? "Canal completo"
+												: "Media canal"}{" "}
+											| N: {batchNationalPolynesia} | A: {batchAmerican}
+										</div>
+										<div className="text-muted-foreground text-xs">
+											Nacional procesa: {npLomoQty} lado lomo + {npEspilomoQty}{" "}
+											lado espilomo
+										</div>
 									</div>
 
 									<div className="space-y-2">
-										<Label>Cantidad Americano (canales completos)</Label>
-										<Input
-											type="number"
-											min="0"
-											step="1"
-											value={batchAmerican || ""}
-											onChange={(e) => {
-												const val = e.target.value;
-												if (val === "") setBatchAmerican(0);
-												else {
-													const num = Number.parseInt(val, 10);
-													if (!Number.isNaN(num) && num >= 0)
-														setBatchAmerican(num);
-												}
-											}}
-										/>
+										<Label>Totales a procesar</Label>
+										<div className="rounded-md border px-3 py-2 text-sm">
+											AM: {mediasAmerican} medias | N:{" "}
+											{npLomoQty + npEspilomoQty} medias | Total:{" "}
+											{mediasAmerican + npLomoQty + npEspilomoQty}
+										</div>
 									</div>
 								</div>
 
@@ -619,7 +644,7 @@ export default function DisassemblyPage() {
 										</div>
 									) : null}
 
-									{batchAmerican > 0 && canalAmerican.data?.length ? (
+									{mediasAmerican > 0 && canalAmerican.data?.length ? (
 										<div className="overflow-x-auto rounded-md border">
 											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
 												Vista previa Americano
@@ -647,7 +672,7 @@ export default function DisassemblyPage() {
 															<td className="p-3">
 																{expectedPieces(
 																	row.yield_quantity_pieces,
-																	batchAmerican,
+																	mediasAmerican,
 																)}
 															</td>
 															<td className="p-3">
@@ -661,7 +686,7 @@ export default function DisassemblyPage() {
 									) : null}
 
 									<div className="flex justify-end pt-4">
-										{(batchAmerican + batchNationalPolynesia) * 2 >
+										{mediasAmerican + npLomoQty + npEspilomoQty >
 											canalProduct.stock_pieces && (
 											<div className="mr-auto flex items-center gap-2 text-red-600 text-xs">
 												<AlertCircleIcon className="h-3.5 w-3.5" />
@@ -674,7 +699,7 @@ export default function DisassemblyPage() {
 											disabled={
 												disassemblyMutation.isPending ||
 												batchAmerican + batchNationalPolynesia <= 0 ||
-												(batchAmerican + batchNationalPolynesia) * 2 >
+												mediasAmerican + npLomoQty + npEspilomoQty >
 													canalProduct.stock_pieces
 											}
 										>
@@ -683,7 +708,7 @@ export default function DisassemblyPage() {
 											) : (
 												<>
 													<CheckCircleIcon className="mr-2 h-5 w-5" />
-													Procesar lote
+													Procesar canal comprado
 												</>
 											)}
 										</Button>
@@ -911,11 +936,8 @@ export default function DisassemblyPage() {
 					if (!open) {
 						setDisassemblySummary(null);
 						// Reset forms cuando se cierra
-						setBatchNational(0);
-						setBatchAmerican(0);
-						setBatchPolynesian(0);
 						setSelectedPrimaryParentId("");
-						setSelectedPrimaryStyle("BASE");
+						setSelectedPrimaryStyle("");
 						setPrimaryQuantity(1);
 						queryClient.invalidateQueries({
 							queryKey: trpc.products.list.queryKey(),
