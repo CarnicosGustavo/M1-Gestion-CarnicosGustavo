@@ -42,6 +42,8 @@ import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 
 type Transformation = RouterOutputs["products"]["getTransformations"][number];
+type DashboardRecipeGroup =
+	RouterOutputs["products"]["disassemblyDashboardRecipes"][number];
 
 export default function DisassemblyPage() {
 	const trpc = useTRPC();
@@ -90,6 +92,11 @@ export default function DisassemblyPage() {
 	const [batchMode, setBatchMode] = useState<"CANAL_COMPLETO" | "MEDIA_CANAL">(
 		"CANAL_COMPLETO",
 	);
+	const [lastPurchaseCanalProductId, setLastPurchaseCanalProductId] = useState<
+		number | null
+	>(null);
+	const [lastPurchaseCanalStockPieces, setLastPurchaseCanalStockPieces] =
+		useState<number | null>(null);
 	const [realWeightMode, setRealWeightMode] = useState(true);
 
 	// Despiece de pieza primaria
@@ -118,6 +125,9 @@ export default function DisassemblyPage() {
 	const { data: dashboardStock = [] } = useQuery(
 		trpc.products.disassemblyDashboard.queryOptions(),
 	);
+	const { data: dashboardRecipeGroups = [] } = useQuery(
+		trpc.products.disassemblyDashboardRecipes.queryOptions(),
+	);
 
 	const parentProducts = useMemo(
 		() => products.filter((p) => p.is_parent_product),
@@ -125,9 +135,38 @@ export default function DisassemblyPage() {
 	);
 
 	const canalProduct = useMemo(() => {
-		const lower = (s: string) => s.toLowerCase();
-		return parentProducts.find((p) => lower(p.name).includes("canal")) ?? null;
-	}, [parentProducts]);
+		if (lastPurchaseCanalProductId !== null) {
+			const byId = parentProducts.find(
+				(p) => p.id === lastPurchaseCanalProductId,
+			);
+			if (byId) return byId;
+		}
+
+		const normalizeName = (name: string) =>
+			name
+				.toLowerCase()
+				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+				.trim();
+		const scoreCanal = (name: string) => {
+			const n = normalizeName(name);
+			if (n === "canal") return 0;
+			if (n.includes("canal") && !n.includes("media")) return 1;
+			if (n.includes("canal")) return 2;
+			return 999;
+		};
+
+		const candidates = parentProducts.filter((p) =>
+			normalizeName(p.name).includes("canal"),
+		);
+		if (!candidates.length) return null;
+
+		return candidates.slice().sort((a, b) => {
+			const sa = scoreCanal(a.name);
+			const sb = scoreCanal(b.name);
+			if (sa !== sb) return sa - sb;
+			return a.id - b.id;
+		})[0];
+	}, [lastPurchaseCanalProductId, parentProducts]);
 
 	const primaryParentProducts = useMemo(() => {
 		if (canalProduct) {
@@ -203,6 +242,53 @@ export default function DisassemblyPage() {
 			});
 	}, [dashboardOrder, dashboardStock]);
 
+	const dashboardRecipesByParent = useMemo(() => {
+		const map = new Map<
+			number,
+			Map<
+				string,
+				Array<{
+					childId: number;
+					childName: string;
+					childStockPieces: number;
+					yieldQuantityPieces: string | number;
+				}>
+			>
+		>();
+
+		for (const g of dashboardRecipeGroups) {
+			const byType = map.get(g.parentId) ?? new Map();
+			byType.set(g.transformationType, g.children);
+			map.set(g.parentId, byType);
+		}
+		return map;
+	}, [dashboardRecipeGroups]);
+
+	const recorteProduct = useMemo(() => {
+		const normalize = (name: string) =>
+			name
+				.toLowerCase()
+				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+				.trim();
+		const score = (name: string) => {
+			const n = normalize(name);
+			if (n.includes("cuero") && n.includes("recorte")) return 0;
+			if (n.includes("recorte")) return 1;
+			return 999;
+		};
+		const candidates = products.filter((p) =>
+			normalize(p.name).includes("recorte"),
+		);
+		return candidates.slice().sort((a, b) => {
+			const sa = score(a.name);
+			const sb = score(b.name);
+			if (sa !== sb) return sa - sb;
+			return a.id - b.id;
+		})[0];
+	}, [products]);
+
+	const [mapParentId, setMapParentId] = useState<number>(0);
+
 	const [dashboardQty, setDashboardQty] = useState<Record<number, number>>({});
 	const [dashboardType, setDashboardType] = useState<Record<number, string>>(
 		{},
@@ -214,7 +300,7 @@ export default function DisassemblyPage() {
 		setDashboardQty((prev) => {
 			const next = { ...prev };
 			for (const p of dashboardStock) {
-				if (next[p.id] === undefined) next[p.id] = 1;
+				if (next[p.id] === undefined) next[p.id] = p.stock_pieces;
 			}
 			return next;
 		});
@@ -230,9 +316,20 @@ export default function DisassemblyPage() {
 		});
 	}, [dashboardStock]);
 
+	useEffect(() => {
+		if (mapParentId !== 0) return;
+		if (!dashboardProcessables.length) return;
+		setMapParentId(dashboardProcessables[0].id);
+	}, [dashboardProcessables, mapParentId]);
+
 	const displayType = useCallback((t: string) => {
 		return t.replace("NACIONAL_POLINESIA", "NACIONAL");
 	}, []);
+
+	const selectedMapParent = useMemo(() => {
+		if (!mapParentId) return null;
+		return dashboardProcessables.find((p) => p.id === mapParentId) ?? null;
+	}, [dashboardProcessables, mapParentId]);
 
 	const executeDashboardCard = async (productId: number) => {
 		const item = dashboardStock.find((p) => p.id === productId);
@@ -250,6 +347,26 @@ export default function DisassemblyPage() {
 			entryMode: false,
 		});
 
+		queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
+		queryClient.invalidateQueries({
+			queryKey: trpc.products.disassemblyDashboard.queryKey(),
+		});
+	};
+
+	const executeDashboardAll = async () => {
+		for (const p of dashboardProcessables) {
+			const qty = dashboardQty[p.id] ?? 0;
+			const type = dashboardType[p.id];
+			if (!type || qty <= 0) continue;
+			if (qty > p.stock_pieces) continue;
+			await disassemblyMutation.mutateAsync({
+				parentProductId: p.id,
+				quantityToProcess: qty,
+				transformationType: type,
+				realWeightMode,
+				entryMode: false,
+			});
+		}
 		queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
 		queryClient.invalidateQueries({
 			queryKey: trpc.products.disassemblyDashboard.queryKey(),
@@ -325,6 +442,8 @@ export default function DisassemblyPage() {
 				setBatchMediasNacionalLomo(data.mediasNacionalLomo);
 				setBatchMediasNacionalEspilomo(data.mediasNacionalEspilomo);
 				setBatchMode(data.purchaseMode);
+				setLastPurchaseCanalProductId(data.productId);
+				setLastPurchaseCanalStockPieces(data.newStock);
 				setPurchaseAmericanQty(0);
 				setPurchaseNacionalQty(0);
 				setPurchaseNacionalLomoQty(0);
@@ -407,8 +526,6 @@ export default function DisassemblyPage() {
 			.map(([id, v]) => ({ id, ...v }))
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}, [
-		batchMediasNacionalEspilomo,
-		batchMediasNacionalLomo,
 		canalNationalPolynesiaEspilomo.data,
 		canalNationalPolynesiaLomo.data,
 		expectedPieces,
@@ -422,8 +539,16 @@ export default function DisassemblyPage() {
 		const totalToProcess = mediasAmerican + npLomoQty + npEspilomoQty;
 		if (totalToProcess <= 0) return;
 
-		if (canalProduct.stock_pieces < totalToProcess) {
-			toast.error("Cantidad excede el stock de canal");
+		const canalPiecesAvailable =
+			lastPurchaseCanalProductId === canalProduct.id &&
+			lastPurchaseCanalStockPieces !== null
+				? Math.max(canalProduct.stock_pieces, lastPurchaseCanalStockPieces)
+				: canalProduct.stock_pieces;
+
+		if (canalPiecesAvailable < totalToProcess) {
+			toast.error(
+				`Cantidad excede el stock de canal (disponible ${canalPiecesAvailable}, requerido ${totalToProcess})`,
+			);
 			return;
 		}
 
@@ -453,6 +578,9 @@ export default function DisassemblyPage() {
 		}
 
 		queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
+		queryClient.invalidateQueries({
+			queryKey: trpc.products.disassemblyDashboard.queryKey(),
+		});
 	};
 
 	const executePrimaryDisassembly = () => {
@@ -1136,6 +1264,15 @@ export default function DisassemblyPage() {
 								<PackageIcon className="h-5 w-5" />
 								Tablero de despiece
 							</h3>
+							<Button
+								size="sm"
+								onClick={executeDashboardAll}
+								disabled={
+									disassemblyMutation.isPending || !dashboardProcessables.length
+								}
+							>
+								Ejecutar todo
+							</Button>
 						</div>
 
 						<div className="text-muted-foreground text-sm">
@@ -1147,9 +1284,69 @@ export default function DisassemblyPage() {
 								<div className="font-medium text-sm">Padres / acciones</div>
 								{dashboardProcessables.length ? (
 									dashboardProcessables.map((p) => {
-										const qty = dashboardQty[p.id] ?? 1;
+										const qty = dashboardQty[p.id] ?? p.stock_pieces;
 										const type = dashboardType[p.id] ?? "";
 										const disabled = !type || qty <= 0 || qty > p.stock_pieces;
+										const byType = dashboardRecipesByParent.get(p.id);
+
+										const outputMap = new Map<
+											number,
+											{
+												childId: number;
+												childName: string;
+												childStockPieces: number;
+												addPieces: number;
+											}
+										>();
+										const addRecipes = (
+											recipeType: string,
+											realType: string,
+										) => {
+											const rows = byType?.get(recipeType) ?? [];
+											for (const r of rows) {
+												const addPieces = expectedPieces(
+													r.yieldQuantityPieces,
+													qty,
+												);
+												const prev = outputMap.get(r.childId);
+												outputMap.set(r.childId, {
+													childId: r.childId,
+													childName: r.childName,
+													childStockPieces: r.childStockPieces,
+													addPieces: (prev?.addPieces ?? 0) + addPieces,
+												});
+											}
+
+											const parentNameLower = p.name.toLowerCase();
+											const typeLower = realType.toLowerCase();
+											const shouldAutoRecorte =
+												typeLower.includes("cuadr") &&
+												(typeLower.includes("cuero") ||
+													parentNameLower.includes("panza") ||
+													parentNameLower.includes("cuero"));
+											const hasRecorte = Array.from(outputMap.values()).some(
+												(x) => x.childName.toLowerCase().includes("recorte"),
+											);
+											if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
+												const prev = outputMap.get(recorteProduct.id);
+												outputMap.set(recorteProduct.id, {
+													childId: recorteProduct.id,
+													childName: recorteProduct.name,
+													childStockPieces: recorteProduct.stock_pieces,
+													addPieces: (prev?.addPieces ?? 0) + qty,
+												});
+											}
+										};
+
+										if (type) {
+											addRecipes("BASE", type);
+											if (type !== "BASE") addRecipes(type, type);
+										}
+
+										const outputs = Array.from(outputMap.values())
+											.filter((x) => x.addPieces > 0)
+											.sort((a, b) => a.childName.localeCompare(b.childName));
+
 										return (
 											<div
 												key={p.id}
@@ -1227,6 +1424,36 @@ export default function DisassemblyPage() {
 														) : null}
 													</div>
 												</div>
+
+												{type ? (
+													<div className="mt-3 rounded-md bg-muted/30 p-2">
+														<div className="text-muted-foreground text-xs">
+															Genera (al ejecutar)
+														</div>
+														{outputs.length ? (
+															<div className="mt-1 space-y-1">
+																{outputs.map((o) => (
+																	<div
+																		key={o.childId}
+																		className="flex items-center justify-between gap-3 text-xs"
+																	>
+																		<div className="min-w-0 truncate">
+																			→ {o.childName}
+																		</div>
+																		<div className="shrink-0 text-muted-foreground">
+																			+{o.addPieces} (stock {o.childStockPieces}{" "}
+																			→ {o.childStockPieces + o.addPieces})
+																		</div>
+																	</div>
+																))}
+															</div>
+														) : (
+															<div className="mt-1 text-muted-foreground text-xs">
+																Sin recetas configuradas para esta acción.
+															</div>
+														)}
+													</div>
+												) : null}
 											</div>
 										);
 									})
@@ -1259,6 +1486,126 @@ export default function DisassemblyPage() {
 									</div>
 								)}
 							</div>
+						</div>
+
+						<div className="space-y-3 rounded-md border bg-muted/10 p-3">
+							<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+								<div className="font-medium text-sm">
+									Mapa / organigrama (recetas)
+								</div>
+								<Select
+									value={mapParentId ? String(mapParentId) : ""}
+									onValueChange={(v) => setMapParentId(Number(v))}
+								>
+									<SelectTrigger className="w-full sm:w-[320px]">
+										<SelectValue placeholder="Selecciona un padre" />
+									</SelectTrigger>
+									<SelectContent>
+										{dashboardProcessables.map((p) => (
+											<SelectItem key={p.id} value={String(p.id)}>
+												{p.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+
+							{selectedMapParent ? (
+								<div className="space-y-2">
+									{selectedMapParent.transformationTypes.map((type) => {
+										const byType = dashboardRecipesByParent.get(
+											selectedMapParent.id,
+										);
+										const outputMap = new Map<
+											number,
+											{
+												childId: number;
+												childName: string;
+												addPieces: number;
+											}
+										>();
+
+										const addRecipes = (
+											recipeType: string,
+											realType: string,
+										) => {
+											const rows = byType?.get(recipeType) ?? [];
+											for (const r of rows) {
+												const addPieces = expectedPieces(
+													r.yieldQuantityPieces,
+													1,
+												);
+												const prev = outputMap.get(r.childId);
+												outputMap.set(r.childId, {
+													childId: r.childId,
+													childName: r.childName,
+													addPieces: (prev?.addPieces ?? 0) + addPieces,
+												});
+											}
+
+											const parentNameLower =
+												selectedMapParent.name.toLowerCase();
+											const typeLower = realType.toLowerCase();
+											const shouldAutoRecorte =
+												typeLower.includes("cuadr") &&
+												(typeLower.includes("cuero") ||
+													parentNameLower.includes("panza") ||
+													parentNameLower.includes("cuero"));
+											const hasRecorte = Array.from(outputMap.values()).some(
+												(x) => x.childName.toLowerCase().includes("recorte"),
+											);
+											if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
+												const prev = outputMap.get(recorteProduct.id);
+												outputMap.set(recorteProduct.id, {
+													childId: recorteProduct.id,
+													childName: recorteProduct.name,
+													addPieces: (prev?.addPieces ?? 0) + 1,
+												});
+											}
+										};
+
+										addRecipes("BASE", type);
+										if (type !== "BASE") addRecipes(type, type);
+
+										const outputs = Array.from(outputMap.values())
+											.filter((x) => x.addPieces > 0)
+											.sort((a, b) => a.childName.localeCompare(b.childName));
+
+										return (
+											<details
+												key={type}
+												className="rounded-md border bg-background px-3 py-2"
+											>
+												<summary className="cursor-pointer select-none font-medium text-sm">
+													Acción: {displayType(type)}{" "}
+													<span className="text-muted-foreground text-xs">
+														{type === "BASE"
+															? "(solo BASE)"
+															: "(BASE + acción)"}
+													</span>
+												</summary>
+												<div className="mt-2 space-y-1 text-sm">
+													{outputs.length ? (
+														outputs.map((o) => (
+															<div key={o.childId} className="text-xs">
+																→ {o.childName}: {o.addPieces} pza(s) por 1
+															</div>
+														))
+													) : (
+														<div className="text-muted-foreground text-xs">
+															Sin recetas configuradas para esta acción.
+														</div>
+													)}
+												</div>
+											</details>
+										);
+									})}
+								</div>
+							) : (
+								<div className="text-muted-foreground text-sm">
+									Selecciona un producto padre para ver el organigrama.
+								</div>
+							)}
 						</div>
 					</div>
 				</CardContent>

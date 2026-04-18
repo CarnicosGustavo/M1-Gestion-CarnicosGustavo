@@ -61,7 +61,7 @@ export default function Products() {
 		name: z.string().min(1, t("nameRequired")),
 		description: z.string(),
 		price_per_kg: z.number().min(0, t("priceMustBePositive")),
-		in_stock: z.number().int().min(0, t("stockMustBeNonNegative")),
+		stock_pieces: z.number().int().min(0, t("stockMustBeNonNegative")),
 		is_parent_product: z.boolean().default(false),
 		ncm: z.string(),
 		cfop: z.string(),
@@ -109,19 +109,19 @@ export default function Products() {
 			accessorFn: (row) => {
 				const override = priceOverrides.get(row.id);
 				const price = row.is_sellable_by_weight
-					? override?.kg ?? Number(row.price_per_kg ?? 0)
-					: override?.piece ?? Number(row.price_per_piece ?? 0);
+					? (override?.kg ?? Number(row.price_per_kg ?? 0))
+					: (override?.piece ?? Number(row.price_per_piece ?? 0));
 				return Number(price) || 0;
 			},
 			render: (row) => {
 				const override = priceOverrides.get(row.id);
 				const price = row.is_sellable_by_weight
-					? override?.kg ?? Number(row.price_per_kg ?? 0)
-					: override?.piece ?? Number(row.price_per_piece ?? 0);
+					? (override?.kg ?? Number(row.price_per_kg ?? 0))
+					: (override?.piece ?? Number(row.price_per_piece ?? 0));
 				return formatCurrency((Number(price) || 0) * 100, locale);
 			},
 		},
-		{ key: "in_stock", header: t("stock"), sortable: true },
+		{ key: "stock_pieces", header: t("stock"), sortable: true },
 	];
 
 	const exportColumns: ExportColumn<Product>[] = [
@@ -136,7 +136,11 @@ export default function Products() {
 			header: tc("price"),
 			getValue: (p) => Number(p.price_per_kg ?? 0).toFixed(2),
 		},
-		{ key: "in_stock", header: t("stock"), getValue: (p) => p.in_stock },
+		{
+			key: "stock_pieces",
+			header: t("stock"),
+			getValue: (p) => p.stock_pieces,
+		},
 		{
 			key: "type",
 			header: "Tipo",
@@ -271,7 +275,9 @@ export default function Products() {
 
 	const priceListOptions = useMemo<FilterOption[]>(() => {
 		const opts: FilterOption[] = [{ label: "Precio base", value: "base" }];
-		priceLists.forEach((l) => opts.push({ label: l.name, value: String(l.id) }));
+		priceLists.forEach((l) => {
+			opts.push({ label: l.name, value: String(l.id) });
+		});
 		return opts;
 	}, [priceLists]);
 
@@ -306,7 +312,7 @@ export default function Products() {
 			name: "",
 			description: "",
 			price_per_kg: 0,
-			in_stock: 0,
+			stock_pieces: 0,
 			is_parent_product: false,
 			ncm: "",
 			cfop: "",
@@ -335,7 +341,7 @@ export default function Products() {
 				name: value.name,
 				description: value.description || undefined,
 				price_per_kg: value.price_per_kg,
-				in_stock: value.in_stock,
+				stock_pieces: value.stock_pieces,
 				is_parent_product: value.is_parent_product,
 				ncm: value.ncm || undefined,
 				cfop: value.cfop || undefined,
@@ -355,7 +361,9 @@ export default function Products() {
 	const priceImportMutation = useMutation(
 		trpc.inventory.priceListImportCsv.mutationOptions({
 			onSuccess: (res) => {
-				toast.success(`Importado: ${res.matched}/${res.uniqueAliases} productos`);
+				toast.success(
+					`Importado: ${res.matched}/${res.uniqueAliases} productos`,
+				);
 				if (res.unmatchedAliases.length) {
 					toast.warning(
 						`Sin match: ${res.unmatchedAliases.slice(0, 8).join(", ")}${
@@ -385,8 +393,8 @@ export default function Products() {
 		return products.filter((p) => {
 			if (typeFilter === "parent" && !p.is_parent_product) return false;
 			if (typeFilter === "child" && p.is_parent_product) return false;
-			if (stockFilter === "in-stock" && p.in_stock === 0) return false;
-			if (stockFilter === "out-of-stock" && p.in_stock > 0) return false;
+			if (stockFilter === "in-stock" && p.stock_pieces === 0) return false;
+			if (stockFilter === "out-of-stock" && p.stock_pieces > 0) return false;
 			return p.name.toLowerCase().includes(searchTerm.toLowerCase());
 		});
 	}, [products, typeFilter, stockFilter, searchTerm]);
@@ -403,7 +411,7 @@ export default function Products() {
 		form.setFieldValue("name", p.name);
 		form.setFieldValue("description", p.description ?? "");
 		form.setFieldValue("price_per_kg", Number(p.price_per_kg ?? 0));
-		form.setFieldValue("in_stock", p.in_stock);
+		form.setFieldValue("stock_pieces", p.stock_pieces);
 		form.setFieldValue("is_parent_product", p.is_parent_product);
 		form.setFieldValue("ncm", p.ncm ?? "");
 		form.setFieldValue("cfop", p.cfop ?? "");
@@ -675,15 +683,15 @@ export default function Products() {
 									</div>
 								)}
 							</form.Field>
-							<form.Field name="in_stock">
+							<form.Field name="stock_pieces">
 								{(field) => (
 									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-										<Label htmlFor="in_stock" className="sm:text-right">
-											{t("inStock")}
+										<Label htmlFor="stock_pieces" className="sm:text-right">
+											{t("stock")}
 										</Label>
 										<div className="col-span-3">
 											<Input
-												id="in_stock"
+												id="stock_pieces"
 												type="number"
 												value={field.state.value}
 												onChange={(e) =>

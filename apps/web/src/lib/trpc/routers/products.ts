@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import {
@@ -401,6 +402,13 @@ export const productsRouter = router({
 
 				// 5. Obtener Recetas
 				const selectedType = transformationType;
+				const parentNameLower = parent.name.toLowerCase();
+				const typeLower = selectedType.toLowerCase();
+				const shouldAutoRecorte =
+					typeLower.includes("cuadr") &&
+					(typeLower.includes("cuero") ||
+						parentNameLower.includes("panza") ||
+						parentNameLower.includes("cuero"));
 				const typesToApply =
 					selectedType === "BASE" ? ["BASE"] : ["BASE", selectedType];
 
@@ -423,6 +431,7 @@ export const productsRouter = router({
 				}
 
 				// 6. Incrementar Hijos
+				let hasRecorteChild = false;
 				for (const recipe of recipes) {
 					const yieldPieces = normalizePieces(
 						Number(recipe.yield_quantity_pieces),
@@ -447,6 +456,9 @@ export const productsRouter = router({
 						.limit(1);
 
 					if (child) {
+						if (child.name.toLowerCase().includes("recorte")) {
+							hasRecorteChild = true;
+						}
 						const newChildStockKg = Number(child.stock_kg) + childKgToAdd;
 
 						// Validate that new stock doesn't exceed numeric limits
@@ -480,6 +492,63 @@ export const productsRouter = router({
 								: `Entrada por despiece ${transformationType} de ${parent.name}`,
 						});
 					}
+				}
+
+				if (shouldAutoRecorte && !hasRecorteChild) {
+					const recorteCandidates = await tx
+						.select()
+						.from(products)
+						.where(
+							and(
+								eq(products.user_uid, uid),
+								sql`LOWER(${products.name}) LIKE '%recorte%'`,
+							),
+						);
+
+					const normalizeName = (name: string) =>
+						name
+							.toLowerCase()
+							.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+							.trim();
+					const scoreRecorte = (name: string) => {
+						const n = normalizeName(name);
+						if (n.includes("cuero") && n.includes("recorte")) return 0;
+						if (n.includes("recorte")) return 1;
+						return 999;
+					};
+
+					const recorteProduct = recorteCandidates.slice().sort((a, b) => {
+						const sa = scoreRecorte(a.name);
+						const sb = scoreRecorte(b.name);
+						if (sa !== sb) return sa - sb;
+						return a.id - b.id;
+					})[0];
+
+					if (!recorteProduct) {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message:
+								"No se encontró un producto RECORTE para registrar el subproducto",
+						});
+					}
+
+					await tx
+						.update(products)
+						.set({
+							stock_pieces: recorteProduct.stock_pieces + quantityToProcess,
+						})
+						.where(eq(products.id, recorteProduct.id));
+
+					await tx.insert(inventoryTransactions).values({
+						product_id: recorteProduct.id,
+						quantity_change_pieces: quantityToProcess,
+						quantity_change_kg: null,
+						transaction_type: "DESPIECE",
+						reference_id: parentProductId,
+						notes: useEntryMode
+							? `Entrada por recorte (recepción) ${transformationType} - ${parent.name}`
+							: `Entrada por recorte ${transformationType} de ${parent.name}`,
+					});
 				}
 
 				return { success: true };
@@ -578,8 +647,21 @@ export const productsRouter = router({
 			}
 
 			return await db.transaction(async (tx) => {
+				const normalizeProductName = (name: string) =>
+					name
+						.toLowerCase()
+						.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+						.trim();
+				const scoreCanal = (name: string) => {
+					const n = normalizeProductName(name);
+					if (n === "canal") return 0;
+					if (n.includes("canal") && !n.includes("media")) return 1;
+					if (n.includes("canal")) return 2;
+					return 999;
+				};
+
 				// 1. Encontrar producto CANAL (parent product only)
-				const [canalProduct] = await tx
+				const canalCandidates = await tx
 					.select()
 					.from(products)
 					.where(
@@ -588,8 +670,14 @@ export const productsRouter = router({
 							eq(products.is_parent_product, true),
 							eq(products.user_uid, uid),
 						),
-					)
-					.limit(1);
+					);
+
+				const canalProduct = canalCandidates.slice().sort((a, b) => {
+					const sa = scoreCanal(a.name);
+					const sb = scoreCanal(b.name);
+					if (sa !== sb) return sa - sb;
+					return a.id - b.id;
+				})[0];
 
 				if (!canalProduct) {
 					throw new TRPCError({
@@ -634,6 +722,7 @@ export const productsRouter = router({
 
 				return {
 					success: true,
+					productId: canalProduct.id,
 					product: canalProduct.name,
 					purchaseMode: input.purchaseMode,
 					qtyAmericano: input.qtyAmericano,
@@ -719,6 +808,100 @@ export const productsRouter = router({
 					transformationTypes: byParent.get(p.id) ?? [],
 				}))
 				.sort((a, b) => a.name.localeCompare(b.name));
+		}),
+
+	disassemblyDashboardRecipes: almacenProcedure
+		.input(z.void())
+		.output(
+			z.array(
+				z.object({
+					parentId: z.number(),
+					transformationType: z.string(),
+					children: z.array(
+						z.object({
+							childId: z.number(),
+							childName: z.string(),
+							childStockPieces: z.number(),
+							yieldQuantityPieces: z.union([z.string(), z.number()]),
+						}),
+					),
+				}),
+			),
+		)
+		.query(async ({ ctx }) => {
+			const uid = ctx.user.id;
+
+			const stocked = await db
+				.select({
+					id: products.id,
+				})
+				.from(products)
+				.where(
+					and(eq(products.user_uid, uid), sql`${products.stock_pieces} > 0`),
+				);
+
+			if (!stocked.length) return [];
+
+			const parentIds = stocked.map((p) => p.id);
+			const child = alias(products, "child_products_for_dashboard");
+
+			const rows = await db
+				.select({
+					parentId: productTransformations.parent_product_id,
+					transformationType: productTransformations.transformation_type,
+					childId: productTransformations.child_product_id,
+					yieldQuantityPieces: productTransformations.yield_quantity_pieces,
+					childName: child.name,
+					childStockPieces: child.stock_pieces,
+				})
+				.from(productTransformations)
+				.innerJoin(child, eq(child.id, productTransformations.child_product_id))
+				.where(
+					and(
+						inArray(productTransformations.parent_product_id, parentIds),
+						eq(productTransformations.is_active, true),
+						eq(child.user_uid, uid),
+					),
+				);
+
+			const byPair = new Map<
+				string,
+				{
+					parentId: number;
+					transformationType: string;
+					children: Array<{
+						childId: number;
+						childName: string;
+						childStockPieces: number;
+						yieldQuantityPieces: string | number;
+					}>;
+				}
+			>();
+
+			for (const r of rows) {
+				const key = `${r.parentId}|${r.transformationType}`;
+				const bucket =
+					byPair.get(key) ??
+					({
+						parentId: r.parentId,
+						transformationType: r.transformationType ?? "BASE",
+						children: [],
+					} as const);
+
+				if (!byPair.has(key)) byPair.set(key, { ...bucket, children: [] });
+
+				byPair.get(key)?.children.push({
+					childId: r.childId,
+					childName: r.childName,
+					childStockPieces: r.childStockPieces,
+					yieldQuantityPieces: r.yieldQuantityPieces,
+				});
+			}
+
+			return Array.from(byPair.values()).sort((a, b) => {
+				if (a.parentId !== b.parentId) return a.parentId - b.parentId;
+				return a.transformationType.localeCompare(b.transformationType);
+			});
 		}),
 
 	getAvailableTransformationTypes: protectedProcedure
