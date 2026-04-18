@@ -57,7 +57,8 @@ export default function DisassemblyPage() {
 		useState<number>(0);
 	const [purchaseWeightKg, setPurchaseWeightKg] = useState<number>(0);
 	const [purchaseNotes, setPurchaseNotes] = useState<string>("");
-	const purchaseQuantity = purchaseAmericanQty + purchaseNationalPolynesiaQty;
+	const purchaseQuantity =
+		(purchaseAmericanQty + purchaseNationalPolynesiaQty) * 2;
 
 	// Despiece masivo
 	const [batchAmerican, setBatchAmerican] = useState<number>(0);
@@ -255,13 +256,8 @@ export default function DisassemblyPage() {
 		[],
 	);
 
-	const npLomoQty = useMemo(() => {
-		return Math.ceil(batchNationalPolynesia / 2);
-	}, [batchNationalPolynesia]);
-
-	const npEspilomoQty = useMemo(() => {
-		return Math.max(0, batchNationalPolynesia - npLomoQty);
-	}, [batchNationalPolynesia, npLomoQty]);
+	const npLomoQty = batchNationalPolynesia;
+	const npEspilomoQty = batchNationalPolynesia;
 
 	const canalNpPreview = useMemo(() => {
 		const map = new Map<number, { name: string; pieces: number }>();
@@ -286,6 +282,7 @@ export default function DisassemblyPage() {
 			.map(([id, v]) => ({ id, ...v }))
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}, [
+		batchNationalPolynesia,
 		canalNationalPolynesiaEspilomo.data,
 		canalNationalPolynesiaLomo.data,
 		expectedPieces,
@@ -296,7 +293,7 @@ export default function DisassemblyPage() {
 	const executeCanalBatch = async () => {
 		if (!canalProduct) return;
 
-		const totalToProcess = batchAmerican + batchNationalPolynesia;
+		const totalToProcess = (batchAmerican + batchNationalPolynesia) * 2;
 		if (totalToProcess <= 0) return;
 
 		if (canalProduct.stock_pieces < totalToProcess) {
@@ -306,11 +303,17 @@ export default function DisassemblyPage() {
 
 		const steps: Array<{ qty: number; style: string }> = [];
 		if (batchAmerican > 0)
-			steps.push({ qty: batchAmerican, style: "AMERICANO" });
-		if (npLomoQty > 0)
-			steps.push({ qty: npLomoQty, style: "NACIONAL_POLINESIA_LOMO" });
-		if (npEspilomoQty > 0)
-			steps.push({ qty: npEspilomoQty, style: "NACIONAL_POLINESIA_ESPILOMO" });
+			steps.push({ qty: batchAmerican * 2, style: "AMERICANO" });
+		if (batchNationalPolynesia > 0) {
+			steps.push({
+				qty: batchNationalPolynesia,
+				style: "NACIONAL_POLINESIA_LOMO",
+			});
+			steps.push({
+				qty: batchNationalPolynesia,
+				style: "NACIONAL_POLINESIA_ESPILOMO",
+			});
+		}
 
 		for (const s of steps) {
 			if (s.qty <= 0) continue;
@@ -373,7 +376,7 @@ export default function DisassemblyPage() {
 						<div className="grid grid-cols-1 gap-4 md:grid-cols-4">
 							<div className="space-y-2">
 								<Label className="text-blue-900">
-									Cantidad Nacional/Polinesia
+									Cantidad Nacional/Polinesia (canales completos)
 								</Label>
 								<Input
 									type="number"
@@ -395,7 +398,9 @@ export default function DisassemblyPage() {
 							</div>
 
 							<div className="space-y-2">
-								<Label className="text-blue-900">Cantidad Americano</Label>
+								<Label className="text-blue-900">
+									Cantidad Americano (canales completos)
+								</Label>
 								<Input
 									type="number"
 									min="0"
@@ -414,7 +419,7 @@ export default function DisassemblyPage() {
 									className="border-blue-200"
 								/>
 								<div className="text-blue-700 text-xs">
-									Total: {purchaseQuantity} canales
+									Total: {purchaseQuantity} medias canales
 								</div>
 							</div>
 
@@ -533,7 +538,9 @@ export default function DisassemblyPage() {
 									</div>
 
 									<div className="space-y-2">
-										<Label>Cantidad Nacional/Polinesia</Label>
+										<Label>
+											Cantidad Nacional/Polinesia (canales completos)
+										</Label>
 										<Input
 											type="number"
 											min="0"
@@ -551,14 +558,14 @@ export default function DisassemblyPage() {
 										/>
 										{batchNationalPolynesia > 0 ? (
 											<div className="text-muted-foreground text-xs">
-												Se divide automáticamente: {npLomoQty} lado lomo +{" "}
+												Se procesa en medias canales: {npLomoQty} lado lomo +{" "}
 												{npEspilomoQty} lado espilomo
 											</div>
 										) : null}
 									</div>
 
 									<div className="space-y-2">
-										<Label>Cantidad Americano</Label>
+										<Label>Cantidad Americano (canales completos)</Label>
 										<Input
 											type="number"
 											min="0"
@@ -654,7 +661,7 @@ export default function DisassemblyPage() {
 									) : null}
 
 									<div className="flex justify-end pt-4">
-										{batchAmerican + batchNationalPolynesia >
+										{(batchAmerican + batchNationalPolynesia) * 2 >
 											canalProduct.stock_pieces && (
 											<div className="mr-auto flex items-center gap-2 text-red-600 text-xs">
 												<AlertCircleIcon className="h-3.5 w-3.5" />
@@ -667,7 +674,7 @@ export default function DisassemblyPage() {
 											disabled={
 												disassemblyMutation.isPending ||
 												batchAmerican + batchNationalPolynesia <= 0 ||
-												batchAmerican + batchNationalPolynesia >
+												(batchAmerican + batchNationalPolynesia) * 2 >
 													canalProduct.stock_pieces
 											}
 										>
