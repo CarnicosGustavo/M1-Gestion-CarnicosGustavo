@@ -544,8 +544,10 @@ export const productsRouter = router({
 				purchaseMode: z
 					.enum(["CANAL_COMPLETO", "MEDIA_CANAL"])
 					.default("CANAL_COMPLETO"),
-				qtyNacional: z.number().int().min(0),
 				qtyAmericano: z.number().int().min(0),
+				qtyNacional: z.number().int().min(0).optional().default(0),
+				qtyNacionalLomo: z.number().int().min(0).optional().default(0),
+				qtyNacionalEspilomo: z.number().int().min(0).optional().default(0),
 				totalWeightKg: z.number().positive("Debe ser mayor a 0"),
 				supplier: z.string().optional(),
 				notes: z.string().optional(),
@@ -553,17 +555,27 @@ export const productsRouter = router({
 		)
 		.mutation(async ({ ctx, input }) => {
 			const uid = ctx.user.id;
-			const channelsTotal = input.qtyNacional + input.qtyAmericano;
-			if (channelsTotal <= 0) {
+			const isFull = input.purchaseMode === "CANAL_COMPLETO";
+
+			const mediasAmericano = isFull
+				? input.qtyAmericano * 2
+				: input.qtyAmericano;
+			const mediasNacionalLomo = isFull
+				? input.qtyNacional
+				: input.qtyNacionalLomo;
+			const mediasNacionalEspilomo = isFull
+				? input.qtyNacional
+				: input.qtyNacionalEspilomo;
+
+			const quantityPieces =
+				mediasAmericano + mediasNacionalLomo + mediasNacionalEspilomo;
+
+			if (quantityPieces <= 0) {
 				throw new TRPCError({
 					code: "BAD_REQUEST",
-					message: "Debe registrar al menos 1 canal",
+					message: "Debe registrar al menos 1 media canal",
 				});
 			}
-			const factor = input.purchaseMode === "CANAL_COMPLETO" ? 2 : 1;
-			const mediasNacional = input.qtyNacional * factor;
-			const mediasAmericano = input.qtyAmericano * factor;
-			const quantityPieces = mediasNacional + mediasAmericano;
 
 			return await db.transaction(async (tx) => {
 				// 1. Encontrar producto CANAL (parent product only)
@@ -610,7 +622,8 @@ export const productsRouter = router({
 						`Compra ${input.purchaseMode === "CANAL_COMPLETO" ? "canal completo" : "media canal"}`,
 						`N:${input.qtyNacional}`,
 						`A:${input.qtyAmericano}`,
-						`medias N:${mediasNacional}`,
+						`medias N lomo:${mediasNacionalLomo}`,
+						`medias N espilomo:${mediasNacionalEspilomo}`,
 						`medias A:${mediasAmericano}`,
 						input.supplier ? `Proveedor: ${input.supplier}` : null,
 						input.notes ?? null,
@@ -623,9 +636,12 @@ export const productsRouter = router({
 					success: true,
 					product: canalProduct.name,
 					purchaseMode: input.purchaseMode,
-					qtyNacional: input.qtyNacional,
 					qtyAmericano: input.qtyAmericano,
-					mediasNacional,
+					qtyNacional: input.qtyNacional,
+					qtyNacionalLomo: input.qtyNacionalLomo,
+					qtyNacionalEspilomo: input.qtyNacionalEspilomo,
+					mediasNacionalLomo,
+					mediasNacionalEspilomo,
 					mediasAmericano,
 					previousStock: currentStock,
 					newStock: newStock,
@@ -633,6 +649,76 @@ export const productsRouter = router({
 					newKg: newKg.toFixed(3),
 				};
 			});
+		}),
+
+	disassemblyDashboard: almacenProcedure
+		.input(z.void())
+		.output(
+			z.array(
+				z.object({
+					id: z.number(),
+					name: z.string(),
+					stock_pieces: z.number(),
+					stock_kg: z.union([z.number(), z.string()]),
+					is_parent_product: z.boolean(),
+					transformationTypes: z.array(z.string()),
+				}),
+			),
+		)
+		.query(async ({ ctx }) => {
+			const uid = ctx.user.id;
+
+			const stocked = await db
+				.select({
+					id: products.id,
+					name: products.name,
+					stock_pieces: products.stock_pieces,
+					stock_kg: products.stock_kg,
+					is_parent_product: products.is_parent_product,
+				})
+				.from(products)
+				.where(
+					and(eq(products.user_uid, uid), sql`${products.stock_pieces} > 0`),
+				);
+
+			if (!stocked.length) {
+				return [];
+			}
+
+			const parentIds = stocked.map((p) => p.id);
+			const pairs = await db
+				.selectDistinct({
+					parent_id: productTransformations.parent_product_id,
+					type: productTransformations.transformation_type,
+				})
+				.from(productTransformations)
+				.where(
+					and(
+						inArray(productTransformations.parent_product_id, parentIds),
+						eq(productTransformations.is_active, true),
+					),
+				);
+
+			const byParent = new Map<number, string[]>();
+			for (const p of pairs) {
+				if (p.type === null) continue;
+				const arr = byParent.get(p.parent_id) ?? [];
+				arr.push(p.type);
+				byParent.set(p.parent_id, arr);
+			}
+
+			for (const [k, v] of byParent) {
+				const unique = Array.from(new Set(v));
+				unique.sort((a, b) => a.localeCompare(b));
+				byParent.set(k, unique);
+			}
+
+			return stocked
+				.map((p) => ({
+					...p,
+					transformationTypes: byParent.get(p.id) ?? [],
+				}))
+				.sort((a, b) => a.name.localeCompare(b.name));
 		}),
 
 	getAvailableTransformationTypes: protectedProcedure
