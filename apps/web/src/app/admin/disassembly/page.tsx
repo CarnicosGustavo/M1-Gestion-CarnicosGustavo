@@ -221,8 +221,22 @@ export default function DisassemblyPage() {
 	}, []);
 
 	const dashboardProcessables = useMemo(() => {
+		const normalize = (name: string) =>
+			name
+				.toLowerCase()
+				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+				.trim();
+		const isIntermediate = (name: string) => {
+			const n = normalize(name);
+			return (
+				n.includes("costillar") ||
+				n.includes("lomo completo") ||
+				(n.includes("cuero") && !n.includes("mitad"))
+			);
+		};
 		return dashboardStock
 			.filter((p) => p.transformationTypes.length > 0)
+			.filter((p) => !isIntermediate(p.name))
 			.sort((a, b) => {
 				const ao = dashboardOrder(a.name);
 				const bo = dashboardOrder(b.name);
@@ -293,6 +307,9 @@ export default function DisassemblyPage() {
 	const [dashboardType, setDashboardType] = useState<Record<number, string>>(
 		{},
 	);
+	const [dashboardIntermediateLeave, setDashboardIntermediateLeave] = useState<
+		Record<string, number>
+	>({});
 
 	useEffect(() => {
 		if (!dashboardStock.length) return;
@@ -326,6 +343,55 @@ export default function DisassemblyPage() {
 		return t.replace("NACIONAL_POLINESIA", "NACIONAL");
 	}, []);
 
+	const normalizeProductName = useCallback((name: string) => {
+		return name
+			.toLowerCase()
+			.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+			.trim();
+	}, []);
+
+	const isCanalName = useCallback(
+		(name: string) => normalizeProductName(name).includes("canal"),
+		[normalizeProductName],
+	);
+
+	const isIntermediateName = useCallback(
+		(name: string) => {
+			const n = normalizeProductName(name);
+			return (
+				n.includes("costillar") ||
+				n.includes("lomo completo") ||
+				n.includes("cuero")
+			);
+		},
+		[normalizeProductName],
+	);
+
+	const getDefaultTypeForParent = useCallback(
+		(parentId: number) => {
+			const byType = dashboardRecipesByParent.get(parentId);
+			if (!byType) return "BASE";
+			if (byType.has("BASE")) return "BASE";
+			return (
+				Array.from(byType.keys()).sort((a, b) => a.localeCompare(b))[0] ??
+				"BASE"
+			);
+		},
+		[dashboardRecipesByParent],
+	);
+
+	const shouldShowLeaveComplete = useCallback((name: string) => {
+		const normalized = name
+			.toLowerCase()
+			.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+			.trim();
+		return (
+			normalized.includes("canal") ||
+			normalized.includes("costillar") ||
+			normalized.includes("lomo")
+		);
+	}, []);
+
 	const selectedMapParent = useMemo(() => {
 		if (!mapParentId) return null;
 		return dashboardProcessables.find((p) => p.id === mapParentId) ?? null;
@@ -338,6 +404,79 @@ export default function DisassemblyPage() {
 		const qty = dashboardQty[productId] ?? 0;
 		const type = dashboardType[productId];
 		if (!type || qty <= 0) return;
+
+		if (isCanalName(item.name)) {
+			const byType = dashboardRecipesByParent.get(item.id);
+			const outputMap = new Map<
+				number,
+				{ childName: string; addPieces: number }
+			>();
+
+			const addRecipes = (recipeType: string, realType: string) => {
+				const rows = byType?.get(recipeType) ?? [];
+				for (const r of rows) {
+					const addPieces = expectedPieces(r.yieldQuantityPieces, qty);
+					const prev = outputMap.get(r.childId);
+					outputMap.set(r.childId, {
+						childName: r.childName,
+						addPieces: (prev?.addPieces ?? 0) + addPieces,
+					});
+				}
+
+				const parentNameLower = item.name.toLowerCase();
+				const typeLower = realType.toLowerCase();
+				const shouldAutoRecorte =
+					typeLower.includes("cuadr") &&
+					(typeLower.includes("cuero") ||
+						parentNameLower.includes("panza") ||
+						parentNameLower.includes("cuero"));
+				const hasRecorte = Array.from(outputMap.values()).some((x) =>
+					x.childName.toLowerCase().includes("recorte"),
+				);
+				if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
+					const prev = outputMap.get(recorteProduct.id);
+					outputMap.set(recorteProduct.id, {
+						childName: recorteProduct.name,
+						addPieces: (prev?.addPieces ?? 0) + qty,
+					});
+				}
+			};
+
+			addRecipes("BASE", type);
+			if (type !== "BASE") addRecipes(type, type);
+
+			const intermediateLeaves = Array.from(outputMap.entries())
+				.filter(
+					([childId, v]) => v.addPieces > 0 && isIntermediateName(v.childName),
+				)
+				.map(([childId, v]) => {
+					const key = `${item.id}:${childId}`;
+					const leave = Math.max(
+						0,
+						Math.min(dashboardIntermediateLeave[key] ?? 0, v.addPieces),
+					);
+					return { productId: childId, leaveComplete: leave };
+				});
+
+			await pipelineMutation.mutateAsync({
+				canalProductId: item.id,
+				qtyProcessCanal: qty,
+				transformationType: type,
+				intermediateLeaves,
+				realWeightMode,
+			});
+
+			queryClient.invalidateQueries({
+				queryKey: trpc.products.list.queryKey(),
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.products.disassemblyDashboard.queryKey(),
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.products.disassemblyDashboardRecipes.queryKey(),
+			});
+			return;
+		}
 
 		await disassemblyMutation.mutateAsync({
 			parentProductId: productId,
@@ -359,13 +498,7 @@ export default function DisassemblyPage() {
 			const type = dashboardType[p.id];
 			if (!type || qty <= 0) continue;
 			if (qty > p.stock_pieces) continue;
-			await disassemblyMutation.mutateAsync({
-				parentProductId: p.id,
-				quantityToProcess: qty,
-				transformationType: type,
-				realWeightMode,
-				entryMode: false,
-			});
+			await executeDashboardCard(p.id);
 		}
 		queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
 		queryClient.invalidateQueries({
@@ -482,6 +615,17 @@ export default function DisassemblyPage() {
 						timestamp: new Date(),
 					});
 				}
+				toast.success(t("disassemblySuccess"));
+			},
+			onError: (error) => {
+				toast.error(`${t("disassemblyError")}: ${error.message}`);
+			},
+		}),
+	);
+
+	const pipelineMutation = useMutation(
+		trpc.products.processDisassemblyPipeline.mutationOptions({
+			onSuccess: () => {
 				toast.success(t("disassemblySuccess"));
 			},
 			onError: (error) => {
@@ -1268,7 +1412,9 @@ export default function DisassemblyPage() {
 								size="sm"
 								onClick={executeDashboardAll}
 								disabled={
-									disassemblyMutation.isPending || !dashboardProcessables.length
+									disassemblyMutation.isPending ||
+									pipelineMutation.isPending ||
+									!dashboardProcessables.length
 								}
 							>
 								Ejecutar todo
@@ -1287,7 +1433,9 @@ export default function DisassemblyPage() {
 										const qty = dashboardQty[p.id] ?? p.stock_pieces;
 										const type = dashboardType[p.id] ?? "";
 										const disabled = !type || qty <= 0 || qty > p.stock_pieces;
+										const leaveCompleteQty = Math.max(0, p.stock_pieces - qty);
 										const byType = dashboardRecipesByParent.get(p.id);
+										const isCanal = isCanalName(p.name);
 
 										const outputMap = new Map<
 											number,
@@ -1347,6 +1495,13 @@ export default function DisassemblyPage() {
 											.filter((x) => x.addPieces > 0)
 											.sort((a, b) => a.childName.localeCompare(b.childName));
 
+										const intermediateOutputs = isCanal
+											? outputs.filter((o) => isIntermediateName(o.childName))
+											: [];
+										const finalOutputs = isCanal
+											? outputs.filter((o) => !isIntermediateName(o.childName))
+											: outputs;
+
 										return (
 											<div
 												key={p.id}
@@ -1364,7 +1519,11 @@ export default function DisassemblyPage() {
 													<Button
 														size="sm"
 														onClick={() => executeDashboardCard(p.id)}
-														disabled={disabled || disassemblyMutation.isPending}
+														disabled={
+															disabled ||
+															disassemblyMutation.isPending ||
+															pipelineMutation.isPending
+														}
 													>
 														Ejecutar
 													</Button>
@@ -1417,6 +1576,46 @@ export default function DisassemblyPage() {
 																}));
 															}}
 														/>
+														{shouldShowLeaveComplete(p.name) ? (
+															<div className="mt-2 space-y-1">
+																<div className="text-muted-foreground text-xs">
+																	Dejar completo
+																</div>
+																<Input
+																	type="number"
+																	min="0"
+																	step="1"
+																	value={leaveCompleteQty || ""}
+																	onChange={(e) => {
+																		const val = e.target.value;
+																		const leave =
+																			val === ""
+																				? 0
+																				: Number.parseInt(val, 10) || 0;
+																		const clamped = Math.min(
+																			Math.max(leave, 0),
+																			p.stock_pieces,
+																		);
+																		setDashboardQty((prev) => ({
+																			...prev,
+																			[p.id]: Math.max(
+																				0,
+																				p.stock_pieces - clamped,
+																			),
+																		}));
+																	}}
+																/>
+																<div className="text-muted-foreground text-xs">
+																	Procesar:{" "}
+																	{Math.max(0, Math.min(qty, p.stock_pieces))} ·
+																	Dejar: {leaveCompleteQty}
+																</div>
+															</div>
+														) : (
+															<div className="text-muted-foreground text-xs">
+																Dejar en stock: {leaveCompleteQty}
+															</div>
+														)}
 														{qty > p.stock_pieces ? (
 															<div className="text-red-600 text-xs">
 																Cantidad excede el stock
@@ -1432,7 +1631,7 @@ export default function DisassemblyPage() {
 														</div>
 														{outputs.length ? (
 															<div className="mt-1 space-y-1">
-																{outputs.map((o) => (
+																{finalOutputs.map((o) => (
 																	<div
 																		key={o.childId}
 																		className="flex items-center justify-between gap-3 text-xs"
@@ -1446,6 +1645,220 @@ export default function DisassemblyPage() {
 																		</div>
 																	</div>
 																))}
+
+																{isCanal
+																	? intermediateOutputs.map((o) => {
+																			const key = `${p.id}:${o.childId}`;
+																			const leave = Math.max(
+																				0,
+																				Math.min(
+																					dashboardIntermediateLeave[key] ?? 0,
+																					o.addPieces,
+																				),
+																			);
+																			const toSplit = Math.max(
+																				0,
+																				o.addPieces - leave,
+																			);
+																			const intermediateType =
+																				getDefaultTypeForParent(o.childId);
+																			const byTypeChild =
+																				dashboardRecipesByParent.get(o.childId);
+
+																			const childOutputMap = new Map<
+																				number,
+																				{
+																					childId: number;
+																					childName: string;
+																					childStockPieces: number;
+																					addPieces: number;
+																				}
+																			>();
+																			const addIntermediateRecipes = (
+																				recipeType: string,
+																				realType: string,
+																			) => {
+																				const rows =
+																					byTypeChild?.get(recipeType) ?? [];
+																				for (const r of rows) {
+																					const addPieces = expectedPieces(
+																						r.yieldQuantityPieces,
+																						toSplit,
+																					);
+																					const prev = childOutputMap.get(
+																						r.childId,
+																					);
+																					childOutputMap.set(r.childId, {
+																						childId: r.childId,
+																						childName: r.childName,
+																						childStockPieces:
+																							r.childStockPieces,
+																						addPieces:
+																							(prev?.addPieces ?? 0) +
+																							addPieces,
+																					});
+																				}
+
+																				const parentNameLower =
+																					o.childName.toLowerCase();
+																				const typeLower =
+																					realType.toLowerCase();
+																				const shouldAutoRecorte =
+																					typeLower.includes("cuadr") &&
+																					(typeLower.includes("cuero") ||
+																						parentNameLower.includes("panza") ||
+																						parentNameLower.includes("cuero"));
+																				const hasRecorte = Array.from(
+																					childOutputMap.values(),
+																				).some((x) =>
+																					x.childName
+																						.toLowerCase()
+																						.includes("recorte"),
+																				);
+																				if (
+																					shouldAutoRecorte &&
+																					!hasRecorte &&
+																					recorteProduct
+																				) {
+																					const prev = childOutputMap.get(
+																						recorteProduct.id,
+																					);
+																					childOutputMap.set(
+																						recorteProduct.id,
+																						{
+																							childId: recorteProduct.id,
+																							childName: recorteProduct.name,
+																							childStockPieces:
+																								recorteProduct.stock_pieces,
+																							addPieces:
+																								(prev?.addPieces ?? 0) +
+																								toSplit,
+																						},
+																					);
+																				}
+																			};
+
+																			if (toSplit > 0) {
+																				addIntermediateRecipes(
+																					"BASE",
+																					intermediateType,
+																				);
+																				if (intermediateType !== "BASE")
+																					addIntermediateRecipes(
+																						intermediateType,
+																						intermediateType,
+																					);
+																			}
+
+																			const childOutputs = Array.from(
+																				childOutputMap.values(),
+																			)
+																				.filter((x) => x.addPieces > 0)
+																				.sort((a, b) =>
+																					a.childName.localeCompare(
+																						b.childName,
+																					),
+																				);
+
+																			return (
+																				<div
+																					key={o.childId}
+																					className="rounded-md bg-background/60 p-2"
+																				>
+																					<div className="flex items-center justify-between gap-3 text-xs">
+																						<div className="min-w-0 truncate">
+																							→ {o.childName}
+																						</div>
+																						<div className="shrink-0 text-muted-foreground">
+																							+{o.addPieces} (stock{" "}
+																							{o.childStockPieces} →{" "}
+																							{o.childStockPieces + o.addPieces}
+																							)
+																						</div>
+																					</div>
+
+																					<div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+																						<div className="space-y-1">
+																							<div className="text-muted-foreground text-xs">
+																								Dejar completo
+																							</div>
+																							<Input
+																								type="number"
+																								min="0"
+																								step="1"
+																								value={leave || ""}
+																								onChange={(e) => {
+																									const val = e.target.value;
+																									const raw =
+																										val === ""
+																											? 0
+																											: Number.parseInt(
+																													val,
+																													10,
+																												) || 0;
+																									const clamped = Math.min(
+																										Math.max(raw, 0),
+																										o.addPieces,
+																									);
+																									setDashboardIntermediateLeave(
+																										(prev) => ({
+																											...prev,
+																											[key]: clamped,
+																										}),
+																									);
+																								}}
+																							/>
+																							<div className="text-muted-foreground text-xs">
+																								Separar: {toSplit} · Dejar:{" "}
+																								{leave}
+																							</div>
+																						</div>
+																						<div className="space-y-1">
+																							<div className="text-muted-foreground text-xs">
+																								Acción interna
+																							</div>
+																							<div className="text-xs">
+																								{displayType(intermediateType)}
+																							</div>
+																						</div>
+																					</div>
+
+																					{toSplit > 0 ? (
+																						<div className="mt-2 space-y-1">
+																							{childOutputs.length ? (
+																								childOutputs.map((c) => (
+																									<div
+																										key={c.childId}
+																										className="flex items-center justify-between gap-3 text-xs"
+																									>
+																										<div className="min-w-0 truncate">
+																											→ {c.childName}
+																										</div>
+																										<div className="shrink-0 text-muted-foreground">
+																											+{c.addPieces} (stock{" "}
+																											{c.childStockPieces} →{" "}
+																											{c.childStockPieces +
+																												c.addPieces}
+																											)
+																										</div>
+																									</div>
+																								))
+																							) : (
+																								<div className="text-muted-foreground text-xs">
+																									Sin receta configurada para
+																									separar.
+																								</div>
+																							)}
+																						</div>
+																					) : (
+																						<div className="mt-2 text-muted-foreground text-xs">
+																							Se deja completo.
+																						</div>
+																					)}
+																				</div>
+																			);
+																		})
+																	: null}
 															</div>
 														) : (
 															<div className="mt-1 text-muted-foreground text-xs">

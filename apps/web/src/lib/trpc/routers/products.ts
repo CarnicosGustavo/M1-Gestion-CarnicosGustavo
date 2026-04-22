@@ -555,6 +555,472 @@ export const productsRouter = router({
 			});
 		}),
 
+	processDisassemblyPipeline: almacenProcedure
+		.input(
+			z.object({
+				canalProductId: z.number(),
+				qtyProcessCanal: z.number().int().min(0),
+				transformationType: z.string().min(1),
+				intermediateLeaves: z
+					.array(
+						z.object({
+							productId: z.number(),
+							leaveComplete: z.number().int().min(0),
+						}),
+					)
+					.default([]),
+				realWeightMode: z.boolean().optional(),
+			}),
+		)
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ ctx, input }) => {
+			const uid = ctx.user.id;
+			const useRealWeightMode = input.realWeightMode !== false;
+
+			const normalizePieces = (value: number) =>
+				value > 50 ? value / 1000 : value;
+			const normalizeRatio = (value: number) =>
+				value > 1 ? value / 1000 : value;
+			const chooseType = (types: string[]) => {
+				if (types.includes("BASE")) return "BASE";
+				return types.slice().sort((a, b) => a.localeCompare(b))[0] ?? "BASE";
+			};
+
+			return await db.transaction(async (tx) => {
+				const applyDisassemblyTx = async (args: {
+					parentProductId: number;
+					quantityToProcess: number;
+					transformationType: string;
+				}) => {
+					const [parent] = await tx
+						.select()
+						.from(products)
+						.where(
+							and(
+								eq(products.id, args.parentProductId),
+								eq(products.user_uid, uid),
+							),
+						)
+						.limit(1);
+
+					if (!parent) {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "Producto padre no encontrado",
+						});
+					}
+
+					if (parent.stock_pieces < args.quantityToProcess) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: "Stock de piezas insuficiente",
+						});
+					}
+
+					const stockKg = Number(parent.stock_kg);
+					const parentAvgWeight =
+						parent.stock_pieces > 0 ? stockKg / parent.stock_pieces : 0;
+					const isFullDisassembly =
+						args.quantityToProcess === parent.stock_pieces;
+					const kgToRemove = useRealWeightMode
+						? isFullDisassembly
+							? stockKg
+							: 0
+						: args.quantityToProcess * parentAvgWeight;
+
+					const newStockKg = stockKg - kgToRemove;
+					if (newStockKg < 0) {
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message: `Stock insuficiente: se requieren ${kgToRemove.toFixed(3)} kg pero solo hay ${stockKg.toFixed(3)} kg disponibles`,
+						});
+					}
+
+					await tx
+						.update(products)
+						.set({
+							stock_pieces: parent.stock_pieces - args.quantityToProcess,
+							stock_kg: newStockKg.toFixed(3),
+						})
+						.where(eq(products.id, args.parentProductId));
+
+					await tx.insert(inventoryTransactions).values({
+						product_id: args.parentProductId,
+						quantity_change_pieces: -args.quantityToProcess,
+						quantity_change_kg:
+							kgToRemove !== 0 ? (-kgToRemove).toFixed(3) : null,
+						transaction_type: "DESPIECE",
+						notes: `Salida por despiece ${args.transformationType}`,
+					});
+
+					const selectedType = args.transformationType;
+					const parentNameLower = parent.name.toLowerCase();
+					const typeLower = selectedType.toLowerCase();
+					const shouldAutoRecorte =
+						typeLower.includes("cuadr") &&
+						(typeLower.includes("cuero") ||
+							parentNameLower.includes("panza") ||
+							parentNameLower.includes("cuero"));
+					const typesToApply =
+						selectedType === "BASE" ? ["BASE"] : ["BASE", selectedType];
+
+					const recipes = await tx
+						.select()
+						.from(productTransformations)
+						.where(
+							and(
+								eq(
+									productTransformations.parent_product_id,
+									args.parentProductId,
+								),
+								inArray(
+									productTransformations.transformation_type,
+									typesToApply,
+								),
+								eq(productTransformations.is_active, true),
+							),
+						);
+
+					if (recipes.length === 0) {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "No se encontraron recetas para este despiece",
+						});
+					}
+
+					let hasRecorteChild = false;
+					for (const recipe of recipes) {
+						const yieldPieces = normalizePieces(
+							Number(recipe.yield_quantity_pieces),
+						);
+
+						const childPiecesToAdd = Math.round(
+							args.quantityToProcess * yieldPieces,
+						);
+						const yieldRatio = useRealWeightMode
+							? 0
+							: normalizeRatio(Number(recipe.yield_weight_ratio));
+						const childKgToAdd = useRealWeightMode
+							? 0
+							: args.quantityToProcess * yieldRatio * parentAvgWeight;
+
+						const [child] = await tx
+							.select()
+							.from(products)
+							.where(
+								and(
+									eq(products.id, recipe.child_product_id),
+									eq(products.user_uid, uid),
+								),
+							)
+							.limit(1);
+
+						if (!child) continue;
+
+						if (child.name.toLowerCase().includes("recorte")) {
+							hasRecorteChild = true;
+						}
+
+						const newChildStockKg = Number(child.stock_kg) + childKgToAdd;
+						if (newChildStockKg > 9999999.999) {
+							throw new TRPCError({
+								code: "INVALID_DATA",
+								message: `Stock del producto ${child.name} excedería el límite máximo permitido`,
+							});
+						}
+
+						await tx
+							.update(products)
+							.set({
+								stock_pieces: child.stock_pieces + childPiecesToAdd,
+								stock_kg: newChildStockKg.toFixed(3),
+							})
+							.where(eq(products.id, recipe.child_product_id));
+
+						await tx.insert(inventoryTransactions).values({
+							product_id: recipe.child_product_id,
+							quantity_change_pieces: childPiecesToAdd,
+							quantity_change_kg: useRealWeightMode
+								? null
+								: childKgToAdd.toFixed(3),
+							transaction_type: "DESPIECE",
+							reference_id: args.parentProductId,
+							notes: `Entrada por despiece ${args.transformationType} de ${parent.name}`,
+						});
+					}
+
+					if (shouldAutoRecorte && !hasRecorteChild) {
+						const recorteCandidates = await tx
+							.select()
+							.from(products)
+							.where(
+								and(
+									eq(products.user_uid, uid),
+									sql`LOWER(${products.name}) LIKE '%recorte%'`,
+								),
+							);
+
+						const normalizeName = (name: string) =>
+							name
+								.toLowerCase()
+								.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+								.trim();
+						const scoreRecorte = (name: string) => {
+							const n = normalizeName(name);
+							if (n.includes("cuero") && n.includes("recorte")) return 0;
+							if (n.includes("recorte")) return 1;
+							return 999;
+						};
+
+						const recorteProduct = recorteCandidates.slice().sort((a, b) => {
+							const sa = scoreRecorte(a.name);
+							const sb = scoreRecorte(b.name);
+							if (sa !== sb) return sa - sb;
+							return a.id - b.id;
+						})[0];
+
+						if (!recorteProduct) {
+							throw new TRPCError({
+								code: "NOT_FOUND",
+								message:
+									"No se encontró un producto RECORTE para registrar el subproducto",
+							});
+						}
+
+						await tx
+							.update(products)
+							.set({
+								stock_pieces:
+									recorteProduct.stock_pieces + args.quantityToProcess,
+							})
+							.where(eq(products.id, recorteProduct.id));
+
+						await tx.insert(inventoryTransactions).values({
+							product_id: recorteProduct.id,
+							quantity_change_pieces: args.quantityToProcess,
+							quantity_change_kg: null,
+							transaction_type: "DESPIECE",
+							reference_id: args.parentProductId,
+							notes: `Entrada por recorte ${args.transformationType} de ${parent.name}`,
+						});
+					}
+				};
+
+				const [canal] = await tx
+					.select()
+					.from(products)
+					.where(
+						and(
+							eq(products.id, input.canalProductId),
+							eq(products.user_uid, uid),
+						),
+					)
+					.limit(1);
+
+				if (!canal) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Producto CANAL no encontrado",
+					});
+				}
+
+				if (input.qtyProcessCanal <= 0) {
+					return { success: true };
+				}
+
+				const canalStockKg = Number(canal.stock_kg);
+				const canalAvgWeight =
+					canal.stock_pieces > 0 ? canalStockKg / canal.stock_pieces : 0;
+				const isFullDisassembly = input.qtyProcessCanal === canal.stock_pieces;
+				const kgToRemove = useRealWeightMode
+					? isFullDisassembly
+						? canalStockKg
+						: 0
+					: input.qtyProcessCanal * canalAvgWeight;
+
+				if (canal.stock_pieces < input.qtyProcessCanal) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Stock de canal insuficiente",
+					});
+				}
+
+				const newCanalKg = canalStockKg - kgToRemove;
+				if (newCanalKg < 0) {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: `Stock insuficiente: se requieren ${kgToRemove.toFixed(3)} kg pero solo hay ${canalStockKg.toFixed(3)} kg disponibles`,
+					});
+				}
+
+				await tx
+					.update(products)
+					.set({
+						stock_pieces: canal.stock_pieces - input.qtyProcessCanal,
+						stock_kg: newCanalKg.toFixed(3),
+					})
+					.where(eq(products.id, input.canalProductId));
+
+				await tx.insert(inventoryTransactions).values({
+					product_id: input.canalProductId,
+					quantity_change_pieces: -input.qtyProcessCanal,
+					quantity_change_kg:
+						kgToRemove !== 0 ? (-kgToRemove).toFixed(3) : null,
+					transaction_type: "DESPIECE",
+					notes: `Salida por despiece ${input.transformationType}`,
+				});
+
+				const selectedType = input.transformationType;
+				const typesToApply =
+					selectedType === "BASE" ? ["BASE"] : ["BASE", selectedType];
+
+				const canalRecipes = await tx
+					.select()
+					.from(productTransformations)
+					.where(
+						and(
+							eq(
+								productTransformations.parent_product_id,
+								input.canalProductId,
+							),
+							inArray(productTransformations.transformation_type, typesToApply),
+							eq(productTransformations.is_active, true),
+						),
+					);
+
+				if (!canalRecipes.length) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "No se encontraron recetas para despiece de canal",
+					});
+				}
+
+				const generatedByChildId = new Map<number, number>();
+				for (const recipe of canalRecipes) {
+					const yieldPieces = normalizePieces(
+						Number(recipe.yield_quantity_pieces),
+					);
+					const childPiecesToAdd = Math.round(
+						input.qtyProcessCanal * yieldPieces,
+					);
+					if (childPiecesToAdd <= 0) continue;
+					generatedByChildId.set(
+						recipe.child_product_id,
+						(generatedByChildId.get(recipe.child_product_id) ?? 0) +
+							childPiecesToAdd,
+					);
+				}
+
+				for (const recipe of canalRecipes) {
+					const yieldPieces = normalizePieces(
+						Number(recipe.yield_quantity_pieces),
+					);
+					const childPiecesToAdd = Math.round(
+						input.qtyProcessCanal * yieldPieces,
+					);
+					const yieldRatio = useRealWeightMode
+						? 0
+						: normalizeRatio(Number(recipe.yield_weight_ratio));
+					const childKgToAdd = useRealWeightMode
+						? 0
+						: input.qtyProcessCanal * yieldRatio * canalAvgWeight;
+
+					const [child] = await tx
+						.select()
+						.from(products)
+						.where(
+							and(
+								eq(products.id, recipe.child_product_id),
+								eq(products.user_uid, uid),
+							),
+						)
+						.limit(1);
+
+					if (!child) continue;
+
+					const newChildStockKg = Number(child.stock_kg) + childKgToAdd;
+					if (newChildStockKg > 9999999.999) {
+						throw new TRPCError({
+							code: "INVALID_DATA",
+							message: `Stock del producto ${child.name} excedería el límite máximo permitido`,
+						});
+					}
+
+					await tx
+						.update(products)
+						.set({
+							stock_pieces: child.stock_pieces + childPiecesToAdd,
+							stock_kg: newChildStockKg.toFixed(3),
+						})
+						.where(eq(products.id, recipe.child_product_id));
+
+					await tx.insert(inventoryTransactions).values({
+						product_id: recipe.child_product_id,
+						quantity_change_pieces: childPiecesToAdd,
+						quantity_change_kg: useRealWeightMode
+							? null
+							: childKgToAdd.toFixed(3),
+						transaction_type: "DESPIECE",
+						reference_id: input.canalProductId,
+						notes: `Entrada por despiece ${input.transformationType} de ${canal.name}`,
+					});
+				}
+
+				const intermediateIds = input.intermediateLeaves
+					.map((x) => x.productId)
+					.filter((x, i, a) => a.indexOf(x) === i);
+
+				if (intermediateIds.length) {
+					const typeRows = await tx
+						.selectDistinct({
+							parentId: productTransformations.parent_product_id,
+							type: productTransformations.transformation_type,
+						})
+						.from(productTransformations)
+						.where(
+							and(
+								inArray(
+									productTransformations.parent_product_id,
+									intermediateIds,
+								),
+								eq(productTransformations.is_active, true),
+							),
+						);
+
+					const typesByParentId = new Map<number, string[]>();
+					for (const r of typeRows) {
+						typesByParentId.set(r.parentId, [
+							...(typesByParentId.get(r.parentId) ?? []),
+							r.type,
+						]);
+					}
+
+					for (const item of input.intermediateLeaves) {
+						const generated = generatedByChildId.get(item.productId) ?? 0;
+						if (generated <= 0) continue;
+						if (item.leaveComplete > generated) {
+							throw new TRPCError({
+								code: "BAD_REQUEST",
+								message: "Cantidad a dejar completa excede lo generado",
+							});
+						}
+						const qtyToProcess = generated - item.leaveComplete;
+						if (qtyToProcess <= 0) continue;
+
+						const t = chooseType(typesByParentId.get(item.productId) ?? []);
+
+						await applyDisassemblyTx({
+							parentProductId: item.productId,
+							quantityToProcess: qtyToProcess,
+							transformationType: t,
+						});
+					}
+				}
+
+				return { success: true };
+			});
+		}),
+
 	getTransformations: protectedProcedure
 		.meta({
 			openapi: {
@@ -842,7 +1308,23 @@ export const productsRouter = router({
 
 			if (!stocked.length) return [];
 
-			const parentIds = stocked.map((p) => p.id);
+			const seedParentIds = stocked.map((p) => p.id);
+
+			const childParents = await db
+				.selectDistinct({
+					id: productTransformations.child_product_id,
+				})
+				.from(productTransformations)
+				.where(
+					and(
+						inArray(productTransformations.parent_product_id, seedParentIds),
+						eq(productTransformations.is_active, true),
+					),
+				);
+
+			const parentIds = Array.from(
+				new Set([...seedParentIds, ...childParents.map((x) => x.id)]),
+			);
 			const child = alias(products, "child_products_for_dashboard");
 
 			const rows = await db
