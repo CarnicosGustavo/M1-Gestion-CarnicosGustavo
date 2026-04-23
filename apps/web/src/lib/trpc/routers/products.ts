@@ -1263,7 +1263,9 @@ export const productsRouter = router({
 			}
 
 			for (const [k, v] of byParent) {
-				const unique = Array.from(new Set(v));
+				const unique = Array.from(new Set(v)).filter(
+					(type) => type !== "BASE"
+				);
 				unique.sort((a, b) => a.localeCompare(b));
 				byParent.set(k, unique);
 			}
