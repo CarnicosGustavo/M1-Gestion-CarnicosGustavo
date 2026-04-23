@@ -53,57 +53,20 @@ export default function DisassemblyPage() {
 
 	const [isClient, setIsClient] = useState(false);
 
-	// Ingreso de compra de canales
-	const [purchaseMode, setPurchaseMode] = useState<
-		"CANAL_COMPLETO" | "MEDIA_CANAL"
-	>("CANAL_COMPLETO");
+	// Ingreso de compra de canales - 3 canales independientes
 	const [purchaseAmericanQty, setPurchaseAmericanQty] = useState<number>(0);
-	const [purchaseNacionalQty, setPurchaseNacionalQty] = useState<number>(0);
-	const [purchaseNacionalLomoQty, setPurchaseNacionalLomoQty] =
+	const [purchaseAmericanWeightKg, setPurchaseAmericanWeightKg] =
 		useState<number>(0);
-	const [purchaseNacionalEspilomoQty, setPurchaseNacionalEspilomoQty] =
+	const [purchaseLomoQty, setPurchaseLomoQty] = useState<number>(0);
+	const [purchaseLomoWeightKg, setPurchaseLomoWeightKg] = useState<number>(0);
+	const [purchaseEspilomoQty, setPurchaseEspilomoQty] = useState<number>(0);
+	const [purchaseEspilomoWeightKg, setPurchaseEspilomoWeightKg] =
 		useState<number>(0);
-	const [purchaseWeightKg, setPurchaseWeightKg] = useState<number>(0);
 	const [purchaseSupplier, setPurchaseSupplier] = useState<string>("");
 	const [purchaseNotes, setPurchaseNotes] = useState<string>("");
-	const purchaseQuantity = useMemo(() => {
-		if (purchaseMode === "CANAL_COMPLETO") {
-			return (purchaseAmericanQty + purchaseNacionalQty) * 2;
-		}
-		return (
-			purchaseAmericanQty +
-			purchaseNacionalLomoQty +
-			purchaseNacionalEspilomoQty
-		);
-	}, [
-		purchaseAmericanQty,
-		purchaseMode,
-		purchaseNacionalEspilomoQty,
-		purchaseNacionalLomoQty,
-		purchaseNacionalQty,
-	]);
 
-	// Despiece masivo
-	const [batchMediasAmerican, setBatchMediasAmerican] = useState<number>(0);
-	const [batchMediasNacionalLomo, setBatchMediasNacionalLomo] =
-		useState<number>(0);
-	const [batchMediasNacionalEspilomo, setBatchMediasNacionalEspilomo] =
-		useState<number>(0);
-	const [batchMode, setBatchMode] = useState<"CANAL_COMPLETO" | "MEDIA_CANAL">(
-		"CANAL_COMPLETO",
-	);
-	const [lastPurchaseCanalProductId, setLastPurchaseCanalProductId] = useState<
-		number | null
-	>(null);
-	const [lastPurchaseCanalStockPieces, setLastPurchaseCanalStockPieces] =
-		useState<number | null>(null);
+	// Tablero de despiece
 	const [realWeightMode, setRealWeightMode] = useState(true);
-
-	// Despiece de pieza primaria
-	const [selectedPrimaryParentId, setSelectedPrimaryParentId] =
-		useState<string>("");
-	const [selectedPrimaryStyle, setSelectedPrimaryStyle] = useState<string>("");
-	const [primaryQuantity, setPrimaryQuantity] = useState<number>(1);
 
 	// Resumen post-despiece
 	const [disassemblySummary, setDisassemblySummary] = useState<{
@@ -134,39 +97,14 @@ export default function DisassemblyPage() {
 		[products],
 	);
 
-	const canalProduct = useMemo(() => {
-		if (lastPurchaseCanalProductId !== null) {
-			const byId = parentProducts.find(
-				(p) => p.id === lastPurchaseCanalProductId,
-			);
-			if (byId) return byId;
-		}
-
-		const normalizeName = (name: string) =>
-			name
-				.toLowerCase()
-				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
-				.trim();
-		const scoreCanal = (name: string) => {
-			const n = normalizeName(name);
-			if (n === "canal") return 0;
-			if (n.includes("canal") && !n.includes("media")) return 1;
-			if (n.includes("canal")) return 2;
-			return 999;
+	// Los 3 canales específicos
+	const canalProducts = useMemo(() => {
+		return {
+			americano: parentProducts.find((p) => p.id === 613),
+			nacionalLomo: parentProducts.find((p) => p.id === 614),
+			nacionalEspilomo: parentProducts.find((p) => p.id === 615),
 		};
-
-		const candidates = parentProducts.filter((p) =>
-			normalizeName(p.name).includes("canal"),
-		);
-		if (!candidates.length) return null;
-
-		return candidates.slice().sort((a, b) => {
-			const sa = scoreCanal(a.name);
-			const sb = scoreCanal(b.name);
-			if (sa !== sb) return sa - sb;
-			return a.id - b.id;
-		})[0];
-	}, [lastPurchaseCanalProductId, parentProducts]);
+	}, [parentProducts]);
 
 	const primaryParentProducts = useMemo(() => {
 		if (canalProduct) {
@@ -758,8 +696,8 @@ export default function DisassemblyPage() {
 					<CardDescription>{t("disassemblyDescription")}</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-6">
-					{/* SECCIÓN 0: INGRESO DE COMPRA DE CANALES */}
-					<div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+					{/* SECCIÓN 0: INGRESO DE COMPRA DE CANALES - 3 CANALES INDEPENDIENTES */}
+					<div className="space-y-4">
 						<div className="flex items-center gap-2">
 							<PackageIcon className="h-5 w-5 text-blue-600" />
 							<h3 className="font-medium text-blue-900 text-lg">
@@ -767,255 +705,242 @@ export default function DisassemblyPage() {
 							</h3>
 						</div>
 						<p className="text-blue-800 text-sm">
-							Registra la compra inicial de canales. Los datos ingresados serán
-							el stock disponible para despiece.
+							Registra la compra por tipo de canal. Cada entrada será el stock disponible para despiece.
 						</p>
 
-						<div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-							<div className="space-y-2">
-								<Label className="text-blue-900">Tipo de compra</Label>
-								<Select
-									value={purchaseMode}
-									onValueChange={(v) =>
-										setPurchaseMode(v as "CANAL_COMPLETO" | "MEDIA_CANAL")
-									}
-								>
-									<SelectTrigger className="border-blue-200">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="CANAL_COMPLETO">
-											Canal completo
-										</SelectItem>
-										<SelectItem value="MEDIA_CANAL">Media canal</SelectItem>
-									</SelectContent>
-								</Select>
-							</div>
-
-							{purchaseMode === "CANAL_COMPLETO" ? (
-								<div className="space-y-2">
-									<Label className="text-blue-900">Cantidad Nacional</Label>
-									<Input
-										type="number"
-										min="0"
-										step="1"
-										value={purchaseNacionalQty || ""}
-										onChange={(e) => {
-											const val = e.target.value;
-											if (val === "") setPurchaseNacionalQty(0);
-											else {
-												const num = Number.parseInt(val, 10);
-												if (!Number.isNaN(num) && num >= 0)
-													setPurchaseNacionalQty(num);
-											}
-										}}
-										placeholder="Ej: 10"
-										className="border-blue-200"
-									/>
-								</div>
-							) : (
-								<div className="space-y-2">
-									<Label className="text-blue-900">
-										Nacional lado Lomo (medias)
-									</Label>
-									<Input
-										type="number"
-										min="0"
-										step="1"
-										value={purchaseNacionalLomoQty || ""}
-										onChange={(e) => {
-											const val = e.target.value;
-											if (val === "") setPurchaseNacionalLomoQty(0);
-											else {
-												const num = Number.parseInt(val, 10);
-												if (!Number.isNaN(num) && num >= 0)
-													setPurchaseNacionalLomoQty(num);
-											}
-										}}
-										placeholder="Ej: 5"
-										className="border-blue-200"
-									/>
-								</div>
-							)}
-
-							{purchaseMode === "MEDIA_CANAL" ? (
-								<div className="space-y-2">
-									<Label className="text-blue-900">
-										Nacional lado Espilomo (medias)
-									</Label>
-									<Input
-										type="number"
-										min="0"
-										step="1"
-										value={purchaseNacionalEspilomoQty || ""}
-										onChange={(e) => {
-											const val = e.target.value;
-											if (val === "") setPurchaseNacionalEspilomoQty(0);
-											else {
-												const num = Number.parseInt(val, 10);
-												if (!Number.isNaN(num) && num >= 0)
-													setPurchaseNacionalEspilomoQty(num);
-											}
-										}}
-										placeholder="Ej: 5"
-										className="border-blue-200"
-									/>
-								</div>
-							) : (
-								<div className="space-y-2">
-									<Label className="text-blue-900">Cantidad Americano</Label>
-									<Input
-										type="number"
-										min="0"
-										step="1"
-										value={purchaseAmericanQty || ""}
-										onChange={(e) => {
-											const val = e.target.value;
-											if (val === "") setPurchaseAmericanQty(0);
-											else {
-												const num = Number.parseInt(val, 10);
-												if (!Number.isNaN(num) && num >= 0)
-													setPurchaseAmericanQty(num);
-											}
-										}}
-										placeholder="Ej: 10"
-										className="border-blue-200"
-									/>
-									<div className="text-blue-700 text-xs">
-										Total: {purchaseQuantity} medias canales
+						<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+							{/* CANAL AMERICANO */}
+							<div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+								<h4 className="mb-3 font-medium text-amber-900">
+									🇺🇸 CANAL AMERICANO
+								</h4>
+								<div className="space-y-3">
+									<div className="space-y-1">
+										<Label className="text-amber-900 text-sm">Cantidad</Label>
+										<Input
+											type="number"
+											min="0"
+											step="1"
+											value={purchaseAmericanQty || ""}
+											onChange={(e) => {
+												const val = e.target.value;
+												setPurchaseAmericanQty(
+													val === "" ? 0 : Math.max(0, parseInt(val, 10) || 0)
+												);
+											}}
+											placeholder="Ej: 10"
+											className="border-amber-200"
+										/>
 									</div>
-								</div>
-							)}
-						</div>
-
-						<div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-							{purchaseMode === "MEDIA_CANAL" ? (
-								<div className="space-y-2">
-									<Label className="text-blue-900">
-										Cantidad Americano (medias)
-									</Label>
-									<Input
-										type="number"
-										min="0"
-										step="1"
-										value={purchaseAmericanQty || ""}
-										onChange={(e) => {
-											const val = e.target.value;
-											if (val === "") setPurchaseAmericanQty(0);
-											else {
-												const num = Number.parseInt(val, 10);
-												if (!Number.isNaN(num) && num >= 0)
-													setPurchaseAmericanQty(num);
+									<div className="space-y-1">
+										<Label className="text-amber-900 text-sm">Peso Total (kg)</Label>
+										<Input
+											type="number"
+											min="0"
+											step="0.001"
+											value={purchaseAmericanWeightKg || ""}
+											onChange={(e) => {
+												const val = e.target.value;
+												setPurchaseAmericanWeightKg(
+													val === "" ? 0 : Math.max(0, parseFloat(val) || 0)
+												);
+											}}
+											placeholder="Ej: 250.5"
+											className="border-amber-200"
+										/>
+									</div>
+									<Button
+										size="sm"
+										onClick={() => {
+											if (purchaseAmericanQty > 0 && purchaseAmericanWeightKg > 0) {
+												purchaseMutation.mutate({
+													purchaseMode: "CANAL_COMPLETO",
+													qtyAmericano: purchaseAmericanQty,
+													qtyNacional: 0,
+													qtyNacionalLomo: 0,
+													qtyNacionalEspilomo: 0,
+													totalWeightKg: purchaseAmericanWeightKg,
+													supplier: purchaseSupplier || undefined,
+													notes: purchaseNotes || undefined,
+												});
+												setPurchaseAmericanQty(0);
+												setPurchaseAmericanWeightKg(0);
 											}
 										}}
-										placeholder="Ej: 6"
-										className="border-blue-200"
-									/>
-									<div className="text-blue-700 text-xs">
-										Total: {purchaseQuantity} medias canales
-									</div>
-								</div>
-							) : null}
-
-							<div className="space-y-2">
-								<Label className="text-blue-900">Peso Total (kg)</Label>
-								<Input
-									type="number"
-									min="0"
-									step="0.001"
-									value={purchaseWeightKg || ""}
-									onChange={(e) => {
-										const val = e.target.value;
-										if (val === "") setPurchaseWeightKg(0);
-										else {
-											const num = Number.parseFloat(val);
-											if (!Number.isNaN(num) && num >= 0)
-												setPurchaseWeightKg(num);
+										disabled={
+											purchaseAmericanQty <= 0 ||
+											purchaseAmericanWeightKg <= 0 ||
+											purchaseMutation.isPending
 										}
-									}}
-									placeholder="Ej: 25.500"
-									className="border-blue-200"
-								/>
-								{purchaseQuantity > 0 && purchaseWeightKg > 0 ? (
-									<div className="text-blue-700 text-xs">
-										Promedio: {(purchaseWeightKg / purchaseQuantity).toFixed(3)}{" "}
-										kg/media
+										className="w-full bg-amber-600 hover:bg-amber-700"
+									>
+										{purchaseMutation.isPending ? "Registrando..." : "Registrar"}
+									</Button>
+								</div>
+							</div>
+
+							{/* CANAL NACIONAL LOMO */}
+							<div className="rounded-lg border border-green-200 bg-green-50 p-4">
+								<h4 className="mb-3 font-medium text-green-900">
+									🇲🇽 CANAL NAL. LOMO
+								</h4>
+								<div className="space-y-3">
+									<div className="space-y-1">
+										<Label className="text-green-900 text-sm">Cantidad</Label>
+										<Input
+											type="number"
+											min="0"
+											step="1"
+											value={purchaseLomoQty || ""}
+											onChange={(e) => {
+												const val = e.target.value;
+												setPurchaseLomoQty(
+													val === "" ? 0 : Math.max(0, parseInt(val, 10) || 0)
+												);
+											}}
+											placeholder="Ej: 5"
+											className="border-green-200"
+										/>
 									</div>
-								) : null}
+									<div className="space-y-1">
+										<Label className="text-green-900 text-sm">Peso Total (kg)</Label>
+										<Input
+											type="number"
+											min="0"
+											step="0.001"
+											value={purchaseLomoWeightKg || ""}
+											onChange={(e) => {
+												const val = e.target.value;
+												setPurchaseLomoWeightKg(
+													val === "" ? 0 : Math.max(0, parseFloat(val) || 0)
+												);
+											}}
+											placeholder="Ej: 125.5"
+											className="border-green-200"
+										/>
+									</div>
+									<Button
+										size="sm"
+										onClick={() => {
+											if (purchaseLomoQty > 0 && purchaseLomoWeightKg > 0) {
+												purchaseMutation.mutate({
+													purchaseMode: "MEDIA_CANAL",
+													qtyAmericano: 0,
+													qtyNacional: 0,
+													qtyNacionalLomo: purchaseLomoQty,
+													qtyNacionalEspilomo: 0,
+													totalWeightKg: purchaseLomoWeightKg,
+													supplier: purchaseSupplier || undefined,
+													notes: purchaseNotes || undefined,
+												});
+												setPurchaseLomoQty(0);
+												setPurchaseLomoWeightKg(0);
+											}
+										}}
+										disabled={
+											purchaseLomoQty <= 0 ||
+											purchaseLomoWeightKg <= 0 ||
+											purchaseMutation.isPending
+										}
+										className="w-full bg-green-600 hover:bg-green-700"
+									>
+										{purchaseMutation.isPending ? "Registrando..." : "Registrar"}
+									</Button>
+								</div>
 							</div>
 
-							<div className="space-y-2">
-								<Label className="text-blue-900">Proveedor (opcional)</Label>
-								<Input
-									type="text"
-									value={purchaseSupplier}
-									onChange={(e) => setPurchaseSupplier(e.target.value)}
-									placeholder="Ej: Granjas del Norte"
-									className="border-blue-200"
-								/>
-							</div>
-
-							<div className="space-y-2">
-								<Label className="text-blue-900">Notas (opcional)</Label>
-								<Input
-									type="text"
-									value={purchaseNotes}
-									onChange={(e) => setPurchaseNotes(e.target.value)}
-									placeholder="Proveedor, fecha, etc."
-									className="border-blue-200"
-								/>
+							{/* CANAL NACIONAL ESPILOMO */}
+							<div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
+								<h4 className="mb-3 font-medium text-purple-900">
+									🇲🇽 CANAL NAL. ESPILOMO
+								</h4>
+								<div className="space-y-3">
+									<div className="space-y-1">
+										<Label className="text-purple-900 text-sm">Cantidad</Label>
+										<Input
+											type="number"
+											min="0"
+											step="1"
+											value={purchaseEspilomoQty || ""}
+											onChange={(e) => {
+												const val = e.target.value;
+												setPurchaseEspilomoQty(
+													val === "" ? 0 : Math.max(0, parseInt(val, 10) || 0)
+												);
+											}}
+											placeholder="Ej: 3"
+											className="border-purple-200"
+										/>
+									</div>
+									<div className="space-y-1">
+										<Label className="text-purple-900 text-sm">Peso Total (kg)</Label>
+										<Input
+											type="number"
+											min="0"
+											step="0.001"
+											value={purchaseEspilomoWeightKg || ""}
+											onChange={(e) => {
+												const val = e.target.value;
+												setPurchaseEspilomoWeightKg(
+													val === "" ? 0 : Math.max(0, parseFloat(val) || 0)
+												);
+											}}
+											placeholder="Ej: 75.3"
+											className="border-purple-200"
+										/>
+									</div>
+									<Button
+										size="sm"
+										onClick={() => {
+											if (purchaseEspilomoQty > 0 && purchaseEspilomoWeightKg > 0) {
+												purchaseMutation.mutate({
+													purchaseMode: "MEDIA_CANAL",
+													qtyAmericano: 0,
+													qtyNacional: 0,
+													qtyNacionalLomo: 0,
+													qtyNacionalEspilomo: purchaseEspilomoQty,
+													totalWeightKg: purchaseEspilomoWeightKg,
+													supplier: purchaseSupplier || undefined,
+													notes: purchaseNotes || undefined,
+												});
+												setPurchaseEspilomoQty(0);
+												setPurchaseEspilomoWeightKg(0);
+											}
+										}}
+										disabled={
+											purchaseEspilomoQty <= 0 ||
+											purchaseEspilomoWeightKg <= 0 ||
+											purchaseMutation.isPending
+										}
+										className="w-full bg-purple-600 hover:bg-purple-700"
+									>
+										{purchaseMutation.isPending ? "Registrando..." : "Registrar"}
+									</Button>
+								</div>
 							</div>
 						</div>
 
-						<div className="flex justify-end pt-2">
-							<Button
-								onClick={() => {
-									const breakdown =
-										purchaseMode === "CANAL_COMPLETO"
-											? `MODO:${purchaseMode} N:${purchaseNacionalQty} AM:${purchaseAmericanQty}`
-											: `MODO:${purchaseMode} NL:${purchaseNacionalLomoQty} NE:${purchaseNacionalEspilomoQty} AM:${purchaseAmericanQty}`;
-									const notes = purchaseNotes
-										? `${purchaseNotes} | ${breakdown}`
-										: breakdown;
-									purchaseMutation.mutate({
-										purchaseMode,
-										qtyAmericano: purchaseAmericanQty,
-										qtyNacional:
-											purchaseMode === "CANAL_COMPLETO"
-												? purchaseNacionalQty
-												: 0,
-										qtyNacionalLomo:
-											purchaseMode === "MEDIA_CANAL"
-												? purchaseNacionalLomoQty
-												: 0,
-										qtyNacionalEspilomo:
-											purchaseMode === "MEDIA_CANAL"
-												? purchaseNacionalEspilomoQty
-												: 0,
-										totalWeightKg: purchaseWeightKg,
-										supplier: purchaseSupplier || undefined,
-										notes,
-									});
-								}}
-								disabled={
-									purchaseQuantity <= 0 ||
-									purchaseWeightKg <= 0 ||
-									purchaseMutation.isPending
-								}
-								className="bg-blue-600 hover:bg-blue-700"
-							>
-								{purchaseMutation.isPending ? (
-									<>
-										<LoaderIcon className="mr-2 h-5 w-5 animate-spin" />
-										Registrando...
-									</>
-								) : (
-									<>
-										<CheckCircleIcon className="mr-2 h-5 w-5" />
-										Registrar Compra
-									</>
-								)}
-							</Button>
+						{(purchaseSupplier || purchaseNotes) && (
+							<div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+								Proveedor: {purchaseSupplier || "-"} | Notas: {purchaseNotes || "-"}
+							</div>
+						)}
+
+						<div className="flex gap-3">
+							<Input
+								type="text"
+								placeholder="Proveedor (opcional)"
+								value={purchaseSupplier}
+								onChange={(e) => setPurchaseSupplier(e.target.value)}
+								className="max-w-xs"
+							/>
+							<Input
+								type="text"
+								placeholder="Notas (opcional)"
+								value={purchaseNotes}
+								onChange={(e) => setPurchaseNotes(e.target.value)}
+								className="flex-1"
+							/>
 						</div>
 					</div>
 
