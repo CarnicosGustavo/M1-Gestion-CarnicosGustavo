@@ -23,7 +23,6 @@ import {
 	type LucideIcon,
 	MenuIcon,
 	PackageIcon,
-	ReceiptTextIcon,
 	ScaleIcon,
 	ScissorsIcon,
 	SettingsIcon,
@@ -51,8 +50,6 @@ interface NavItem {
 		| "orders"
 		| "paymentMethods"
 		| "pos"
-		| "invoices"
-		| "fiscalSettings"
 		| "disassembly"
 		| "weighingStation";
 	icon: LucideIcon;
@@ -77,12 +74,6 @@ const navItems: NavItem[] = [
 		icon: CreditCardIcon,
 	},
 	{ href: "/admin/pos", labelKey: "pos", icon: ShoppingCartIcon },
-	{ href: "/admin/fiscal", labelKey: "invoices", icon: ReceiptTextIcon },
-	{
-		href: "/admin/fiscal/settings",
-		labelKey: "fiscalSettings",
-		icon: SettingsIcon,
-	},
 ];
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {

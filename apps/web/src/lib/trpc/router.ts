@@ -3,14 +3,13 @@ import { router } from "./init";
 import { citiesRouter } from "./routers/cities";
 import { customersRouter } from "./routers/customers";
 import { dashboardRouter } from "./routers/dashboard";
-import { fiscalRouter } from "./routers/fiscal";
-import { fiscalSettingsRouter } from "./routers/fiscal-settings";
 import { inventoryRouter } from "./routers/inventory";
 import { ordersRouter } from "./routers/orders";
 import { paymentMethodsRouter } from "./routers/payment-methods";
 import { productsRouter } from "./routers/products";
 import { transactionsRouter } from "./routers/transactions";
 import { purchaseOrdersRouter } from "./routers/purchase-orders";
+import { ticketsRouter } from "./routers/tickets";
 
 export const appRouter = router({
 	products: productsRouter,
@@ -20,10 +19,9 @@ export const appRouter = router({
 	paymentMethods: paymentMethodsRouter,
 	purchaseOrders: purchaseOrdersRouter,
 	dashboard: dashboardRouter,
-	fiscalSettings: fiscalSettingsRouter,
-	fiscal: fiscalRouter,
 	cities: citiesRouter,
 	inventory: inventoryRouter,
+	tickets: ticketsRouter,
 });
 
 export type AppRouter = typeof appRouter;

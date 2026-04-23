@@ -8,21 +8,19 @@ import { SettingsIcon } from "lucide-react";
 
 // Lazy load tab components
 import dynamic from "next/dynamic";
-const FiscalSettingsTab = dynamic(() => import("./tabs/fiscal-settings"), { ssr: false });
 const RecipesTab = dynamic(() => import("./tabs/recipes"), { ssr: false });
 const PaymentsTab = dynamic(() => import("./tabs/payments"), { ssr: false });
 
-type SettingTab = "billing" | "recipes" | "payments";
+type SettingTab = "recipes" | "payments";
 
 const TABS: { id: SettingTab; label: string; icon: string }[] = [
-  { id: "billing", label: "Facturación", icon: "📄" },
   { id: "recipes", label: "Recetas", icon: "📋" },
   { id: "payments", label: "Métodos de Pago", icon: "💳" },
 ];
 
 export default function SettingsPage() {
   const t = useTranslations("common");
-  const [activeTab, setActiveTab] = useState<SettingTab>("billing");
+  const [activeTab, setActiveTab] = useState<SettingTab>("recipes");
 
   return (
     <div className="space-y-6">
@@ -58,7 +56,6 @@ export default function SettingsPage() {
 
           {/* Tab Content */}
           <div className="min-h-[400px]">
-            {activeTab === "billing" && <FiscalSettingsTab />}
             {activeTab === "recipes" && <RecipesTab />}
             {activeTab === "payments" && <PaymentsTab />}
           </div>
