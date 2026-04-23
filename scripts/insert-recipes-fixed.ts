@@ -6,17 +6,18 @@ async function insertRecipes() {
   try {
     console.log("🔄 Insertando recetas NACIONAL_LOMO y NACIONAL_ESPILOMO...\n");
 
-    // Product IDs (corrected from database)
-    const CANAL = 7;
-    const LOMO = 608;
-    const PECHO = 604;
-    const CUERO = 609;
-    const PATAS = 590;
-    const MANOS = 591;
-    const PIERNA = 588;
-    const ESPALDILLA = 9;
-    const FILETE = 592;
-    const ESPILOMO = 8;
+    // Product IDs (NOTE: Using parent_product_id = 533 which is "XX9 - CANAL", not 7)
+    // The system uses the older XX-prefixed product naming for parent products
+    const CANAL = 533;        // XX9 - CANAL (parent product)
+    const LOMO = 556;         // XX32 - LOMO
+    const PECHO = 569;        // XX45 - PECHO
+    const CUERO = 609;        // XX13 - CUERO
+    const PATAS = 568;        // XX44 - PATAS
+    const MANOS = 560;        // XX35 - MANOS
+    const PIERNA = 571;       // XX47 - PIERNA
+    const ESPALDILLA = 544;   // XX20 - ESPALDILLA
+    const FILETE = 547;       // XX23 - FILETE
+    const ESPILOMO = 545;     // XX21 - ESPILOMO
     const CABEZA = 605;
 
     console.log("📋 IDs de productos:\n");
