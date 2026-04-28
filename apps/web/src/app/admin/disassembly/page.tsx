@@ -77,6 +77,11 @@ export default function DisassemblyPage() {
 		timestamp: Date;
 	} | null>(null);
 
+	const [selectedPrimaryParentId, setSelectedPrimaryParentId] =
+		useState<string>("");
+	const [selectedPrimaryStyle, setSelectedPrimaryStyle] = useState<string>("");
+	const [primaryQuantity, setPrimaryQuantity] = useState<number>(0);
+
 	useEffect(() => {
 		setIsClient(true);
 	}, []);
@@ -97,13 +102,28 @@ export default function DisassemblyPage() {
 		[products],
 	);
 
-	// Los 3 canales específicos
-	const canalProducts = useMemo(() => {
-		return {
-			americano: parentProducts.find((p) => p.id === 613),
-			nacionalLomo: parentProducts.find((p) => p.id === 614),
-			nacionalEspilomo: parentProducts.find((p) => p.id === 615),
+	const canalProduct = useMemo(() => {
+		const normalizeName = (name: string) =>
+			name
+				.toLowerCase()
+				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+				.trim();
+		const scoreCanal = (name: string) => {
+			const n = normalizeName(name);
+			if (n === "canal") return 0;
+			if (n.includes("canal") && !n.includes("media")) return 1;
+			if (n.includes("canal")) return 2;
+			return 999;
 		};
+		const candidates = parentProducts.filter((p) =>
+			normalizeName(p.name).includes("canal"),
+		);
+		return candidates.slice().sort((a, b) => {
+			const sa = scoreCanal(a.name);
+			const sb = scoreCanal(b.name);
+			if (sa !== sb) return sa - sb;
+			return a.id - b.id;
+		})[0];
 	}, [parentProducts]);
 
 	const primaryParentProducts = useMemo(() => {
@@ -248,6 +268,20 @@ export default function DisassemblyPage() {
 	const [dashboardIntermediateLeave, setDashboardIntermediateLeave] = useState<
 		Record<string, number>
 	>({});
+
+	const [batchMediasAmerican, setBatchMediasAmerican] = useState<number>(0);
+	const [batchMediasNacionalLomo, setBatchMediasNacionalLomo] =
+		useState<number>(0);
+	const [batchMediasNacionalEspilomo, setBatchMediasNacionalEspilomo] =
+		useState<number>(0);
+	const [batchMode, setBatchMode] = useState<"CANAL_COMPLETO" | "MEDIA_CANAL">(
+		"CANAL_COMPLETO",
+	);
+	const [lastPurchaseCanalProductId, setLastPurchaseCanalProductId] = useState<
+		number | null
+	>(null);
+	const [lastPurchaseCanalStockPieces, setLastPurchaseCanalStockPieces] =
+		useState<number | null>(null);
 
 	useEffect(() => {
 		if (!dashboardStock.length) return;
@@ -516,10 +550,11 @@ export default function DisassemblyPage() {
 				setLastPurchaseCanalProductId(data.productId);
 				setLastPurchaseCanalStockPieces(data.newStock);
 				setPurchaseAmericanQty(0);
-				setPurchaseNacionalQty(0);
-				setPurchaseNacionalLomoQty(0);
-				setPurchaseNacionalEspilomoQty(0);
-				setPurchaseWeightKg(0);
+				setPurchaseAmericanWeightKg(0);
+				setPurchaseLomoQty(0);
+				setPurchaseLomoWeightKg(0);
+				setPurchaseEspilomoQty(0);
+				setPurchaseEspilomoWeightKg(0);
 				setPurchaseSupplier("");
 				setPurchaseNotes("");
 				// Refrescar lista de productos
@@ -705,7 +740,8 @@ export default function DisassemblyPage() {
 							</h3>
 						</div>
 						<p className="text-blue-800 text-sm">
-							Registra la compra por tipo de canal. Cada entrada será el stock disponible para despiece.
+							Registra la compra por tipo de canal. Cada entrada será el stock
+							disponible para despiece.
 						</p>
 
 						<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -725,7 +761,9 @@ export default function DisassemblyPage() {
 											onChange={(e) => {
 												const val = e.target.value;
 												setPurchaseAmericanQty(
-													val === "" ? 0 : Math.max(0, parseInt(val, 10) || 0)
+													val === ""
+														? 0
+														: Math.max(0, Number.parseInt(val, 10) || 0),
 												);
 											}}
 											placeholder="Ej: 10"
@@ -733,7 +771,9 @@ export default function DisassemblyPage() {
 										/>
 									</div>
 									<div className="space-y-1">
-										<Label className="text-amber-900 text-sm">Peso Total (kg)</Label>
+										<Label className="text-amber-900 text-sm">
+											Peso Total (kg)
+										</Label>
 										<Input
 											type="number"
 											min="0"
@@ -742,7 +782,9 @@ export default function DisassemblyPage() {
 											onChange={(e) => {
 												const val = e.target.value;
 												setPurchaseAmericanWeightKg(
-													val === "" ? 0 : Math.max(0, parseFloat(val) || 0)
+													val === ""
+														? 0
+														: Math.max(0, Number.parseFloat(val) || 0),
 												);
 											}}
 											placeholder="Ej: 250.5"
@@ -752,7 +794,10 @@ export default function DisassemblyPage() {
 									<Button
 										size="sm"
 										onClick={() => {
-											if (purchaseAmericanQty > 0 && purchaseAmericanWeightKg > 0) {
+											if (
+												purchaseAmericanQty > 0 &&
+												purchaseAmericanWeightKg > 0
+											) {
 												purchaseMutation.mutate({
 													purchaseMode: "CANAL_COMPLETO",
 													qtyAmericano: purchaseAmericanQty,
@@ -774,7 +819,9 @@ export default function DisassemblyPage() {
 										}
 										className="w-full bg-amber-600 hover:bg-amber-700"
 									>
-										{purchaseMutation.isPending ? "Registrando..." : "Registrar"}
+										{purchaseMutation.isPending
+											? "Registrando..."
+											: "Registrar"}
 									</Button>
 								</div>
 							</div>
@@ -795,7 +842,9 @@ export default function DisassemblyPage() {
 											onChange={(e) => {
 												const val = e.target.value;
 												setPurchaseLomoQty(
-													val === "" ? 0 : Math.max(0, parseInt(val, 10) || 0)
+													val === ""
+														? 0
+														: Math.max(0, Number.parseInt(val, 10) || 0),
 												);
 											}}
 											placeholder="Ej: 5"
@@ -803,7 +852,9 @@ export default function DisassemblyPage() {
 										/>
 									</div>
 									<div className="space-y-1">
-										<Label className="text-green-900 text-sm">Peso Total (kg)</Label>
+										<Label className="text-green-900 text-sm">
+											Peso Total (kg)
+										</Label>
 										<Input
 											type="number"
 											min="0"
@@ -812,7 +863,9 @@ export default function DisassemblyPage() {
 											onChange={(e) => {
 												const val = e.target.value;
 												setPurchaseLomoWeightKg(
-													val === "" ? 0 : Math.max(0, parseFloat(val) || 0)
+													val === ""
+														? 0
+														: Math.max(0, Number.parseFloat(val) || 0),
 												);
 											}}
 											placeholder="Ej: 125.5"
@@ -844,7 +897,9 @@ export default function DisassemblyPage() {
 										}
 										className="w-full bg-green-600 hover:bg-green-700"
 									>
-										{purchaseMutation.isPending ? "Registrando..." : "Registrar"}
+										{purchaseMutation.isPending
+											? "Registrando..."
+											: "Registrar"}
 									</Button>
 								</div>
 							</div>
@@ -865,7 +920,9 @@ export default function DisassemblyPage() {
 											onChange={(e) => {
 												const val = e.target.value;
 												setPurchaseEspilomoQty(
-													val === "" ? 0 : Math.max(0, parseInt(val, 10) || 0)
+													val === ""
+														? 0
+														: Math.max(0, Number.parseInt(val, 10) || 0),
 												);
 											}}
 											placeholder="Ej: 3"
@@ -873,7 +930,9 @@ export default function DisassemblyPage() {
 										/>
 									</div>
 									<div className="space-y-1">
-										<Label className="text-purple-900 text-sm">Peso Total (kg)</Label>
+										<Label className="text-purple-900 text-sm">
+											Peso Total (kg)
+										</Label>
 										<Input
 											type="number"
 											min="0"
@@ -882,7 +941,9 @@ export default function DisassemblyPage() {
 											onChange={(e) => {
 												const val = e.target.value;
 												setPurchaseEspilomoWeightKg(
-													val === "" ? 0 : Math.max(0, parseFloat(val) || 0)
+													val === ""
+														? 0
+														: Math.max(0, Number.parseFloat(val) || 0),
 												);
 											}}
 											placeholder="Ej: 75.3"
@@ -892,7 +953,10 @@ export default function DisassemblyPage() {
 									<Button
 										size="sm"
 										onClick={() => {
-											if (purchaseEspilomoQty > 0 && purchaseEspilomoWeightKg > 0) {
+											if (
+												purchaseEspilomoQty > 0 &&
+												purchaseEspilomoWeightKg > 0
+											) {
 												purchaseMutation.mutate({
 													purchaseMode: "MEDIA_CANAL",
 													qtyAmericano: 0,
@@ -914,7 +978,9 @@ export default function DisassemblyPage() {
 										}
 										className="w-full bg-purple-600 hover:bg-purple-700"
 									>
-										{purchaseMutation.isPending ? "Registrando..." : "Registrar"}
+										{purchaseMutation.isPending
+											? "Registrando..."
+											: "Registrar"}
 									</Button>
 								</div>
 							</div>
@@ -922,7 +988,8 @@ export default function DisassemblyPage() {
 
 						{(purchaseSupplier || purchaseNotes) && (
 							<div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
-								Proveedor: {purchaseSupplier || "-"} | Notas: {purchaseNotes || "-"}
+								Proveedor: {purchaseSupplier || "-"} | Notas:{" "}
+								{purchaseNotes || "-"}
 							</div>
 						)}
 
