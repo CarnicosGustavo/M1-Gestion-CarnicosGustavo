@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
@@ -10,7 +10,12 @@ import {
 	products,
 	productTransformations,
 } from "@/lib/db/schema";
-import { protectedProcedure, adminProcedure, almacenProcedure, router } from "../init";
+import {
+	protectedProcedure,
+	adminProcedure,
+	almacenProcedure,
+	router,
+} from "../init";
 
 const inventoryStatusSchema = z.object({
 	productId: z.number(),
@@ -63,6 +68,68 @@ const priceListItemSchema = z.object({
 });
 
 export const inventoryRouter = router({
+	resetAllStock: adminProcedure
+		.input(z.object({ adminPassword: z.string().min(1) }))
+		.output(
+			z.object({
+				success: z.boolean(),
+				productsReset: z.number(),
+				transactionsLogged: z.number(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const expected =
+				process.env.ADMIN_RESET_PASSWORD?.trim() ??
+				process.env.SEED_TOKEN?.trim() ??
+				"";
+			if (!expected || input.adminPassword.trim() !== expected) {
+				throw new TRPCError({
+					code: "UNAUTHORIZED",
+					message: "Contraseña inválida",
+				});
+			}
+
+			const uid = ctx.user.id;
+			return db.transaction(async (tx) => {
+				const allProducts = await tx
+					.select()
+					.from(products)
+					.where(eq(products.user_uid, uid));
+
+				const transactions = allProducts.map((product) => ({
+					product_id: product.id,
+					quantity_change_pieces: -product.stock_pieces,
+					quantity_change_kg:
+						product.stock_kg !== null
+							? (-Number(product.stock_kg)).toFixed(3)
+							: null,
+					transaction_type: "RESET",
+					reference_id: null,
+					notes: "Reset inventario - stock a cero",
+				}));
+
+				if (transactions.length > 0) {
+					await tx.insert(inventoryTransactions).values(transactions);
+				}
+
+				await tx
+					.update(products)
+					.set({
+						stock_pieces: 0,
+						stock_kg: sql`0.000`,
+						in_stock: sql`0.000`,
+						updated_at: new Date(),
+					})
+					.where(eq(products.user_uid, uid));
+
+				return {
+					success: true,
+					productsReset: allProducts.length,
+					transactionsLogged: transactions.length,
+				};
+			});
+		}),
+
 	status: protectedProcedure
 		.meta({
 			openapi: {
