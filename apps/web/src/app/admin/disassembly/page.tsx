@@ -53,15 +53,9 @@ export default function DisassemblyPage() {
 
 	const [isClient, setIsClient] = useState(false);
 
-	// Ingreso de compra de canales - 3 canales independientes
-	const [purchaseAmericanQty, setPurchaseAmericanQty] = useState<number>(0);
-	const [purchaseAmericanWeightKg, setPurchaseAmericanWeightKg] =
-		useState<number>(0);
-	const [purchaseLomoQty, setPurchaseLomoQty] = useState<number>(0);
-	const [purchaseLomoWeightKg, setPurchaseLomoWeightKg] = useState<number>(0);
-	const [purchaseEspilomoQty, setPurchaseEspilomoQty] = useState<number>(0);
-	const [purchaseEspilomoWeightKg, setPurchaseEspilomoWeightKg] =
-		useState<number>(0);
+	const [purchaseWholePigs, setPurchaseWholePigs] = useState<number>(0);
+	const [purchaseCutStyle, setPurchaseCutStyle] = useState<"US" | "MX">("US");
+	const [purchaseTotalWeightKg, setPurchaseTotalWeightKg] = useState<number>(0);
 	const [purchaseSupplier, setPurchaseSupplier] = useState<string>("");
 	const [purchaseNotes, setPurchaseNotes] = useState<string>("");
 
@@ -549,12 +543,8 @@ export default function DisassemblyPage() {
 				setBatchMode(data.purchaseMode);
 				setLastPurchaseCanalProductId(data.productId);
 				setLastPurchaseCanalStockPieces(data.newStock);
-				setPurchaseAmericanQty(0);
-				setPurchaseAmericanWeightKg(0);
-				setPurchaseLomoQty(0);
-				setPurchaseLomoWeightKg(0);
-				setPurchaseEspilomoQty(0);
-				setPurchaseEspilomoWeightKg(0);
+				setPurchaseWholePigs(0);
+				setPurchaseTotalWeightKg(0);
 				setPurchaseSupplier("");
 				setPurchaseNotes("");
 				// Refrescar lista de productos
@@ -731,7 +721,7 @@ export default function DisassemblyPage() {
 					<CardDescription>{t("disassemblyDescription")}</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-6">
-					{/* SECCIÓN 0: INGRESO DE COMPRA DE CANALES - 3 CANALES INDEPENDIENTES */}
+					{/* SECCIÓN 0: INGRESO DE COMPRA DE CANALES */}
 					<div className="space-y-4">
 						<div className="flex items-center gap-2">
 							<PackageIcon className="h-5 w-5 text-blue-600" />
@@ -740,250 +730,108 @@ export default function DisassemblyPage() {
 							</h3>
 						</div>
 						<p className="text-blue-800 text-sm">
-							Registra la compra por tipo de canal. Cada entrada será el stock
-							disponible para despiece.
+							Ingresa la cantidad de cerdos completos y el estilo (MX/US). El
+							sistema convierte automáticamente a medias canales:
+							<br />
+							US: 2 medias iguales | MX: 1 media lado Lomo + 1 media lado
+							Espilomo
 						</p>
 
 						<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-							{/* CANAL AMERICANO */}
-							<div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-								<h4 className="mb-3 font-medium text-amber-900">
-									🇺🇸 CANAL AMERICANO
-								</h4>
-								<div className="space-y-3">
-									<div className="space-y-1">
-										<Label className="text-amber-900 text-sm">Cantidad</Label>
-										<Input
-											type="number"
-											min="0"
-											step="1"
-											value={purchaseAmericanQty || ""}
-											onChange={(e) => {
-												const val = e.target.value;
-												setPurchaseAmericanQty(
-													val === ""
-														? 0
-														: Math.max(0, Number.parseInt(val, 10) || 0),
-												);
-											}}
-											placeholder="Ej: 10"
-											className="border-amber-200"
-										/>
-									</div>
-									<div className="space-y-1">
-										<Label className="text-amber-900 text-sm">
-											Peso Total (kg)
-										</Label>
-										<Input
-											type="number"
-											min="0"
-											step="0.001"
-											value={purchaseAmericanWeightKg || ""}
-											onChange={(e) => {
-												const val = e.target.value;
-												setPurchaseAmericanWeightKg(
-													val === ""
-														? 0
-														: Math.max(0, Number.parseFloat(val) || 0),
-												);
-											}}
-											placeholder="Ej: 250.5"
-											className="border-amber-200"
-										/>
-									</div>
-									<Button
-										size="sm"
-										onClick={() => {
-											if (
-												purchaseAmericanQty > 0 &&
-												purchaseAmericanWeightKg > 0
-											) {
-												purchaseMutation.mutate({
-													purchaseMode: "CANAL_COMPLETO",
-													qtyAmericano: purchaseAmericanQty,
-													qtyNacional: 0,
-													qtyNacionalLomo: 0,
-													qtyNacionalEspilomo: 0,
-													totalWeightKg: purchaseAmericanWeightKg,
-													supplier: purchaseSupplier || undefined,
-													notes: purchaseNotes || undefined,
-												});
-												setPurchaseAmericanQty(0);
-												setPurchaseAmericanWeightKg(0);
-											}
-										}}
-										disabled={
-											purchaseAmericanQty <= 0 ||
-											purchaseAmericanWeightKg <= 0 ||
-											purchaseMutation.isPending
-										}
-										className="w-full bg-amber-600 hover:bg-amber-700"
-									>
-										{purchaseMutation.isPending
-											? "Registrando..."
-											: "Registrar"}
-									</Button>
-								</div>
+							<div className="space-y-1">
+								<Label className="text-blue-900 text-sm">
+									Cerdos completos (vivos)
+								</Label>
+								<Input
+									type="number"
+									min="0"
+									step="1"
+									value={purchaseWholePigs || ""}
+									onChange={(e) => {
+										const val = e.target.value;
+										setPurchaseWholePigs(
+											val === ""
+												? 0
+												: Math.max(0, Number.parseInt(val, 10) || 0),
+										);
+									}}
+									placeholder="Ej: 10"
+								/>
 							</div>
 
-							{/* CANAL NACIONAL LOMO */}
-							<div className="rounded-lg border border-green-200 bg-green-50 p-4">
-								<h4 className="mb-3 font-medium text-green-900">
-									🇲🇽 CANAL NAL. LOMO
-								</h4>
-								<div className="space-y-3">
-									<div className="space-y-1">
-										<Label className="text-green-900 text-sm">Cantidad</Label>
-										<Input
-											type="number"
-											min="0"
-											step="1"
-											value={purchaseLomoQty || ""}
-											onChange={(e) => {
-												const val = e.target.value;
-												setPurchaseLomoQty(
-													val === ""
-														? 0
-														: Math.max(0, Number.parseInt(val, 10) || 0),
-												);
-											}}
-											placeholder="Ej: 5"
-											className="border-green-200"
-										/>
-									</div>
-									<div className="space-y-1">
-										<Label className="text-green-900 text-sm">
-											Peso Total (kg)
-										</Label>
-										<Input
-											type="number"
-											min="0"
-											step="0.001"
-											value={purchaseLomoWeightKg || ""}
-											onChange={(e) => {
-												const val = e.target.value;
-												setPurchaseLomoWeightKg(
-													val === ""
-														? 0
-														: Math.max(0, Number.parseFloat(val) || 0),
-												);
-											}}
-											placeholder="Ej: 125.5"
-											className="border-green-200"
-										/>
-									</div>
-									<Button
-										size="sm"
-										onClick={() => {
-											if (purchaseLomoQty > 0 && purchaseLomoWeightKg > 0) {
-												purchaseMutation.mutate({
-													purchaseMode: "MEDIA_CANAL",
-													qtyAmericano: 0,
-													qtyNacional: 0,
-													qtyNacionalLomo: purchaseLomoQty,
-													qtyNacionalEspilomo: 0,
-													totalWeightKg: purchaseLomoWeightKg,
-													supplier: purchaseSupplier || undefined,
-													notes: purchaseNotes || undefined,
-												});
-												setPurchaseLomoQty(0);
-												setPurchaseLomoWeightKg(0);
-											}
-										}}
-										disabled={
-											purchaseLomoQty <= 0 ||
-											purchaseLomoWeightKg <= 0 ||
-											purchaseMutation.isPending
-										}
-										className="w-full bg-green-600 hover:bg-green-700"
-									>
-										{purchaseMutation.isPending
-											? "Registrando..."
-											: "Registrar"}
-									</Button>
-								</div>
+							<div className="space-y-1">
+								<Label className="text-blue-900 text-sm">Estilo</Label>
+								<Select
+									value={purchaseCutStyle}
+									onValueChange={(v) => setPurchaseCutStyle(v as "US" | "MX")}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder="Selecciona" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="MX">🇲🇽 MX (Nacional)</SelectItem>
+										<SelectItem value="US">🇺🇸 US (Americano)</SelectItem>
+									</SelectContent>
+								</Select>
 							</div>
 
-							{/* CANAL NACIONAL ESPILOMO */}
-							<div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
-								<h4 className="mb-3 font-medium text-purple-900">
-									🇲🇽 CANAL NAL. ESPILOMO
-								</h4>
-								<div className="space-y-3">
-									<div className="space-y-1">
-										<Label className="text-purple-900 text-sm">Cantidad</Label>
-										<Input
-											type="number"
-											min="0"
-											step="1"
-											value={purchaseEspilomoQty || ""}
-											onChange={(e) => {
-												const val = e.target.value;
-												setPurchaseEspilomoQty(
-													val === ""
-														? 0
-														: Math.max(0, Number.parseInt(val, 10) || 0),
-												);
-											}}
-											placeholder="Ej: 3"
-											className="border-purple-200"
-										/>
-									</div>
-									<div className="space-y-1">
-										<Label className="text-purple-900 text-sm">
-											Peso Total (kg)
-										</Label>
-										<Input
-											type="number"
-											min="0"
-											step="0.001"
-											value={purchaseEspilomoWeightKg || ""}
-											onChange={(e) => {
-												const val = e.target.value;
-												setPurchaseEspilomoWeightKg(
-													val === ""
-														? 0
-														: Math.max(0, Number.parseFloat(val) || 0),
-												);
-											}}
-											placeholder="Ej: 75.3"
-											className="border-purple-200"
-										/>
-									</div>
-									<Button
-										size="sm"
-										onClick={() => {
-											if (
-												purchaseEspilomoQty > 0 &&
-												purchaseEspilomoWeightKg > 0
-											) {
-												purchaseMutation.mutate({
-													purchaseMode: "MEDIA_CANAL",
-													qtyAmericano: 0,
-													qtyNacional: 0,
-													qtyNacionalLomo: 0,
-													qtyNacionalEspilomo: purchaseEspilomoQty,
-													totalWeightKg: purchaseEspilomoWeightKg,
-													supplier: purchaseSupplier || undefined,
-													notes: purchaseNotes || undefined,
-												});
-												setPurchaseEspilomoQty(0);
-												setPurchaseEspilomoWeightKg(0);
-											}
-										}}
-										disabled={
-											purchaseEspilomoQty <= 0 ||
-											purchaseEspilomoWeightKg <= 0 ||
-											purchaseMutation.isPending
-										}
-										className="w-full bg-purple-600 hover:bg-purple-700"
-									>
-										{purchaseMutation.isPending
-											? "Registrando..."
-											: "Registrar"}
-									</Button>
-								</div>
+							<div className="space-y-1">
+								<Label className="text-blue-900 text-sm">Peso Total (kg)</Label>
+								<Input
+									type="number"
+									min="0"
+									step="0.001"
+									value={purchaseTotalWeightKg || ""}
+									onChange={(e) => {
+										const val = e.target.value;
+										setPurchaseTotalWeightKg(
+											val === "" ? 0 : Math.max(0, Number.parseFloat(val) || 0),
+										);
+									}}
+									placeholder="Ej: 250.5"
+								/>
 							</div>
+						</div>
+
+						{purchaseWholePigs > 0 ? (
+							<div className="text-muted-foreground text-xs">
+								Genera:{" "}
+								{purchaseCutStyle === "US"
+									? `${purchaseWholePigs * 2} medias (Americano)`
+									: `${purchaseWholePigs} medias lado Lomo + ${purchaseWholePigs} medias lado Espilomo (Nacional)`}
+							</div>
+						) : null}
+
+						<div className="flex justify-end">
+							<Button
+								size="sm"
+								onClick={() => {
+									if (purchaseWholePigs <= 0 || purchaseTotalWeightKg <= 0)
+										return;
+									purchaseMutation.mutate({
+										purchaseMode: "CANAL_COMPLETO",
+										qtyAmericano:
+											purchaseCutStyle === "US" ? purchaseWholePigs : 0,
+										qtyNacional:
+											purchaseCutStyle === "MX" ? purchaseWholePigs : 0,
+										qtyNacionalLomo: 0,
+										qtyNacionalEspilomo: 0,
+										totalWeightKg: purchaseTotalWeightKg,
+										supplier: purchaseSupplier || undefined,
+										notes: purchaseNotes || undefined,
+									});
+								}}
+								disabled={
+									purchaseWholePigs <= 0 ||
+									purchaseTotalWeightKg <= 0 ||
+									purchaseMutation.isPending
+								}
+								className="bg-blue-600 hover:bg-blue-700"
+							>
+								{purchaseMutation.isPending
+									? "Registrando..."
+									: "Registrar compra"}
+							</Button>
 						</div>
 
 						{(purchaseSupplier || purchaseNotes) && (
