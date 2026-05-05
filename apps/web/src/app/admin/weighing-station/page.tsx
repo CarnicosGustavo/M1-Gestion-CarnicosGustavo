@@ -20,6 +20,7 @@ import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import { useTRPC } from "@/lib/trpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
@@ -44,6 +45,7 @@ import { Combobox } from "@finopenpos/ui/components/combobox";
 
 export default function WeighingStationPage() {
 	const trpc = useTRPC();
+	const queryClient = useQueryClient();
 	const t = useTranslations("pos");
 	const tc = useTranslations("common");
 	const locale = useLocale();
@@ -106,6 +108,15 @@ export default function WeighingStationPage() {
 				setBatchWeightKg("");
 				setBatchApplyToInventory(true);
 				setBatchOpen(false);
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.list.queryKey(),
+				});
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.disassemblyDashboard.queryKey(),
+				});
+				queryClient.invalidateQueries({
+					queryKey: trpc.inventory.status.queryKey(),
+				});
 			},
 			onError: (error) => {
 				toast.error(error.message);

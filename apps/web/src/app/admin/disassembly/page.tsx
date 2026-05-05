@@ -51,6 +51,16 @@ export default function DisassemblyPage() {
 	const t = useTranslations("pos");
 	const tc = useTranslations("common");
 
+	const invalidateStockQueries = () => {
+		queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
+		queryClient.invalidateQueries({
+			queryKey: trpc.products.disassemblyDashboard.queryKey(),
+		});
+		queryClient.invalidateQueries({
+			queryKey: trpc.products.disassemblyDashboardRecipes.queryKey(),
+		});
+	};
+
 	const [isClient, setIsClient] = useState(false);
 
 	const [purchaseWholePigs, setPurchaseWholePigs] = useState<number>(0);
@@ -452,10 +462,7 @@ export default function DisassemblyPage() {
 			entryMode: false,
 		});
 
-		queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
-		queryClient.invalidateQueries({
-			queryKey: trpc.products.disassemblyDashboard.queryKey(),
-		});
+		invalidateStockQueries();
 	};
 
 	const executeDashboardAll = async () => {
@@ -466,10 +473,7 @@ export default function DisassemblyPage() {
 			if (qty > p.stock_pieces) continue;
 			await executeDashboardCard(p.id);
 		}
-		queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
-		queryClient.invalidateQueries({
-			queryKey: trpc.products.disassemblyDashboard.queryKey(),
-		});
+		invalidateStockQueries();
 	};
 
 	const canalNationalPolynesiaLomo = useQuery({
@@ -561,6 +565,8 @@ export default function DisassemblyPage() {
 	const disassemblyMutation = useMutation(
 		trpc.products.processDisassembly.mutationOptions({
 			onSuccess: (_data, variables) => {
+				invalidateStockQueries();
+
 				// Mostrar resumen en modal
 				const parent = products.find((p) => p.id === variables.parentProductId);
 				if (
@@ -589,6 +595,7 @@ export default function DisassemblyPage() {
 	const pipelineMutation = useMutation(
 		trpc.products.processDisassemblyPipeline.mutationOptions({
 			onSuccess: () => {
+				invalidateStockQueries();
 				toast.success(t("disassemblySuccess"));
 			},
 			onError: (error) => {
@@ -684,10 +691,7 @@ export default function DisassemblyPage() {
 			});
 		}
 
-		queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
-		queryClient.invalidateQueries({
-			queryKey: trpc.products.disassemblyDashboard.queryKey(),
-		});
+		invalidateStockQueries();
 	};
 
 	const executePrimaryDisassembly = () => {
