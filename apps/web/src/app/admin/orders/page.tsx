@@ -281,16 +281,42 @@ export default function OrdersPage() {
 		}
 	};
 
-	const draftTotal = useMemo(() => {
-		return draftItems.reduce((sum, p) => {
-			if (p.quantityKg !== null && p.quantityKg > 0) {
-				return sum + (p.unitPricePerKg || 0) * p.quantityKg;
-			}
-			if (p.quantityPieces > 0) {
-				return sum + (p.unitPricePerPiece || 0) * p.quantityPieces;
-			}
-			return sum;
-		}, 0);
+	const getAvgKgPerPiece = (p: OrderDraftItem) => {
+		const pieces = Number(p.stock_pieces);
+		const kg = Number(p.stock_kg);
+		if (!Number.isFinite(pieces) || pieces <= 0) return 0;
+		if (!Number.isFinite(kg) || kg <= 0) return 0;
+		return kg / pieces;
+	};
+
+	const draftTotals = useMemo(() => {
+		return draftItems.reduce(
+			(acc, p) => {
+				const isWeight = p.is_sellable_by_weight;
+				const hasKg = p.quantityKg !== null && p.quantityKg > 0;
+				const pieces = p.quantityPieces ?? 0;
+
+				const realSubtotal = isWeight
+					? hasKg
+						? (p.unitPricePerKg || 0) * (p.quantityKg ?? 0)
+						: 0
+					: (p.unitPricePerPiece || 0) * pieces;
+
+				const avgKg = isWeight ? getAvgKgPerPiece(p) : 0;
+				const estimatedKg = isWeight && !hasKg ? pieces * avgKg : 0;
+				const estSubtotal = isWeight
+					? hasKg
+						? realSubtotal
+						: (p.unitPricePerKg || 0) * estimatedKg
+					: realSubtotal;
+
+				return {
+					real: acc.real + realSubtotal,
+					estimated: acc.estimated + estSubtotal,
+				};
+			},
+			{ real: 0, estimated: 0 },
+		);
 	}, [draftItems]);
 
 	const addDraftProduct = (id: number) => {
@@ -311,8 +337,9 @@ export default function OrdersPage() {
 					is_sellable_by_unit: p.is_sellable_by_unit,
 					price_per_kg: p.price_per_kg ?? null,
 					price_per_piece: p.price_per_piece ?? null,
-					quantityPieces: p.is_sellable_by_unit ? 1 : 0,
-					quantityKg: p.is_sellable_by_weight ? null : null,
+					quantityPieces:
+						p.is_sellable_by_unit || p.is_sellable_by_weight ? 1 : 0,
+					quantityKg: null,
 					unitPricePerKg: Number.isFinite(unitPriceKg) ? unitPriceKg : 0,
 					unitPricePerPiece: Number.isFinite(unitPricePiece)
 						? unitPricePiece
@@ -329,7 +356,7 @@ export default function OrdersPage() {
 					? {
 							...p,
 							quantityPieces: Math.max(0, Math.floor(v)),
-							quantityKg: null,
+							quantityKg: p.is_sellable_by_weight ? p.quantityKg : null,
 						}
 					: p,
 			),
@@ -343,7 +370,7 @@ export default function OrdersPage() {
 					? {
 							...p,
 							quantityKg: v === null ? null : Math.max(0, v),
-							quantityPieces: 0,
+							quantityPieces: p.quantityPieces,
 						}
 					: p,
 			),
@@ -377,10 +404,12 @@ export default function OrdersPage() {
 		const pendingPurchase: number[] = [];
 		for (const p of draftItems) {
 			const stockKg = Number(p.stock_kg);
-			const hasEnoughStock =
-				p.quantityKg !== null && p.quantityKg > 0
+			const pieces = p.quantityPieces ?? 0;
+			const hasEnoughStock = p.is_sellable_by_weight
+				? p.quantityKg !== null && p.quantityKg > 0
 					? p.quantityKg <= stockKg
-					: p.quantityPieces <= p.stock_pieces;
+					: pieces <= p.stock_pieces
+				: pieces <= p.stock_pieces;
 			if (!hasEnoughStock) pendingPurchase.push(p.id);
 		}
 
@@ -400,15 +429,17 @@ export default function OrdersPage() {
 			notes: draftNotes || undefined,
 			items: draftItems.map((p) => ({
 				productId: p.id,
-				quantityPieces: p.quantityKg === null ? p.quantityPieces : undefined,
+				quantityPieces:
+					p.quantityPieces && p.quantityPieces > 0
+						? p.quantityPieces
+						: undefined,
 				quantityKg:
 					p.quantityKg !== null && p.quantityKg > 0
 						? Math.round(p.quantityKg * 1000)
 						: undefined,
-				unitPrice:
-					p.quantityKg !== null
-						? Math.round((p.unitPricePerKg || 0) * 100)
-						: Math.round((p.unitPricePerPiece || 0) * 100),
+				unitPrice: p.is_sellable_by_weight
+					? Math.round((p.unitPricePerKg || 0) * 100)
+					: Math.round((p.unitPricePerPiece || 0) * 100),
 				requiresPurchase: pendingPurchase.includes(p.id),
 			})),
 		});
@@ -683,11 +714,17 @@ export default function OrdersPage() {
 									</TableHeader>
 									<TableBody>
 										{draftItems.map((p) => {
-											const usingKg = p.quantityKg !== null;
-											const subtotal =
-												usingKg && p.quantityKg
-													? p.quantityKg * (p.unitPricePerKg || 0)
-													: p.quantityPieces * (p.unitPricePerPiece || 0);
+											const isWeight = p.is_sellable_by_weight;
+											const pieces = p.quantityPieces ?? 0;
+											const hasKg = p.quantityKg !== null && p.quantityKg > 0;
+											const avgKg = isWeight ? getAvgKgPerPiece(p) : 0;
+											const estimatedKg =
+												isWeight && !hasKg ? pieces * avgKg : 0;
+											const subtotal = isWeight
+												? hasKg
+													? (p.unitPricePerKg || 0) * (p.quantityKg ?? 0)
+													: (p.unitPricePerKg || 0) * estimatedKg
+												: (p.unitPricePerPiece || 0) * pieces;
 											return (
 												<TableRow key={p.id}>
 													<TableCell className="font-medium">
@@ -698,15 +735,24 @@ export default function OrdersPage() {
 															type="number"
 															min="0"
 															step="1"
-															value={usingKg ? 0 : p.quantityPieces || 0}
-															onChange={(e) =>
+															inputMode="numeric"
+															value={pieces === 0 ? "" : pieces}
+															onChange={(e) => {
+																const raw = e.target.value;
 																updateDraftQtyPieces(
 																	p.id,
-																	Number.parseInt(e.target.value || "0", 10) ||
-																		0,
+																	raw === ""
+																		? 0
+																		: Number.parseInt(raw, 10) || 0,
+																);
+															}}
+															onFocus={(e) => e.currentTarget.select()}
+															disabled={
+																!(
+																	p.is_sellable_by_unit ||
+																	p.is_sellable_by_weight
 																)
 															}
-															disabled={!p.is_sellable_by_unit || usingKg}
 														/>
 													</TableCell>
 													<TableCell>
@@ -714,6 +760,7 @@ export default function OrdersPage() {
 															type="number"
 															min="0"
 															step="0.001"
+															inputMode="decimal"
 															value={p.quantityKg ?? ""}
 															onChange={(e) => {
 																const raw = e.target.value;
@@ -724,6 +771,7 @@ export default function OrdersPage() {
 																		: Number.parseFloat(raw) || 0,
 																);
 															}}
+															onFocus={(e) => e.currentTarget.select()}
 															disabled={!p.is_sellable_by_weight}
 															placeholder={
 																p.is_sellable_by_weight ? "Ej: 1.250" : "—"
@@ -735,19 +783,42 @@ export default function OrdersPage() {
 															type="number"
 															min="0"
 															step="0.01"
+															inputMode="decimal"
 															value={
-																usingKg ? p.unitPricePerKg : p.unitPricePerPiece
+																isWeight
+																	? p.unitPricePerKg === 0
+																		? ""
+																		: p.unitPricePerKg
+																	: p.unitPricePerPiece === 0
+																		? ""
+																		: p.unitPricePerPiece
 															}
 															onChange={(e) => {
+																const raw = e.target.value;
 																const v =
-																	Number.parseFloat(e.target.value || "0") || 0;
-																if (usingKg) updateDraftUnitPriceKg(p.id, v);
+																	raw === "" ? 0 : Number.parseFloat(raw) || 0;
+																if (isWeight) updateDraftUnitPriceKg(p.id, v);
 																else updateDraftUnitPricePiece(p.id, v);
 															}}
+															onFocus={(e) => e.currentTarget.select()}
 														/>
 													</TableCell>
 													<TableCell className="text-right font-semibold">
-														{formatCurrency(Math.round(subtotal * 100), locale)}
+														<div className="flex flex-col">
+															<span>
+																{formatCurrency(
+																	Math.round(subtotal * 100),
+																	locale,
+																)}
+															</span>
+															{isWeight && !hasKg && pieces > 0 ? (
+																<span className="text-muted-foreground text-xs">
+																	{avgKg > 0
+																		? `Est: ~${estimatedKg.toFixed(3)} kg`
+																		: "Est: pendiente"}
+																</span>
+															) : null}
+														</div>
 													</TableCell>
 													<TableCell className="text-right">
 														<Button
@@ -772,10 +843,26 @@ export default function OrdersPage() {
 
 						<div className="flex items-center justify-between">
 							<div className="text-sm text-muted-foreground">
-								Total:{" "}
-								<span className="font-semibold">
-									{formatCurrency(Math.round(draftTotal * 100), locale)}
-								</span>
+								<div className="flex flex-col">
+									<span>
+										Total:{" "}
+										<span className="font-semibold">
+											{formatCurrency(
+												Math.round(draftTotals.real * 100),
+												locale,
+											)}
+										</span>
+									</span>
+									{draftTotals.estimated !== draftTotals.real ? (
+										<span className="text-muted-foreground text-xs">
+											Estimado:{" "}
+											{formatCurrency(
+												Math.round(draftTotals.estimated * 100),
+												locale,
+											)}
+										</span>
+									) : null}
+								</div>
 							</div>
 							<div className="flex gap-2">
 								<Button

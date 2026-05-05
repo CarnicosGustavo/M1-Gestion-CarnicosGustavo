@@ -50,6 +50,7 @@ interface NavItem {
 		| "orders"
 		| "paymentMethods"
 		| "pos"
+		| "settings"
 		| "disassembly"
 		| "weighingStation";
 	icon: LucideIcon;
@@ -74,6 +75,7 @@ const navItems: NavItem[] = [
 		icon: CreditCardIcon,
 	},
 	{ href: "/admin/pos", labelKey: "pos", icon: ShoppingCartIcon },
+	{ href: "/admin/settings", labelKey: "settings", icon: SettingsIcon },
 ];
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -132,8 +134,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 						<DropdownMenuContent align="end">
 							<DropdownMenuLabel>{t("myAccount")}</DropdownMenuLabel>
 							<DropdownMenuSeparator />
-							<DropdownMenuItem>{t("settings")}</DropdownMenuItem>
-							<DropdownMenuItem>{t("support")}</DropdownMenuItem>
+							<DropdownMenuItem asChild>
+								<Link href="/admin/settings">{t("settings")}</Link>
+							</DropdownMenuItem>
+							<DropdownMenuItem asChild>
+								<Link href="/api/docs">{t("support")}</Link>
+							</DropdownMenuItem>
 							<DropdownMenuSeparator />
 							<DropdownMenuItem onClick={() => logout()}>
 								{t("logout")}

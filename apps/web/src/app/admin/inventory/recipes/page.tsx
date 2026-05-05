@@ -49,6 +49,7 @@ export default function RecipesPage() {
 	const queryClient = useQueryClient();
 	const tc = useTranslations("common");
 
+	const [viewMode, setViewMode] = useState<"table" | "map">("table");
 	const [search, setSearch] = useState("");
 	const [parentFilter, setParentFilter] = useState("all");
 	const [typeFilter, setTypeFilter] = useState<
@@ -58,6 +59,8 @@ export default function RecipesPage() {
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [editingId, setEditingId] = useState<number | null>(null);
 	const [showAdvanced, setShowAdvanced] = useState(false);
+
+	const [mapStyle, setMapStyle] = useState<string>("AMERICANO");
 
 	const listInput = useMemo(() => {
 		return {
@@ -82,6 +85,12 @@ export default function RecipesPage() {
 		isLoading: isLoadingRecipes,
 		error,
 	} = useQuery(recipesQueryOptions);
+
+	const { data: mapRecipes = [] } = useQuery(
+		trpc.inventory.recipesList.queryOptions({
+			includeInactive: false,
+		}),
+	);
 
 	const filteredRecipes = useMemo(() => {
 		const q = search.trim().toLowerCase();
@@ -196,6 +205,139 @@ export default function RecipesPage() {
 		return allProducts.slice().sort((a, b) => a.name.localeCompare(b.name));
 	}, [allProducts]);
 
+	const mapTypes = useMemo(() => {
+		const types = new Set<string>();
+		for (const r of mapRecipes) types.add(r.transformation_type);
+		const arr = Array.from(types).sort((a, b) => a.localeCompare(b));
+		return arr.length ? arr : ["BASE", "AMERICANO"];
+	}, [mapRecipes]);
+
+	const mapProductById = useMemo(() => {
+		const m = new Map<number, Product>();
+		for (const p of allProducts) m.set(p.id, p);
+		return m;
+	}, [allProducts]);
+
+	const mapByParentId = useMemo(() => {
+		const byParent = new Map<number, Map<string, Recipe[]>>();
+		for (const r of mapRecipes) {
+			const byType =
+				byParent.get(r.parent_product_id) ?? new Map<string, Recipe[]>();
+			byType.set(r.transformation_type, [
+				...(byType.get(r.transformation_type) ?? []),
+				r,
+			]);
+			byParent.set(r.parent_product_id, byType);
+		}
+		return byParent;
+	}, [mapRecipes]);
+
+	const canalRootId = useMemo(() => {
+		const normalize = (name: string) =>
+			name
+				.toLowerCase()
+				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+				.trim();
+		const candidates = parentProducts.filter((p) =>
+			normalize(p.name).includes("canal"),
+		);
+		if (!candidates.length) return null;
+		return candidates.slice().sort((a, b) => {
+			const ac = mapByParentId.get(a.id)?.size ?? 0;
+			const bc = mapByParentId.get(b.id)?.size ?? 0;
+			if (ac !== bc) return bc - ac;
+			return a.id - b.id;
+		})[0].id;
+	}, [mapByParentId, parentProducts]);
+
+	const getAvgKgPerPiece = (p: Product) => {
+		const pieces = Number(p.stock_pieces);
+		const kg = Number(p.stock_kg);
+		if (!Number.isFinite(pieces) || pieces <= 0) return 0;
+		if (!Number.isFinite(kg) || kg <= 0) return 0;
+		return kg / pieces;
+	};
+
+	const renderMapTree = useMemo(() => {
+		if (!canalRootId) return null;
+		const style = mapStyle;
+		const typesToApply = style === "BASE" ? ["BASE"] : ["BASE", style];
+
+		const renderNode = (
+			parentId: number,
+			depth: number,
+			visited: Set<number>,
+		): JSX.Element | null => {
+			if (visited.has(parentId)) return null;
+			visited.add(parentId);
+			const byType = mapByParentId.get(parentId);
+			if (!byType) return null;
+
+			const aggregated = new Map<
+				number,
+				{ childId: number; name: string; pieces: number }
+			>();
+			for (const t of typesToApply) {
+				for (const r of byType.get(t) ?? []) {
+					const childId = r.child_product_id;
+					const childName = r.childProduct?.name ?? `#${childId}`;
+					const pieces = Number(r.yield_quantity_pieces);
+					const prev = aggregated.get(childId);
+					aggregated.set(childId, {
+						childId,
+						name: childName,
+						pieces:
+							(prev?.pieces ?? 0) + (Number.isFinite(pieces) ? pieces : 0),
+					});
+				}
+			}
+
+			const children = Array.from(aggregated.values()).sort((a, b) =>
+				a.name.localeCompare(b.name),
+			);
+			if (!children.length) return null;
+
+			return (
+				<div className={depth === 0 ? "" : "ml-4 border-l pl-4"}>
+					{children.map((c) => {
+						const childProduct = mapProductById.get(c.childId);
+						const isParent = childProduct?.is_parent_product === true;
+						const avgKg = childProduct ? getAvgKgPerPiece(childProduct) : 0;
+						return (
+							<div key={`${parentId}-${c.childId}`} className="py-1">
+								<div className="flex items-center justify-between gap-3">
+									<div className="min-w-0 truncate font-medium">{c.name}</div>
+									<div className="shrink-0 text-muted-foreground text-xs">
+										{c.pieces.toFixed(3)} pzas
+										{avgKg > 0 ? ` | ~${avgKg.toFixed(3)} kg/pza` : ""}
+									</div>
+								</div>
+								{isParent
+									? renderNode(c.childId, depth + 1, new Set(visited))
+									: null}
+							</div>
+						);
+					})}
+				</div>
+			);
+		};
+
+		const rootName = mapProductById.get(canalRootId)?.name ?? "CANAL";
+		return (
+			<div className="space-y-3">
+				<div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+					<span className="font-semibold">Raíz:</span> {rootName} |{" "}
+					<span className="font-semibold">Estilo:</span> {style} (BASE + estilo)
+				</div>
+				{renderNode(canalRootId, 0, new Set()) ?? (
+					<div className="text-muted-foreground text-sm">
+						No hay recetas para este estilo desde CANAL.
+					</div>
+				)}
+			</div>
+		);
+	}, [canalRootId, mapByParentId, mapProductById, mapStyle]);
+
 	const columns: Column<Recipe>[] = [
 		{
 			key: "parent",
@@ -306,97 +448,146 @@ export default function RecipesPage() {
 						<BookOpenIcon className="h-5 w-5" />
 						<span className="text-sm">{filteredRecipes.length} recetas</span>
 					</div>
-					<Button size="sm" onClick={openCreate}>
-						<PlusCircle className="mr-2 h-4 w-4" />
-						Nueva receta
-					</Button>
+					<div className="flex items-center gap-2">
+						<Button
+							size="sm"
+							variant={viewMode === "map" ? "default" : "outline"}
+							onClick={() =>
+								setViewMode((v) => (v === "map" ? "table" : "map"))
+							}
+						>
+							{viewMode === "map" ? "Tabla" : "Mapa"}
+						</Button>
+						<Button size="sm" onClick={openCreate}>
+							<PlusCircle className="mr-2 h-4 w-4" />
+							Nueva receta
+						</Button>
+					</div>
 				</div>
 			</CardHeader>
 
 			<CardContent className="p-0">
-				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-					<div className="space-y-1">
-						<Label>Buscar</Label>
-						<Input
-							value={search}
-							onChange={(e) => setSearch(e.target.value)}
-							placeholder="Buscar padre/hijo…"
-						/>
-					</div>
-
-					<div className="space-y-1">
-						<Label>Padre</Label>
-						<Select value={parentFilter} onValueChange={setParentFilter}>
-							<SelectTrigger>
-								<SelectValue placeholder="Selecciona padre" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="all">Todos</SelectItem>
-								{parentProducts.map((p: Product) => (
-									<SelectItem key={p.id} value={String(p.id)}>
-										{p.name}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-
-					<div className="space-y-1">
-						<Label>Estilo</Label>
-						<div className="flex flex-wrap gap-2">
-							{(
-								["all", "BASE", "NACIONAL", "AMERICANO", "POLINESIO"] as const
-							).map((v) => (
-								<Button
-									key={v}
-									type="button"
-									size="sm"
-									variant={typeFilter === v ? "default" : "outline"}
-									onClick={() => setTypeFilter(v)}
-								>
-									{v === "all" ? "Todos" : v}
-								</Button>
-							))}
+				{viewMode === "map" ? (
+					<div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+						<div className="space-y-1">
+							<Label>Estilo (Mapa)</Label>
+							<Select value={mapStyle} onValueChange={setMapStyle}>
+								<SelectTrigger>
+									<SelectValue placeholder="Selecciona" />
+								</SelectTrigger>
+								<SelectContent>
+									{mapTypes.map((t) => (
+										<SelectItem key={t} value={t}>
+											{t}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						<div className="md:col-span-2">
+							<div className="text-muted-foreground text-sm">
+								Organigrama jerárquico desde CANAL. Suma rendimientos duplicados
+								y muestra la receta efectiva (BASE + estilo).
+							</div>
 						</div>
 					</div>
+				) : (
+					<>
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+							<div className="space-y-1">
+								<Label>Buscar</Label>
+								<Input
+									value={search}
+									onChange={(e) => setSearch(e.target.value)}
+									placeholder="Buscar padre/hijo…"
+								/>
+							</div>
 
-					<div className="space-y-1">
-						<Label>Estado</Label>
-						<div className="flex gap-2">
-							<Button
-								type="button"
-								size="sm"
-								variant={statusFilter === "active" ? "default" : "outline"}
-								onClick={() => setStatusFilter("active")}
-							>
-								Activas
-							</Button>
-							<Button
-								type="button"
-								size="sm"
-								variant={statusFilter === "all" ? "default" : "outline"}
-								onClick={() => setStatusFilter("all")}
-							>
-								Todas
-							</Button>
+							<div className="space-y-1">
+								<Label>Padre</Label>
+								<Select value={parentFilter} onValueChange={setParentFilter}>
+									<SelectTrigger>
+										<SelectValue placeholder="Selecciona padre" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="all">Todos</SelectItem>
+										{parentProducts.map((p: Product) => (
+											<SelectItem key={p.id} value={String(p.id)}>
+												{p.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+
+							<div className="space-y-1">
+								<Label>Estilo</Label>
+								<div className="flex flex-wrap gap-2">
+									{(
+										[
+											"all",
+											"BASE",
+											"NACIONAL",
+											"AMERICANO",
+											"POLINESIO",
+										] as const
+									).map((v) => (
+										<Button
+											key={v}
+											type="button"
+											size="sm"
+											variant={typeFilter === v ? "default" : "outline"}
+											onClick={() => setTypeFilter(v)}
+										>
+											{v === "all" ? "Todos" : v}
+										</Button>
+									))}
+								</div>
+							</div>
+
+							<div className="space-y-1">
+								<Label>Estado</Label>
+								<div className="flex gap-2">
+									<Button
+										type="button"
+										size="sm"
+										variant={statusFilter === "active" ? "default" : "outline"}
+										onClick={() => setStatusFilter("active")}
+									>
+										Activas
+									</Button>
+									<Button
+										type="button"
+										size="sm"
+										variant={statusFilter === "all" ? "default" : "outline"}
+										onClick={() => setStatusFilter("all")}
+									>
+										Todas
+									</Button>
+								</div>
+							</div>
 						</div>
-					</div>
-				</div>
 
-				<div className="mt-3 text-muted-foreground text-sm">
-					Configura cuántas piezas salen por cada pieza padre. El peso se
-					captura después en báscula (por defecto no estimamos kg).
-				</div>
+						<div className="mt-3 text-muted-foreground text-sm">
+							Configura cuántas piezas salen por cada pieza padre. El peso se
+							captura después en báscula (por defecto no estimamos kg).
+						</div>
+					</>
+				)}
 			</CardContent>
 
 			<CardContent className="p-0">
-				<DataTable
-					data={filteredRecipes}
-					columns={columns}
-					emptyMessage="No hay recetas"
-					emptyIcon={<BookOpenIcon className="h-8 w-8" />}
-					defaultSort={[{ id: "parent", desc: false }]}
-				/>
+				{viewMode === "map" ? (
+					<div className="rounded-md border p-4">{renderMapTree}</div>
+				) : (
+					<DataTable
+						data={filteredRecipes}
+						columns={columns}
+						emptyMessage="No hay recetas"
+						emptyIcon={<BookOpenIcon className="h-8 w-8" />}
+						defaultSort={[{ id: "parent", desc: false }]}
+					/>
+				)}
 			</CardContent>
 
 			<Dialog

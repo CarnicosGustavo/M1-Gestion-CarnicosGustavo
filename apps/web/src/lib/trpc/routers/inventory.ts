@@ -130,6 +130,80 @@ export const inventoryRouter = router({
 			});
 		}),
 
+	recordWeighingBatch: almacenProcedure
+		.input(
+			z.object({
+				productId: z.number(),
+				piecesWeighed: z.number().int().min(0).default(0),
+				weightKg: z.number().positive(),
+				applyToInventory: z.boolean().default(true),
+				notes: z.string().optional(),
+			}),
+		)
+		.output(z.object({ success: z.boolean(), productId: z.number() }))
+		.mutation(async ({ ctx, input }) => {
+			const uid = ctx.user.id;
+
+			return db.transaction(async (tx) => {
+				const [p] = await tx
+					.select()
+					.from(products)
+					.where(
+						and(eq(products.id, input.productId), eq(products.user_uid, uid)),
+					)
+					.limit(1);
+
+				if (!p) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Producto no encontrado",
+					});
+				}
+
+				const deltaKg = input.applyToInventory ? input.weightKg : 0;
+				if (deltaKg !== 0) {
+					const currentKg = Number(p.stock_kg);
+					const nextKg = currentKg + deltaKg;
+					if (nextKg > 9999999.999) {
+						throw new TRPCError({
+							code: "INVALID_DATA",
+							message: "Stock excedería el máximo permitido",
+						});
+					}
+
+					await tx
+						.update(products)
+						.set({
+							stock_kg: nextKg.toFixed(3),
+							updated_at: new Date(),
+						})
+						.where(eq(products.id, input.productId));
+				}
+
+				await tx.insert(inventoryTransactions).values({
+					product_id: input.productId,
+					quantity_change_pieces: null,
+					quantity_change_kg: input.applyToInventory
+						? deltaKg.toFixed(3)
+						: null,
+					transaction_type: "PESAJE",
+					reference_id: null,
+					notes: [
+						input.applyToInventory
+							? "PESAJE -> inventario"
+							: "PESAJE -> despacho",
+						`piezas:${input.piecesWeighed}`,
+						`kg:${input.weightKg.toFixed(3)}`,
+						input.notes ? input.notes.trim() : null,
+					]
+						.filter(Boolean)
+						.join(" | "),
+				});
+
+				return { success: true, productId: input.productId };
+			});
+		}),
+
 	status: protectedProcedure
 		.meta({
 			openapi: {
