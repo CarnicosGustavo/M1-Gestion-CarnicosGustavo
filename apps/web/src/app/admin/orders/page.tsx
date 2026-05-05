@@ -657,6 +657,7 @@ export default function OrdersPage() {
 								<Combobox
 									items={customers.map((c) => ({ id: c.id, name: c.name }))}
 									placeholder="Selecciona cliente"
+									value={draftCustomer?.name ?? ""}
 									onSelect={(id) =>
 										setDraftCustomer(customers.find((c) => c.id === id) ?? null)
 									}
@@ -670,6 +671,7 @@ export default function OrdersPage() {
 										name: m.name,
 									}))}
 									placeholder="Opcional"
+									value={draftPayment?.name ?? ""}
 									onSelect={(id) =>
 										setDraftPayment(
 											paymentMethods.find((m) => m.id === id) ?? null,
