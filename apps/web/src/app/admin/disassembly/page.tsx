@@ -650,6 +650,141 @@ export default function DisassemblyPage() {
 	const npLomoQty = batchMediasNacionalLomo;
 	const npEspilomoQty = batchMediasNacionalEspilomo;
 
+	const effectiveChildrenForParent = useCallback(
+		(parentId: number, selectedType: string) => {
+			const byType = dashboardRecipesByParent.get(parentId);
+			if (!byType) return [];
+			const base = byType.get("BASE") ?? [];
+			if (selectedType === "BASE") {
+				const map = new Map<number, (typeof base)[number]>();
+				for (const r of base) map.set(r.childId, r);
+				return Array.from(map.values());
+			}
+			const specific = byType.get(selectedType) ?? [];
+			const map = new Map<number, (typeof base)[number]>();
+			for (const r of base) map.set(r.childId, r);
+			for (const r of specific) map.set(r.childId, r);
+			return Array.from(map.values());
+		},
+		[dashboardRecipesByParent],
+	);
+
+	const buildTwoLevelPreview = useCallback(
+		(args: {
+			rootName: string;
+			rootId: number;
+			rootQty: number;
+			rootStyle: string;
+			level1: Array<{
+				childId: number;
+				childName: string;
+				yieldQuantityPieces: string | number;
+			}>;
+		}) => {
+			const level1Generated = new Map<
+				number,
+				{ name: string; pieces: number; origin: string }
+			>();
+
+			const rootOrigin = `${args.rootName} (${displayType(args.rootStyle)})`;
+			for (const r of args.level1) {
+				const pieces = expectedPieces(r.yieldQuantityPieces, args.rootQty);
+				if (pieces <= 0) continue;
+				const prev = level1Generated.get(r.childId);
+				level1Generated.set(r.childId, {
+					name: r.childName,
+					pieces: (prev?.pieces ?? 0) + pieces,
+					origin: rootOrigin,
+				});
+			}
+
+			const leafRows: Array<{
+				id: number;
+				name: string;
+				pieces: number;
+				origin: string;
+			}> = [];
+
+			for (const [childId, v] of level1Generated.entries()) {
+				if (!isIntermediateName(v.name)) {
+					leafRows.push({
+						id: childId,
+						name: v.name,
+						pieces: v.pieces,
+						origin: v.origin,
+					});
+					continue;
+				}
+
+				const intermediateType = getDefaultTypeForParent(childId);
+				const leaveKey = `${args.rootId}:${childId}`;
+				const leaveComplete = Math.max(
+					0,
+					Math.min(dashboardIntermediateLeave[leaveKey] ?? 0, v.pieces),
+				);
+				const qtyToProcess = v.pieces - leaveComplete;
+				if (qtyToProcess <= 0) continue;
+
+				const children = effectiveChildrenForParent(childId, intermediateType);
+				const intermediateOrigin = `${rootOrigin} → ${v.name} (${displayType(intermediateType)})`;
+				for (const c of children) {
+					const childPieces = expectedPieces(
+						c.yieldQuantityPieces,
+						qtyToProcess,
+					);
+					if (childPieces <= 0) continue;
+					leafRows.push({
+						id: c.childId,
+						name: c.childName,
+						pieces: childPieces,
+						origin: intermediateOrigin,
+					});
+				}
+			}
+
+			leafRows.sort((a, b) => a.name.localeCompare(b.name));
+
+			const conflicts = new Map<
+				number,
+				{ name: string; origins: string[]; total: number }
+			>();
+			for (const row of leafRows) {
+				const prev = conflicts.get(row.id);
+				if (!prev) {
+					conflicts.set(row.id, {
+						name: row.name,
+						origins: [row.origin],
+						total: row.pieces,
+					});
+					continue;
+				}
+				const origins = prev.origins.includes(row.origin)
+					? prev.origins
+					: [...prev.origins, row.origin];
+				conflicts.set(row.id, {
+					name: prev.name,
+					origins,
+					total: prev.total + row.pieces,
+				});
+			}
+
+			const conflictList = Array.from(conflicts.entries())
+				.filter(([, v]) => v.origins.length > 1)
+				.map(([id, v]) => ({ id, ...v }))
+				.sort((a, b) => a.name.localeCompare(b.name));
+
+			return { rows: leafRows, conflicts: conflictList };
+		},
+		[
+			dashboardIntermediateLeave,
+			displayType,
+			effectiveChildrenForParent,
+			expectedPieces,
+			getDefaultTypeForParent,
+			isIntermediateName,
+		],
+	);
+
 	const canalNpPreview = useMemo(() => {
 		const map = new Map<number, { name: string; pieces: number }>();
 
@@ -676,6 +811,72 @@ export default function DisassemblyPage() {
 		canalNationalEspilomo.data,
 		canalNationalLomo.data,
 		expectedPieces,
+		npEspilomoQty,
+		npLomoQty,
+	]);
+
+	const canalAmericanLevel1 = useMemo(() => {
+		return (canalAmerican.data ?? [])
+			.map((r) => ({
+				childId: r.child_product_id,
+				childName: r.childProduct?.name ?? "-",
+				yieldQuantityPieces: r.yield_quantity_pieces,
+			}))
+			.filter((r) => r.childName !== "-");
+	}, [canalAmerican.data]);
+
+	const canalNationalLevel1 = useMemo(() => {
+		const m = new Map<
+			number,
+			{
+				childId: number;
+				childName: string;
+				yieldQuantityPieces: string | number;
+			}
+		>();
+		for (const r of canalNationalLomo.data ?? []) {
+			m.set(r.child_product_id, {
+				childId: r.child_product_id,
+				childName: r.childProduct?.name ?? "-",
+				yieldQuantityPieces: r.yield_quantity_pieces,
+			});
+		}
+		for (const r of canalNationalEspilomo.data ?? []) {
+			m.set(r.child_product_id, {
+				childId: r.child_product_id,
+				childName: r.childProduct?.name ?? "-",
+				yieldQuantityPieces: r.yield_quantity_pieces,
+			});
+		}
+		return Array.from(m.values()).filter((r) => r.childName !== "-");
+	}, [canalNationalEspilomo.data, canalNationalLomo.data]);
+
+	const canalAmericanPreview = useMemo(() => {
+		if (!canalProduct || mediasAmerican <= 0)
+			return { rows: [], conflicts: [] };
+		return buildTwoLevelPreview({
+			rootName: canalProduct.name,
+			rootId: canalProduct.id,
+			rootQty: mediasAmerican,
+			rootStyle: "AMERICANO",
+			level1: canalAmericanLevel1,
+		});
+	}, [buildTwoLevelPreview, canalAmericanLevel1, canalProduct, mediasAmerican]);
+
+	const canalNationalPreview = useMemo(() => {
+		if (!canalProduct || npLomoQty + npEspilomoQty <= 0)
+			return { rows: [], conflicts: [] };
+		return buildTwoLevelPreview({
+			rootName: canalProduct.name,
+			rootId: canalProduct.id,
+			rootQty: npLomoQty + npEspilomoQty,
+			rootStyle: "NACIONAL",
+			level1: canalNationalLevel1,
+		});
+	}, [
+		buildTwoLevelPreview,
+		canalNationalLevel1,
+		canalProduct,
 		npEspilomoQty,
 		npLomoQty,
 	]);
@@ -1023,11 +1224,31 @@ export default function DisassemblyPage() {
 								</div>
 
 								<div className="space-y-4 border-t pt-4">
-									{npLomoQty + npEspilomoQty > 0 && canalNpPreview.length ? (
+									{npLomoQty + npEspilomoQty > 0 &&
+									canalNationalPreview.rows.length ? (
 										<div className="overflow-x-auto rounded-md border">
 											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
 												Vista previa Nacional
 											</div>
+											{canalNationalPreview.conflicts.length ? (
+												<div className="border-b bg-amber-50 px-3 py-2 text-amber-900 text-xs">
+													<div className="flex items-center gap-2">
+														<AlertCircleIcon className="h-4 w-4" />
+														<span className="font-medium">
+															Conflicto: productos generados por múltiples rutas
+														</span>
+													</div>
+													<div className="mt-1">
+														{canalNationalPreview.conflicts
+															.slice(0, 5)
+															.map((c) => c.name)
+															.join(", ")}
+														{canalNationalPreview.conflicts.length > 5
+															? "…"
+															: ""}
+													</div>
+												</div>
+											) : null}
 											<table className="w-full text-sm">
 												<thead className="bg-muted/50">
 													<tr>
@@ -1040,15 +1261,24 @@ export default function DisassemblyPage() {
 														<th className="p-3 text-left font-medium">
 															{t("expectedWeight")}
 														</th>
+														<th className="p-3 text-left font-medium">
+															Origen
+														</th>
 													</tr>
 												</thead>
 												<tbody>
-													{canalNpPreview.map((row) => (
-														<tr key={row.id} className="border-t">
+													{canalNationalPreview.rows.map((row) => (
+														<tr
+															key={`${row.id}-${row.origin}`}
+															className="border-t"
+														>
 															<td className="p-3">{row.name}</td>
 															<td className="p-3">{row.pieces}</td>
 															<td className="p-3">
 																{realWeightMode ? "Pendiente de pesaje" : "-"}
+															</td>
+															<td className="p-3 text-muted-foreground text-xs">
+																{row.origin}
 															</td>
 														</tr>
 													))}
@@ -1057,11 +1287,30 @@ export default function DisassemblyPage() {
 										</div>
 									) : null}
 
-									{mediasAmerican > 0 && canalAmerican.data?.length ? (
+									{mediasAmerican > 0 && canalAmericanPreview.rows.length ? (
 										<div className="overflow-x-auto rounded-md border">
 											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
 												Vista previa Americano
 											</div>
+											{canalAmericanPreview.conflicts.length ? (
+												<div className="border-b bg-amber-50 px-3 py-2 text-amber-900 text-xs">
+													<div className="flex items-center gap-2">
+														<AlertCircleIcon className="h-4 w-4" />
+														<span className="font-medium">
+															Conflicto: productos generados por múltiples rutas
+														</span>
+													</div>
+													<div className="mt-1">
+														{canalAmericanPreview.conflicts
+															.slice(0, 5)
+															.map((c) => c.name)
+															.join(", ")}
+														{canalAmericanPreview.conflicts.length > 5
+															? "…"
+															: ""}
+													</div>
+												</div>
+											) : null}
 											<table className="w-full text-sm">
 												<thead className="bg-muted/50">
 													<tr>
@@ -1074,22 +1323,24 @@ export default function DisassemblyPage() {
 														<th className="p-3 text-left font-medium">
 															{t("expectedWeight")}
 														</th>
+														<th className="p-3 text-left font-medium">
+															Origen
+														</th>
 													</tr>
 												</thead>
 												<tbody>
-													{canalAmerican.data.map((row: Transformation) => (
-														<tr key={row.id} className="border-t">
-															<td className="p-3">
-																{row.childProduct?.name ?? "-"}
-															</td>
-															<td className="p-3">
-																{expectedPieces(
-																	row.yield_quantity_pieces,
-																	mediasAmerican,
-																)}
-															</td>
+													{canalAmericanPreview.rows.map((row) => (
+														<tr
+															key={`${row.id}-${row.origin}`}
+															className="border-t"
+														>
+															<td className="p-3">{row.name}</td>
+															<td className="p-3">{row.pieces}</td>
 															<td className="p-3">
 																{realWeightMode ? "Pendiente de pesaje" : "-"}
+															</td>
+															<td className="p-3 text-muted-foreground text-xs">
+																{row.origin}
 															</td>
 														</tr>
 													))}
@@ -1106,12 +1357,22 @@ export default function DisassemblyPage() {
 												Cantidad excede el stock de canal
 											</div>
 										)}
+										{canalAmericanPreview.conflicts.length > 0 ||
+										canalNationalPreview.conflicts.length > 0 ? (
+											<div className="mr-auto flex items-center gap-2 text-amber-700 text-xs">
+												<AlertCircleIcon className="h-3.5 w-3.5" />
+												Hay conflictos de rutas en recetas. Corrige recetas para
+												evitar duplicados antes de procesar.
+											</div>
+										) : null}
 										<Button
 											size="lg"
 											onClick={executeCanalBatch}
 											disabled={
 												disassemblyMutation.isPending ||
 												pipelineMutation.isPending ||
+												canalAmericanPreview.conflicts.length > 0 ||
+												canalNationalPreview.conflicts.length > 0 ||
 												mediasAmerican + npLomoQty + npEspilomoQty <= 0 ||
 												mediasAmerican + npLomoQty + npEspilomoQty >
 													canalProduct.stock_pieces
