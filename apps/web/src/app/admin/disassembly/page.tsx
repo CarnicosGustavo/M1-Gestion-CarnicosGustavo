@@ -338,7 +338,9 @@ export default function DisassemblyPage() {
 	}, [dashboardProcessables, mapParentId]);
 
 	const displayType = useCallback((t: string) => {
-		return t.replace("NACIONAL_POLINESIA", "NACIONAL");
+		return t
+			.replace("NACIONAL_POLINESIA", "NACIONAL")
+			.replace("NACIONAL_", "NACIONAL ");
 	}, []);
 
 	const normalizeProductName = useCallback((name: string) => {
@@ -411,7 +413,7 @@ export default function DisassemblyPage() {
 			>();
 
 			const rowsBase = byType?.get("BASE") ?? [];
-			const rowsSpecific = type !== "BASE" ? byType?.get(type) ?? [] : [];
+			const rowsSpecific = type !== "BASE" ? (byType?.get(type) ?? []) : [];
 			const effective = new Map<
 				number,
 				{ childName: string; yieldQuantityPieces: string | number }
@@ -507,10 +509,10 @@ export default function DisassemblyPage() {
 		invalidateStockQueries();
 	};
 
-	const canalNationalPolynesiaLomo = useQuery({
+	const canalNationalLomo = useQuery({
 		...trpc.products.getTransformations.queryOptions({
 			parentProductId: canalProduct?.id ?? 0,
-			transformationType: "NACIONAL_POLINESIA_LOMO",
+			transformationType: "NACIONAL_LOMO",
 		}),
 		enabled: !!canalProduct,
 	});
@@ -521,10 +523,10 @@ export default function DisassemblyPage() {
 		}),
 		enabled: !!canalProduct,
 	});
-	const canalNationalPolynesiaEspilomo = useQuery({
+	const canalNationalEspilomo = useQuery({
 		...trpc.products.getTransformations.queryOptions({
 			parentProductId: canalProduct?.id ?? 0,
-			transformationType: "NACIONAL_POLINESIA_ESPILOMO",
+			transformationType: "NACIONAL_ESPILOMO",
 		}),
 		enabled: !!canalProduct,
 	});
@@ -651,7 +653,7 @@ export default function DisassemblyPage() {
 	const canalNpPreview = useMemo(() => {
 		const map = new Map<number, { name: string; pieces: number }>();
 
-		for (const row of canalNationalPolynesiaLomo.data ?? []) {
+		for (const row of canalNationalLomo.data ?? []) {
 			const id = row.child_product_id;
 			const name = row.childProduct?.name ?? "-";
 			const pieces = expectedPieces(row.yield_quantity_pieces, npLomoQty);
@@ -659,7 +661,7 @@ export default function DisassemblyPage() {
 			map.set(id, { name, pieces: (prev?.pieces ?? 0) + pieces });
 		}
 
-		for (const row of canalNationalPolynesiaEspilomo.data ?? []) {
+		for (const row of canalNationalEspilomo.data ?? []) {
 			const id = row.child_product_id;
 			const name = row.childProduct?.name ?? "-";
 			const pieces = expectedPieces(row.yield_quantity_pieces, npEspilomoQty);
@@ -671,8 +673,8 @@ export default function DisassemblyPage() {
 			.map(([id, v]) => ({ id, ...v }))
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}, [
-		canalNationalPolynesiaEspilomo.data,
-		canalNationalPolynesiaLomo.data,
+		canalNationalEspilomo.data,
+		canalNationalLomo.data,
 		expectedPieces,
 		npEspilomoQty,
 		npLomoQty,
@@ -703,11 +705,11 @@ export default function DisassemblyPage() {
 		if (npLomoQty > 0 || npEspilomoQty > 0) {
 			steps.push({
 				qty: npLomoQty,
-				style: "NACIONAL_POLINESIA_LOMO",
+				style: "NACIONAL_LOMO",
 			});
 			steps.push({
 				qty: npEspilomoQty,
-				style: "NACIONAL_POLINESIA_ESPILOMO",
+				style: "NACIONAL_ESPILOMO",
 			});
 		}
 
