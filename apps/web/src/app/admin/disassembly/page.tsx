@@ -699,6 +699,16 @@ export default function DisassemblyPage() {
 			return;
 		}
 
+		const isIntermediateChildName = (name: string) => isIntermediateName(name);
+
+		const getTransformRowsForStyle = (style: string) => {
+			if (style === "AMERICANO") return canalAmerican.data ?? [];
+			if (style === "NACIONAL_LOMO") return canalNationalLomo.data ?? [];
+			if (style === "NACIONAL_ESPILOMO")
+				return canalNationalEspilomo.data ?? [];
+			return [];
+		};
+
 		const steps: Array<{ qty: number; style: string }> = [];
 		if (mediasAmerican > 0)
 			steps.push({ qty: mediasAmerican, style: "AMERICANO" });
@@ -715,16 +725,48 @@ export default function DisassemblyPage() {
 
 		for (const s of steps) {
 			if (s.qty <= 0) continue;
-			await disassemblyMutation.mutateAsync({
-				parentProductId: canalProduct.id,
-				quantityToProcess: s.qty,
+
+			const rows = getTransformRowsForStyle(s.style);
+			const generatedByChildId = new Map<
+				number,
+				{ name: string; pieces: number }
+			>();
+			for (const r of rows) {
+				const childId = r.child_product_id;
+				const childName = r.childProduct?.name ?? "-";
+				const addPieces = expectedPieces(r.yield_quantity_pieces, s.qty);
+				if (addPieces <= 0) continue;
+				const prev = generatedByChildId.get(childId);
+				generatedByChildId.set(childId, {
+					name: childName,
+					pieces: (prev?.pieces ?? 0) + addPieces,
+				});
+			}
+
+			const intermediateLeaves = Array.from(generatedByChildId.entries())
+				.filter(([, v]) => v.pieces > 0 && isIntermediateChildName(v.name))
+				.map(([childId, v]) => {
+					const key = `${canalProduct.id}:${childId}`;
+					const leave = Math.max(
+						0,
+						Math.min(dashboardIntermediateLeave[key] ?? 0, v.pieces),
+					);
+					return { productId: childId, leaveComplete: leave };
+				});
+
+			await pipelineMutation.mutateAsync({
+				canalProductId: canalProduct.id,
+				qtyProcessCanal: s.qty,
 				transformationType: s.style,
+				intermediateLeaves,
 				realWeightMode,
-				entryMode: false,
 			});
 		}
 
 		invalidateStockQueries();
+		setBatchMediasAmerican(0);
+		setBatchMediasNacionalLomo(0);
+		setBatchMediasNacionalEspilomo(0);
 	};
 
 	const executePrimaryDisassembly = () => {
@@ -1069,12 +1111,14 @@ export default function DisassemblyPage() {
 											onClick={executeCanalBatch}
 											disabled={
 												disassemblyMutation.isPending ||
+												pipelineMutation.isPending ||
 												mediasAmerican + npLomoQty + npEspilomoQty <= 0 ||
 												mediasAmerican + npLomoQty + npEspilomoQty >
 													canalProduct.stock_pieces
 											}
 										>
-											{disassemblyMutation.isPending ? (
+											{disassemblyMutation.isPending ||
+											pipelineMutation.isPending ? (
 												tc("loading")
 											) : (
 												<>
