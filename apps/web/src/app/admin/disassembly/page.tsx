@@ -287,6 +287,28 @@ export default function DisassemblyPage() {
 	const [lastPurchaseCanalStockPieces, setLastPurchaseCanalStockPieces] =
 		useState<number | null>(null);
 
+	const resetPurchaseInputs = () => {
+		setPurchaseWholePigs(0);
+		setPurchaseCutStyle("US");
+		setPurchaseTotalWeightKg(0);
+		setPurchaseSupplier("");
+		setPurchaseNotes("");
+	};
+
+	const resetDisassemblyInputs = () => {
+		setDashboardQty({});
+		setDashboardType({});
+		setDashboardIntermediateLeave({});
+		setMapParentId(0);
+		setSelectedPrimaryParentId("");
+		setSelectedPrimaryStyle("");
+		setPrimaryQuantity(0);
+		setBatchMediasAmerican(0);
+		setBatchMediasNacionalLomo(0);
+		setBatchMediasNacionalEspilomo(0);
+		setBatchMode("CANAL_COMPLETO");
+	};
+
 	useEffect(() => {
 		if (!dashboardStock.length) return;
 
@@ -807,35 +829,46 @@ export default function DisassemblyPage() {
 						) : null}
 
 						<div className="flex justify-end">
-							<Button
-								size="sm"
-								onClick={() => {
-									if (purchaseWholePigs <= 0 || purchaseTotalWeightKg <= 0)
-										return;
-									purchaseMutation.mutate({
-										purchaseMode: "CANAL_COMPLETO",
-										qtyAmericano:
-											purchaseCutStyle === "US" ? purchaseWholePigs : 0,
-										qtyNacional:
-											purchaseCutStyle === "MX" ? purchaseWholePigs : 0,
-										qtyNacionalLomo: 0,
-										qtyNacionalEspilomo: 0,
-										totalWeightKg: purchaseTotalWeightKg,
-										supplier: purchaseSupplier || undefined,
-										notes: purchaseNotes || undefined,
-									});
-								}}
-								disabled={
-									purchaseWholePigs <= 0 ||
-									purchaseTotalWeightKg <= 0 ||
-									purchaseMutation.isPending
-								}
-								className="bg-blue-600 hover:bg-blue-700"
-							>
-								{purchaseMutation.isPending
-									? "Registrando..."
-									: "Registrar compra"}
-							</Button>
+							<div className="flex items-center gap-2">
+								<Button
+									size="sm"
+									variant="outline"
+									type="button"
+									onClick={resetPurchaseInputs}
+									disabled={purchaseMutation.isPending}
+								>
+									Reset
+								</Button>
+								<Button
+									size="sm"
+									onClick={() => {
+										if (purchaseWholePigs <= 0 || purchaseTotalWeightKg <= 0)
+											return;
+										purchaseMutation.mutate({
+											purchaseMode: "CANAL_COMPLETO",
+											qtyAmericano:
+												purchaseCutStyle === "US" ? purchaseWholePigs : 0,
+											qtyNacional:
+												purchaseCutStyle === "MX" ? purchaseWholePigs : 0,
+											qtyNacionalLomo: 0,
+											qtyNacionalEspilomo: 0,
+											totalWeightKg: purchaseTotalWeightKg,
+											supplier: purchaseSupplier || undefined,
+											notes: purchaseNotes || undefined,
+										});
+									}}
+									disabled={
+										purchaseWholePigs <= 0 ||
+										purchaseTotalWeightKg <= 0 ||
+										purchaseMutation.isPending
+									}
+									className="bg-blue-600 hover:bg-blue-700"
+								>
+									{purchaseMutation.isPending
+										? "Registrando..."
+										: "Registrar compra"}
+								</Button>
+							</div>
 						</div>
 
 						{(purchaseSupplier || purchaseNotes) && (
@@ -881,6 +914,14 @@ export default function DisassemblyPage() {
 								<PackageIcon className="h-5 w-5" />
 								Despiece masivo de canal
 							</h3>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={resetDisassemblyInputs}
+							>
+								Reset
+							</Button>
 						</div>
 						<div className="text-muted-foreground text-sm">
 							Procesa el stock de canal y genera piezas según recetas. Primero
