@@ -19,29 +19,15 @@ import {
 } from "@finopenpos/ui/components/dialog";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
-import { useTranslations } from "next-intl";
 import { SettingsIcon } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc/client";
-
-// Lazy load tab components
-import dynamic from "next/dynamic";
-const RecipesTab = dynamic(() => import("./tabs/recipes"), { ssr: false });
-const PaymentsTab = dynamic(() => import("./tabs/payments"), { ssr: false });
-
-type SettingTab = "recipes" | "payments";
-
-const TABS: { id: SettingTab; label: string; icon: string }[] = [
-	{ id: "recipes", label: "Recetas", icon: "📋" },
-	{ id: "payments", label: "Métodos de Pago", icon: "💳" },
-];
+import Link from "next/link";
 
 export default function SettingsPage() {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
-	const t = useTranslations("common");
-	const [activeTab, setActiveTab] = useState<SettingTab>("recipes");
 	const [resetPassword, setResetPassword] = useState("");
 	const [resetConfirm, setResetConfirm] = useState("");
 	const [resetOpen, setResetOpen] = useState(false);
@@ -76,13 +62,11 @@ export default function SettingsPage() {
 
 	return (
 		<div className="space-y-6">
-			{/* Header */}
 			<div className="flex items-center gap-2">
 				<SettingsIcon className="h-6 w-6" />
 				<h1 className="text-3xl font-bold">Configuración</h1>
 			</div>
 
-			{/* Main Card with Tabs */}
 			<Card>
 				<CardHeader>
 					<CardTitle>Configuración del Sistema</CardTitle>
@@ -90,33 +74,21 @@ export default function SettingsPage() {
 						Gestiona todos los parámetros del sistema desde aquí
 					</CardDescription>
 				</CardHeader>
-				<CardContent className="space-y-6">
-					{/* Tab Navigation */}
-					<div className="flex gap-2 border-b">
-						{TABS.map((tab) => (
-							<Button
-								key={tab.id}
-								variant={activeTab === tab.id ? "default" : "ghost"}
-								className={`rounded-b-none ${
-									activeTab === tab.id ? "border-b-2 border-primary" : ""
-								}`}
-								onClick={() => setActiveTab(tab.id)}
-							>
-								<span className="mr-2">{tab.icon}</span>
-								{tab.label}
-							</Button>
-						))}
+				<CardContent className="space-y-4">
+					<div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+						<Button asChild variant="outline" className="justify-start">
+							<Link href="/admin/inventory/recipes">Recetas</Link>
+						</Button>
+						<Button asChild variant="outline" className="justify-start">
+							<Link href="/admin/payment-methods">Métodos de pago</Link>
+						</Button>
 					</div>
-
-					{/* Tab Content */}
-					<div className="min-h-[400px]">
-						{activeTab === "recipes" && <RecipesTab />}
-						{activeTab === "payments" && <PaymentsTab />}
+					<div className="text-muted-foreground text-sm">
+						Usa estos accesos para administrar recetas e información de cobro.
 					</div>
 				</CardContent>
 			</Card>
 
-			{/* Info Box */}
 			<Card className="bg-blue-50 border-blue-200">
 				<CardContent className="pt-6">
 					<p className="text-sm text-blue-900">

@@ -17,6 +17,7 @@ import {
 } from "@finopenpos/ui/components/dialog";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
+import { Badge } from "@finopenpos/ui/components/badge";
 import {
 	Select,
 	SelectContent,
@@ -103,6 +104,21 @@ export default function RecipesPage() {
 			);
 		});
 	}, [recipes, search]);
+
+	const duplicateCounts = useMemo(() => {
+		const m = new Map<string, number>();
+		for (const r of filteredRecipes) {
+			const key = `${r.parent_product_id}:${r.child_product_id}:${r.transformation_type}`;
+			m.set(key, (m.get(key) ?? 0) + 1);
+		}
+		return m;
+	}, [filteredRecipes]);
+
+	const duplicateGroupsCount = useMemo(() => {
+		let n = 0;
+		for (const c of duplicateCounts.values()) if (c > 1) n += 1;
+		return n;
+	}, [duplicateCounts]);
 
 	const isEditing = editingId !== null;
 
@@ -351,6 +367,23 @@ export default function RecipesPage() {
 			sortable: true,
 			accessorFn: (r) => r.childProduct.name,
 			className: "font-medium",
+			render: (r) => {
+				const key = `${r.parent_product_id}:${r.child_product_id}:${r.transformation_type}`;
+				const dup = duplicateCounts.get(key) ?? 0;
+				return (
+					<div className="flex items-center gap-2">
+						<span className="truncate">{r.childProduct.name}</span>
+						{dup > 1 ? (
+							<Badge
+								variant="outline"
+								className="border-amber-300 bg-amber-50 text-amber-900"
+							>
+								DUP x{dup}
+							</Badge>
+						) : null}
+					</div>
+				);
+			},
 		},
 		{
 			key: "type",
@@ -447,6 +480,11 @@ export default function RecipesPage() {
 					<div className="flex items-center gap-2 text-muted-foreground">
 						<BookOpenIcon className="h-5 w-5" />
 						<span className="text-sm">{filteredRecipes.length} recetas</span>
+						{duplicateGroupsCount > 0 ? (
+							<span className="text-amber-700 text-xs">
+								{duplicateGroupsCount} grupo(s) duplicado(s)
+							</span>
+						) : null}
 					</div>
 					<div className="flex items-center gap-2">
 						<Button

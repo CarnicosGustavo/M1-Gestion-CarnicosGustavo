@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
@@ -490,6 +490,32 @@ export const inventoryRouter = router({
 					throw new TRPCError({
 						code: "BAD_REQUEST",
 						message: "Un producto no puede ser receta de sí mismo",
+					});
+				}
+
+				const [dup] = await tx
+					.select({ id: productTransformations.id })
+					.from(productTransformations)
+					.where(
+						and(
+							eq(
+								productTransformations.parent_product_id,
+								input.parentProductId,
+							),
+							eq(productTransformations.child_product_id, input.childProductId),
+							eq(
+								productTransformations.transformation_type,
+								input.transformationType,
+							),
+							input.id ? ne(productTransformations.id, input.id) : undefined,
+						),
+					)
+					.limit(1);
+
+				if (dup) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Ya existe una receta con este padre/hijo y estilo",
 					});
 				}
 
