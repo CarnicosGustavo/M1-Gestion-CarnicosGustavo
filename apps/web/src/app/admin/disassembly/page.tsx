@@ -410,38 +410,47 @@ export default function DisassemblyPage() {
 				{ childName: string; addPieces: number }
 			>();
 
-			const addRecipes = (recipeType: string, realType: string) => {
-				const rows = byType?.get(recipeType) ?? [];
-				for (const r of rows) {
-					const addPieces = expectedPieces(r.yieldQuantityPieces, qty);
-					const prev = outputMap.get(r.childId);
-					outputMap.set(r.childId, {
-						childName: r.childName,
-						addPieces: (prev?.addPieces ?? 0) + addPieces,
-					});
-				}
+			const rowsBase = byType?.get("BASE") ?? [];
+			const rowsSpecific = type !== "BASE" ? byType?.get(type) ?? [] : [];
+			const effective = new Map<
+				number,
+				{ childName: string; yieldQuantityPieces: string | number }
+			>();
+			for (const r of rowsBase) {
+				effective.set(r.childId, {
+					childName: r.childName,
+					yieldQuantityPieces: r.yieldQuantityPieces,
+				});
+			}
+			for (const r of rowsSpecific) {
+				effective.set(r.childId, {
+					childName: r.childName,
+					yieldQuantityPieces: r.yieldQuantityPieces,
+				});
+			}
 
-				const parentNameLower = item.name.toLowerCase();
-				const typeLower = realType.toLowerCase();
-				const shouldAutoRecorte =
-					typeLower.includes("cuadr") &&
-					(typeLower.includes("cuero") ||
-						parentNameLower.includes("panza") ||
-						parentNameLower.includes("cuero"));
-				const hasRecorte = Array.from(outputMap.values()).some((x) =>
-					x.childName.toLowerCase().includes("recorte"),
-				);
-				if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
-					const prev = outputMap.get(recorteProduct.id);
-					outputMap.set(recorteProduct.id, {
-						childName: recorteProduct.name,
-						addPieces: (prev?.addPieces ?? 0) + qty,
-					});
-				}
-			};
+			for (const [childId, v] of effective) {
+				const addPieces = expectedPieces(v.yieldQuantityPieces, qty);
+				if (addPieces <= 0) continue;
+				outputMap.set(childId, { childName: v.childName, addPieces });
+			}
 
-			addRecipes("BASE", type);
-			if (type !== "BASE") addRecipes(type, type);
+			const parentNameLower = item.name.toLowerCase();
+			const typeLower = type.toLowerCase();
+			const shouldAutoRecorte =
+				typeLower.includes("cuadr") &&
+				(typeLower.includes("cuero") ||
+					parentNameLower.includes("panza") ||
+					parentNameLower.includes("cuero"));
+			const hasRecorte = Array.from(outputMap.values()).some((x) =>
+				x.childName.toLowerCase().includes("recorte"),
+			);
+			if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
+				outputMap.set(recorteProduct.id, {
+					childName: recorteProduct.name,
+					addPieces: qty,
+				});
+			}
 
 			const intermediateLeaves = Array.from(outputMap.entries())
 				.filter(

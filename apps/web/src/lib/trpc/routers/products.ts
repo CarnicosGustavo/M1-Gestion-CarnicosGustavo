@@ -430,9 +430,38 @@ export const productsRouter = router({
 					});
 				}
 
+				const dedupeByChild = <
+					T extends {
+						id: number;
+						child_product_id: number;
+						transformation_type: string | null;
+					},
+				>(
+					rows: T[],
+				) => {
+					const map = new Map<number, T>();
+					for (const r of rows) {
+						const prev = map.get(r.child_product_id);
+						if (!prev || r.id > prev.id) map.set(r.child_product_id, r);
+					}
+					return map;
+				};
+
+				const effectiveRecipes = (() => {
+					const base = recipes.filter((r) => r.transformation_type === "BASE");
+					if (selectedType === "BASE") return Array.from(dedupeByChild(base).values());
+					const specific = recipes.filter(
+						(r) => r.transformation_type === selectedType,
+					);
+					const baseMap = dedupeByChild(base);
+					const specMap = dedupeByChild(specific);
+					for (const [k, v] of specMap) baseMap.set(k, v);
+					return Array.from(baseMap.values());
+				})();
+
 				// 6. Incrementar Hijos
 				let hasRecorteChild = false;
-				for (const recipe of recipes) {
+				for (const recipe of effectiveRecipes) {
 					const yieldPieces = normalizePieces(
 						Number(recipe.yield_quantity_pieces),
 					);
@@ -587,6 +616,44 @@ export const productsRouter = router({
 			};
 
 			return await db.transaction(async (tx) => {
+				const dedupeByChild = <
+					T extends {
+						id: number;
+						child_product_id: number;
+						transformation_type: string | null;
+					},
+				>(
+					rows: T[],
+				) => {
+					const map = new Map<number, T>();
+					for (const r of rows) {
+						const prev = map.get(r.child_product_id);
+						if (!prev || r.id > prev.id) map.set(r.child_product_id, r);
+					}
+					return map;
+				};
+
+				const buildEffectiveRecipes = <
+					T extends {
+						id: number;
+						child_product_id: number;
+						transformation_type: string | null;
+					},
+				>(
+					rows: T[],
+					selectedType: string,
+				) => {
+					const base = rows.filter((r) => r.transformation_type === "BASE");
+					if (selectedType === "BASE") return Array.from(dedupeByChild(base).values());
+					const specific = rows.filter(
+						(r) => r.transformation_type === selectedType,
+					);
+					const baseMap = dedupeByChild(base);
+					const specMap = dedupeByChild(specific);
+					for (const [k, v] of specMap) baseMap.set(k, v);
+					return Array.from(baseMap.values());
+				};
+
 				const applyDisassemblyTx = async (args: {
 					parentProductId: number;
 					quantityToProcess: number;
@@ -688,8 +755,10 @@ export const productsRouter = router({
 						});
 					}
 
+					const effectiveRecipes = buildEffectiveRecipes(recipes, selectedType);
+
 					let hasRecorteChild = false;
-					for (const recipe of recipes) {
+					for (const recipe of effectiveRecipes) {
 						const yieldPieces = normalizePieces(
 							Number(recipe.yield_quantity_pieces),
 						);
@@ -895,8 +964,13 @@ export const productsRouter = router({
 					});
 				}
 
+				const effectiveCanalRecipes = buildEffectiveRecipes(
+					canalRecipes,
+					selectedType,
+				);
+
 				const generatedByChildId = new Map<number, number>();
-				for (const recipe of canalRecipes) {
+				for (const recipe of effectiveCanalRecipes) {
 					const yieldPieces = normalizePieces(
 						Number(recipe.yield_quantity_pieces),
 					);
@@ -904,20 +978,8 @@ export const productsRouter = router({
 						input.qtyProcessCanal * yieldPieces,
 					);
 					if (childPiecesToAdd <= 0) continue;
-					generatedByChildId.set(
-						recipe.child_product_id,
-						(generatedByChildId.get(recipe.child_product_id) ?? 0) +
-							childPiecesToAdd,
-					);
-				}
+					generatedByChildId.set(recipe.child_product_id, childPiecesToAdd);
 
-				for (const recipe of canalRecipes) {
-					const yieldPieces = normalizePieces(
-						Number(recipe.yield_quantity_pieces),
-					);
-					const childPiecesToAdd = Math.round(
-						input.qtyProcessCanal * yieldPieces,
-					);
 					const yieldRatio = useRealWeightMode
 						? 0
 						: normalizeRatio(Number(recipe.yield_weight_ratio));
@@ -1061,7 +1123,7 @@ export const productsRouter = router({
 			const typesToApply =
 				selectedType === "BASE" ? ["BASE"] : ["BASE", selectedType];
 
-			return db.query.productTransformations.findMany({
+			const rows = await db.query.productTransformations.findMany({
 				where: and(
 					eq(productTransformations.parent_product_id, input.parentProductId),
 					inArray(productTransformations.transformation_type, typesToApply),
@@ -1071,6 +1133,31 @@ export const productsRouter = router({
 					childProduct: true,
 				},
 			});
+
+			const dedupeByChild = <
+				T extends {
+					id: number;
+					child_product_id: number;
+					transformation_type: string | null;
+				},
+			>(
+				rs: T[],
+			) => {
+				const map = new Map<number, T>();
+				for (const r of rs) {
+					const prev = map.get(r.child_product_id);
+					if (!prev || r.id > prev.id) map.set(r.child_product_id, r);
+				}
+				return map;
+			};
+
+			const base = rows.filter((r) => r.transformation_type === "BASE");
+			if (selectedType === "BASE") return Array.from(dedupeByChild(base).values());
+			const specific = rows.filter((r) => r.transformation_type === selectedType);
+			const baseMap = dedupeByChild(base);
+			const specMap = dedupeByChild(specific);
+			for (const [k, v] of specMap) baseMap.set(k, v);
+			return Array.from(baseMap.values());
 		}),
 
 	registerChannelPurchase: almacenProcedure
