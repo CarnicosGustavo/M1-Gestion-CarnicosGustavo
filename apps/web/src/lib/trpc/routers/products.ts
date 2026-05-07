@@ -1449,6 +1449,7 @@ export const productsRouter = router({
 
 			const rows = await db
 				.select({
+					id: productTransformations.id,
 					parentId: productTransformations.parent_product_id,
 					transformationType: productTransformations.transformation_type,
 					childId: productTransformations.child_product_id,
@@ -1471,39 +1472,63 @@ export const productsRouter = router({
 				{
 					parentId: number;
 					transformationType: string;
-					children: Array<{
-						childId: number;
-						childName: string;
-						childStockPieces: number;
-						yieldQuantityPieces: string | number;
-					}>;
+					childrenById: Map<
+						number,
+						{
+							id: number;
+							childId: number;
+							childName: string;
+							childStockPieces: number;
+							yieldQuantityPieces: string | number;
+						}
+					>;
 				}
 			>();
 
 			for (const r of rows) {
 				const key = `${r.parentId}|${r.transformationType}`;
+				const transformationType = r.transformationType ?? "BASE";
 				const bucket =
 					byPair.get(key) ??
 					({
 						parentId: r.parentId,
-						transformationType: r.transformationType ?? "BASE",
-						children: [],
+						transformationType,
+						childrenById: new Map(),
 					} as const);
 
-				if (!byPair.has(key)) byPair.set(key, { ...bucket, children: [] });
+				if (!byPair.has(key)) byPair.set(key, { ...bucket });
 
-				byPair.get(key)?.children.push({
-					childId: r.childId,
-					childName: r.childName,
-					childStockPieces: r.childStockPieces,
-					yieldQuantityPieces: r.yieldQuantityPieces,
-				});
+				const current = byPair.get(key);
+				if (!current) continue;
+				const prev = current.childrenById.get(r.childId);
+				if (!prev || r.id > prev.id) {
+					current.childrenById.set(r.childId, {
+						id: r.id,
+						childId: r.childId,
+						childName: r.childName,
+						childStockPieces: r.childStockPieces,
+						yieldQuantityPieces: r.yieldQuantityPieces,
+					});
+				}
 			}
 
-			return Array.from(byPair.values()).sort((a, b) => {
-				if (a.parentId !== b.parentId) return a.parentId - b.parentId;
-				return a.transformationType.localeCompare(b.transformationType);
-			});
+			return Array.from(byPair.values())
+				.map((b) => ({
+					parentId: b.parentId,
+					transformationType: b.transformationType,
+					children: Array.from(b.childrenById.values())
+						.sort((a, c) => a.childName.localeCompare(c.childName))
+						.map((c) => ({
+							childId: c.childId,
+							childName: c.childName,
+							childStockPieces: c.childStockPieces,
+							yieldQuantityPieces: c.yieldQuantityPieces,
+						})),
+				}))
+				.sort((a, b) => {
+					if (a.parentId !== b.parentId) return a.parentId - b.parentId;
+					return a.transformationType.localeCompare(b.transformationType);
+				});
 		}),
 
 	getAvailableTransformationTypes: protectedProcedure

@@ -412,9 +412,14 @@ export default function DisassemblyPage() {
 	}, []);
 
 	const defaultAutoSplitForIntermediate = useCallback(
-		(name: string) => {
-			const n = normalizeProductName(name);
-			if (n.includes("cuero")) return false;
+		(args: { parentName: string; parentType: string; childName: string }) => {
+			const child = normalizeProductName(args.childName);
+			if (child.includes("cuero")) return false;
+
+			const parentType = (args.parentType ?? "").toLowerCase();
+			const isNacional = parentType.includes("nacional");
+			if (isNacional && child.includes("costillar")) return false;
+
 			return true;
 		},
 		[normalizeProductName],
@@ -448,7 +453,11 @@ export default function DisassemblyPage() {
 				const key = `${item.id}:${x.childId}`;
 				const auto =
 					dashboardIntermediateAuto[key] ??
-					defaultAutoSplitForIntermediate(x.childName);
+					defaultAutoSplitForIntermediate({
+						parentName: item.name,
+						parentType: type,
+						childName: x.childName,
+					});
 				const leave = Math.max(
 					0,
 					Math.min(dashboardIntermediateLeave[key] ?? 0, x.addPieces),
@@ -920,7 +929,11 @@ export default function DisassemblyPage() {
 				const leaveKey = `${args.rootId}:${childId}`;
 				const auto =
 					dashboardIntermediateAuto[leaveKey] ??
-					defaultAutoSplitForIntermediate(v.name);
+					defaultAutoSplitForIntermediate({
+						parentName: args.rootName,
+						parentType: args.rootStyle,
+						childName: v.name,
+					});
 				const intermediateType =
 					dashboardType[childId] ?? getDefaultTypeForParent(childId);
 				const leaveComplete = auto
@@ -1168,7 +1181,11 @@ export default function DisassemblyPage() {
 					const key = `${canalProduct.id}:${childId}`;
 					const auto =
 						dashboardIntermediateAuto[key] ??
-						defaultAutoSplitForIntermediate(v.name);
+						defaultAutoSplitForIntermediate({
+							parentName: canalProduct.name,
+							parentType: s.style,
+							childName: v.name,
+						});
 					const leave = Math.max(
 						0,
 						Math.min(dashboardIntermediateLeave[key] ?? 0, v.pieces),
@@ -1664,49 +1681,38 @@ export default function DisassemblyPage() {
 												addPieces: number;
 											}
 										>();
-										const addRecipes = (
-											recipeType: string,
-											realType: string,
-										) => {
-											const rows = byType?.get(recipeType) ?? [];
-											for (const r of rows) {
-												const addPieces = expectedPieces(
-													r.yieldQuantityPieces,
-													qty,
-												);
-												const prev = outputMap.get(r.childId);
-												outputMap.set(r.childId, {
-													childId: r.childId,
-													childName: r.childName,
-													childStockPieces: r.childStockPieces,
-													addPieces: (prev?.addPieces ?? 0) + addPieces,
-												});
-											}
+										const selectedRecipes = type
+											? effectiveChildrenForParent(p.id, type)
+											: [];
+										for (const r of selectedRecipes) {
+											const addPieces = expectedPieces(r.yieldQuantityPieces, qty);
+											const prev = outputMap.get(r.childId);
+											outputMap.set(r.childId, {
+												childId: r.childId,
+												childName: r.childName,
+												childStockPieces: r.childStockPieces,
+												addPieces: (prev?.addPieces ?? 0) + addPieces,
+											});
+										}
 
-											const parentNameLower = p.name.toLowerCase();
-											const typeLower = realType.toLowerCase();
-											const shouldAutoRecorte =
-												typeLower.includes("cuadr") &&
-												(typeLower.includes("cuero") ||
-													parentNameLower.includes("panza") ||
-													parentNameLower.includes("cuero"));
-											const hasRecorte = Array.from(outputMap.values()).some(
-												(x) => x.childName.toLowerCase().includes("recorte"),
-											);
-											if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
-												const prev = outputMap.get(recorteProduct.id);
-												outputMap.set(recorteProduct.id, {
-													childId: recorteProduct.id,
-													childName: recorteProduct.name,
-													childStockPieces: recorteProduct.stock_pieces,
-													addPieces: (prev?.addPieces ?? 0) + qty,
-												});
-											}
-										};
-
-										if (type) {
-											addRecipes("BASE", type);
-											if (type !== "BASE") addRecipes(type, type);
+										const parentNameLower = p.name.toLowerCase();
+										const typeLower = type.toLowerCase();
+										const shouldAutoRecorte =
+											typeLower.includes("cuadr") &&
+											(typeLower.includes("cuero") ||
+												parentNameLower.includes("panza") ||
+												parentNameLower.includes("cuero"));
+										const hasRecorte = Array.from(outputMap.values()).some((x) =>
+											x.childName.toLowerCase().includes("recorte"),
+										);
+										if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
+											const prev = outputMap.get(recorteProduct.id);
+											outputMap.set(recorteProduct.id, {
+												childId: recorteProduct.id,
+												childName: recorteProduct.name,
+												childStockPieces: recorteProduct.stock_pieces,
+												addPieces: (prev?.addPieces ?? 0) + qty,
+											});
 										}
 
 										const outputs = Array.from(outputMap.values())
@@ -1719,10 +1725,6 @@ export default function DisassemblyPage() {
 										const finalOutputs = outputs.filter(
 											(o) => !isIntermediateName(o.childName),
 										);
-
-										const selectedRecipes = type
-											? effectiveChildrenForParent(p.id, type)
-											: [];
 
 										return (
 											<div
@@ -1873,9 +1875,11 @@ export default function DisassemblyPage() {
 																			const key = `${p.id}:${o.childId}`;
 																			const auto =
 																				dashboardIntermediateAuto[key] ??
-																				defaultAutoSplitForIntermediate(
-																					o.childName,
-																				);
+																				defaultAutoSplitForIntermediate({
+																					parentName: p.name,
+																					parentType: type,
+																					childName: o.childName,
+																				});
 																			const leave = auto
 																				? Math.max(
 																						0,
@@ -2278,47 +2282,39 @@ export default function DisassemblyPage() {
 											}
 										>();
 
-										const addRecipes = (
-											recipeType: string,
-											realType: string,
-										) => {
-											const rows = byType?.get(recipeType) ?? [];
-											for (const r of rows) {
-												const addPieces = expectedPieces(
-													r.yieldQuantityPieces,
-													1,
-												);
-												const prev = outputMap.get(r.childId);
-												outputMap.set(r.childId, {
-													childId: r.childId,
-													childName: r.childName,
-													addPieces: (prev?.addPieces ?? 0) + addPieces,
-												});
-											}
+										const selectedRecipes = effectiveChildrenForParent(
+											selectedMapParent.id,
+											type,
+										);
+										for (const r of selectedRecipes) {
+											const addPieces = expectedPieces(r.yieldQuantityPieces, 1);
+											const prev = outputMap.get(r.childId);
+											outputMap.set(r.childId, {
+												childId: r.childId,
+												childName: r.childName,
+												addPieces: (prev?.addPieces ?? 0) + addPieces,
+											});
+										}
 
-											const parentNameLower =
-												selectedMapParent.name.toLowerCase();
-											const typeLower = realType.toLowerCase();
-											const shouldAutoRecorte =
-												typeLower.includes("cuadr") &&
-												(typeLower.includes("cuero") ||
-													parentNameLower.includes("panza") ||
-													parentNameLower.includes("cuero"));
-											const hasRecorte = Array.from(outputMap.values()).some(
-												(x) => x.childName.toLowerCase().includes("recorte"),
-											);
-											if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
-												const prev = outputMap.get(recorteProduct.id);
-												outputMap.set(recorteProduct.id, {
-													childId: recorteProduct.id,
-													childName: recorteProduct.name,
-													addPieces: (prev?.addPieces ?? 0) + 1,
-												});
-											}
-										};
-
-										addRecipes("BASE", type);
-										if (type !== "BASE") addRecipes(type, type);
+										const parentNameLower =
+											selectedMapParent.name.toLowerCase();
+										const typeLower = type.toLowerCase();
+										const shouldAutoRecorte =
+											typeLower.includes("cuadr") &&
+											(typeLower.includes("cuero") ||
+												parentNameLower.includes("panza") ||
+												parentNameLower.includes("cuero"));
+										const hasRecorte = Array.from(outputMap.values()).some((x) =>
+											x.childName.toLowerCase().includes("recorte"),
+										);
+										if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
+											const prev = outputMap.get(recorteProduct.id);
+											outputMap.set(recorteProduct.id, {
+												childId: recorteProduct.id,
+												childName: recorteProduct.name,
+												addPieces: (prev?.addPieces ?? 0) + 1,
+											});
+										}
 
 										const outputs = Array.from(outputMap.values())
 											.filter((x) => x.addPieces > 0)
