@@ -36,7 +36,7 @@ import {
 	XCircleIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
 import { useTRPC } from "@/lib/trpc/client";
@@ -122,10 +122,45 @@ export default function RecipesPage() {
 
 	const isEditing = editingId !== null;
 
+	const normalizeProductName = useCallback((name: string) => {
+		return name
+			.toLowerCase()
+			.replace(/^\s*[a-z]{2}\d+(?:\.\d+)?\s*-\s*/i, "")
+			.trim();
+	}, []);
+
+	const findBestProductByName = useCallback(
+		(inputName: string) => {
+			const q = normalizeProductName(inputName);
+			if (!q) return null;
+
+			let best: Product | null = null;
+			let bestScore = Number.POSITIVE_INFINITY;
+
+			for (const p of allProducts) {
+				const n = normalizeProductName(p.name);
+				if (!n) continue;
+
+				let score = Number.POSITIVE_INFINITY;
+				if (n === q) score = 0;
+				else if (n.includes(q)) score = 5 + (n.length - q.length) / 1000;
+				else if (q.includes(n)) score = 10 + (q.length - n.length) / 1000;
+
+				if (score < bestScore) {
+					best = p;
+					bestScore = score;
+				}
+			}
+
+			return bestScore !== Number.POSITIVE_INFINITY ? best : null;
+		},
+		[allProducts, normalizeProductName],
+	);
+
 	const recipeFormSchema = z.object({
 		parentProductId: z.number().int().positive(),
 		childProductId: z.number().int().positive(),
-		childName: z.string().min(1),
+		childName: z.string().optional(),
 		transformationType: z.string().min(1),
 		yieldQuantityPieces: z.number().min(0),
 		yieldWeightRatio: z.number().min(0),
@@ -183,11 +218,19 @@ export default function RecipesPage() {
 			},
 		},
 		onSubmit: ({ value }) => {
+			const child = allProducts.find((p) => p.id === value.childProductId);
+			const proposedChildName = (value.childName ?? "").trim();
+			const shouldRenameChild =
+				isEditing &&
+				!!child &&
+				proposedChildName.length > 0 &&
+				proposedChildName !== child.name;
+
 			upsertMutation.mutate({
 				id: editingId ?? undefined,
 				parentProductId: value.parentProductId,
 				childProductId: value.childProductId,
-				childName: value.childName,
+				childName: shouldRenameChild ? proposedChildName : undefined,
 				yieldQuantityPieces: value.yieldQuantityPieces,
 				yieldWeightRatio: value.yieldWeightRatio,
 				transformationType: value.transformationType,
@@ -644,6 +687,30 @@ export default function RecipesPage() {
 						onSubmit={(e) => {
 							e.preventDefault();
 							e.stopPropagation();
+							const v = form.state.values;
+							const parentId = Number(v.parentProductId) || 0;
+							let childId = Number(v.childProductId) || 0;
+
+							if (parentId <= 0) {
+								toast.error("Selecciona un producto padre");
+								return;
+							}
+
+							if (childId <= 0) {
+								const guess = findBestProductByName(v.childName ?? "");
+								if (guess) {
+									childId = guess.id;
+									form.setFieldValue("childProductId", childId);
+									form.setFieldValue("childName", guess.name);
+									toast.success(`Hijo detectado: ${guess.name}`);
+								} else {
+									toast.error(
+										"Selecciona un producto hijo (o escribe el nombre exacto de un producto existente)",
+									);
+									return;
+								}
+							}
+
 							form.handleSubmit();
 						}}
 					>
@@ -662,7 +729,7 @@ export default function RecipesPage() {
 												<SelectValue placeholder="Selecciona padre" />
 											</SelectTrigger>
 											<SelectContent>
-												{parentProducts.map((p: Product) => (
+												{productOptions.map((p: Product) => (
 													<SelectItem key={p.id} value={String(p.id)}>
 														{p.name}
 													</SelectItem>
@@ -679,9 +746,12 @@ export default function RecipesPage() {
 										<Label className="sm:text-right">Hijo</Label>
 										<Select
 											value={field.state.value ? String(field.state.value) : ""}
-											onValueChange={(value) =>
-												field.handleChange(Number(value))
-											}
+											onValueChange={(value) => {
+												const id = Number(value);
+												field.handleChange(id);
+												const p = allProducts.find((x) => x.id === id);
+												if (p) form.setFieldValue("childName", p.name);
+											}}
 										>
 											<SelectTrigger className="col-span-3">
 												<SelectValue placeholder="Selecciona hijo" />
@@ -707,7 +777,7 @@ export default function RecipesPage() {
 												value={field.state.value}
 												onChange={(e) => field.handleChange(e.target.value)}
 												onBlur={field.handleBlur}
-												placeholder="Ej. Codillo de pierna"
+												placeholder="Escribe para buscar (ej. Hueso / Pulpa de espaldilla)"
 												error={
 													field.state.meta.errors.length
 														? String(field.state.meta.errors[0])

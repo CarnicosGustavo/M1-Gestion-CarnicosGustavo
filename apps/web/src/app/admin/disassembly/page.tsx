@@ -36,7 +36,7 @@ import {
 	ScissorsIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
@@ -99,6 +99,14 @@ export default function DisassemblyPage() {
 	);
 	const { data: dashboardRecipeGroups = [] } = useQuery(
 		trpc.products.disassemblyDashboardRecipes.queryOptions(),
+	);
+
+	const recipesUpsertMutation = useMutation(
+		trpc.inventory.recipesUpsert.mutationOptions({
+			onSuccess: () => {
+				invalidateStockQueries();
+			},
+		}),
 	);
 
 	const parentProducts = useMemo(
@@ -188,17 +196,8 @@ export default function DisassemblyPage() {
 				.toLowerCase()
 				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
 				.trim();
-		const isIntermediate = (name: string) => {
-			const n = normalize(name);
-			return (
-				n.includes("costillar") ||
-				n.includes("lomo completo") ||
-				(n.includes("cuero") && !n.includes("mitad"))
-			);
-		};
 		return dashboardStock
 			.filter((p) => p.transformationTypes.length > 0)
-			.filter((p) => !isIntermediate(p.name))
 			.sort((a, b) => {
 				const ao = dashboardOrder(a.name);
 				const bo = dashboardOrder(b.name);
@@ -272,6 +271,9 @@ export default function DisassemblyPage() {
 	const [dashboardIntermediateLeave, setDashboardIntermediateLeave] = useState<
 		Record<string, number>
 	>({});
+	const [dashboardIntermediateAuto, setDashboardIntermediateAuto] = useState<
+		Record<string, boolean>
+	>({});
 
 	const [batchMediasAmerican, setBatchMediasAmerican] = useState<number>(0);
 	const [batchMediasNacionalLomo, setBatchMediasNacionalLomo] =
@@ -299,6 +301,7 @@ export default function DisassemblyPage() {
 		setDashboardQty({});
 		setDashboardType({});
 		setDashboardIntermediateLeave({});
+		setDashboardIntermediateAuto({});
 		setMapParentId(0);
 		setSelectedPrimaryParentId("");
 		setSelectedPrimaryStyle("");
@@ -361,7 +364,9 @@ export default function DisassemblyPage() {
 			return (
 				n.includes("costillar") ||
 				n.includes("lomo completo") ||
-				n.includes("cuero")
+				n.includes("cuero") ||
+				n.includes("mascara") ||
+				n.includes("craneo")
 			);
 		},
 		[normalizeProductName],
@@ -380,6 +385,20 @@ export default function DisassemblyPage() {
 		[dashboardRecipesByParent],
 	);
 
+	const getAvailableTypesForParent = useCallback(
+		(parentId: number) => {
+			const byType = dashboardRecipesByParent.get(parentId);
+			if (!byType) return [];
+			const types = Array.from(byType.keys()).filter(Boolean);
+			types.sort((a, b) => a.localeCompare(b));
+			if (types.includes("BASE")) {
+				return ["BASE", ...types.filter((t) => t !== "BASE")];
+			}
+			return types;
+		},
+		[dashboardRecipesByParent],
+	);
+
 	const shouldShowLeaveComplete = useCallback((name: string) => {
 		const normalized = name
 			.toLowerCase()
@@ -391,6 +410,15 @@ export default function DisassemblyPage() {
 			normalized.includes("lomo")
 		);
 	}, []);
+
+	const defaultAutoSplitForIntermediate = useCallback(
+		(name: string) => {
+			const n = normalizeProductName(name);
+			if (n.includes("cuero")) return false;
+			return true;
+		},
+		[normalizeProductName],
+	);
 
 	const selectedMapParent = useMemo(() => {
 		if (!mapParentId) return null;
@@ -405,97 +433,51 @@ export default function DisassemblyPage() {
 		const type = dashboardType[productId];
 		if (!type || qty <= 0) return;
 
-		if (isCanalName(item.name)) {
-			const byType = dashboardRecipesByParent.get(item.id);
-			const outputMap = new Map<
-				number,
-				{ childName: string; addPieces: number }
-			>();
-
-			const rowsBase = byType?.get("BASE") ?? [];
-			const rowsSpecific = type !== "BASE" ? (byType?.get(type) ?? []) : [];
-			const effective = new Map<
-				number,
-				{ childName: string; yieldQuantityPieces: string | number }
-			>();
-			for (const r of rowsBase) {
-				effective.set(r.childId, {
+		const effectiveChildren = effectiveChildrenForParent(item.id, type);
+		const intermediateLeaves = effectiveChildren
+			.map((r) => {
+				const addPieces = expectedPieces(r.yieldQuantityPieces, qty);
+				return {
+					childId: r.childId,
 					childName: r.childName,
-					yieldQuantityPieces: r.yieldQuantityPieces,
-				});
-			}
-			for (const r of rowsSpecific) {
-				effective.set(r.childId, {
-					childName: r.childName,
-					yieldQuantityPieces: r.yieldQuantityPieces,
-				});
-			}
-
-			for (const [childId, v] of effective) {
-				const addPieces = expectedPieces(v.yieldQuantityPieces, qty);
-				if (addPieces <= 0) continue;
-				outputMap.set(childId, { childName: v.childName, addPieces });
-			}
-
-			const parentNameLower = item.name.toLowerCase();
-			const typeLower = type.toLowerCase();
-			const shouldAutoRecorte =
-				typeLower.includes("cuadr") &&
-				(typeLower.includes("cuero") ||
-					parentNameLower.includes("panza") ||
-					parentNameLower.includes("cuero"));
-			const hasRecorte = Array.from(outputMap.values()).some((x) =>
-				x.childName.toLowerCase().includes("recorte"),
-			);
-			if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
-				outputMap.set(recorteProduct.id, {
-					childName: recorteProduct.name,
-					addPieces: qty,
-				});
-			}
-
-			const intermediateLeaves = Array.from(outputMap.entries())
-				.filter(
-					([childId, v]) => v.addPieces > 0 && isIntermediateName(v.childName),
-				)
-				.map(([childId, v]) => {
-					const key = `${item.id}:${childId}`;
-					const leave = Math.max(
-						0,
-						Math.min(dashboardIntermediateLeave[key] ?? 0, v.addPieces),
-					);
-					return { productId: childId, leaveComplete: leave };
-				});
-
-			await pipelineMutation.mutateAsync({
-				canalProductId: item.id,
-				qtyProcessCanal: qty,
-				transformationType: type,
-				intermediateLeaves,
-				realWeightMode,
+					addPieces,
+				};
+			})
+			.filter((x) => x.addPieces > 0 && isIntermediateName(x.childName))
+			.map((x) => {
+				const key = `${item.id}:${x.childId}`;
+				const auto =
+					dashboardIntermediateAuto[key] ??
+					defaultAutoSplitForIntermediate(x.childName);
+				const leave = Math.max(
+					0,
+					Math.min(dashboardIntermediateLeave[key] ?? 0, x.addPieces),
+				);
+				return {
+					productId: x.childId,
+					transformationType:
+						dashboardType[x.childId] ?? getDefaultTypeForParent(x.childId),
+					leaveComplete: auto ? leave : x.addPieces,
+				};
 			});
 
-			queryClient.invalidateQueries({
-				queryKey: trpc.products.list.queryKey(),
-			});
-			queryClient.invalidateQueries({
-				queryKey: trpc.products.disassemblyDashboard.queryKey(),
-			});
-			queryClient.invalidateQueries({
-				queryKey: trpc.products.disassemblyDashboardRecipes.queryKey(),
-			});
-			return;
-		}
-
-		await disassemblyMutation.mutateAsync({
-			parentProductId: productId,
-			quantityToProcess: qty,
+		await pipelineMutation.mutateAsync({
+			canalProductId: item.id,
+			qtyProcessCanal: qty,
 			transformationType: type,
+			intermediateLeaves,
 			realWeightMode,
-			entryMode: false,
 		});
 
-		invalidateStockQueries();
+		queryClient.invalidateQueries({
+			queryKey: trpc.products.list.queryKey(),
+		});
+		queryClient.invalidateQueries({
+			queryKey: trpc.products.disassemblyDashboard.queryKey(),
+		});
+		queryClient.invalidateQueries({
+			queryKey: trpc.products.disassemblyDashboardRecipes.queryKey(),
+		});
 	};
 
 	const executeDashboardAll = async () => {
@@ -646,6 +628,225 @@ export default function DisassemblyPage() {
 		[],
 	);
 
+	const yieldPiecesPerOne = useCallback((yieldQuantityPieces: unknown) => {
+		const raw = Number(yieldQuantityPieces);
+		const normalized = raw > 50 ? raw / 1000 : raw;
+		const rounded = Math.round(normalized * 1000) / 1000;
+		return Number.isFinite(rounded) ? rounded : 0;
+	}, []);
+
+	const autoSeedSecondaryRecipesDoneRef = useRef(false);
+
+	const findBestProductByTokens = useCallback(
+		(args: { include: string[]; exclude?: string[] }) => {
+			const include = args.include.map((s) => s.toLowerCase());
+			const exclude = (args.exclude ?? []).map((s) => s.toLowerCase());
+
+			const score = (name: string) => {
+				const n = normalizeProductName(name);
+				for (const ex of exclude) if (n.includes(ex)) return null;
+				for (const inc of include) if (!n.includes(inc)) return null;
+				let s = 0;
+				for (const inc of include) if (n === inc) s -= 20;
+				for (const inc of include) if (n.startsWith(inc)) s -= 5;
+				return s + n.length / 1000;
+			};
+
+			const candidates = products
+				.map((p) => ({ p, s: score(p.name) }))
+				.filter((x) => x.s !== null) as Array<{ p: (typeof products)[number]; s: number }>;
+
+			candidates.sort((a, b) => a.s - b.s || a.p.id - b.p.id);
+			return candidates[0]?.p ?? null;
+		},
+		[normalizeProductName, products],
+	);
+
+	const ensureRecipe = useCallback(
+		async (args: {
+			parentId: number;
+			childId: number;
+			type: string;
+			pieces: number;
+		}) => {
+			try {
+				await recipesUpsertMutation.mutateAsync({
+					parentProductId: args.parentId,
+					childProductId: args.childId,
+					yieldQuantityPieces: args.pieces,
+					yieldWeightRatio: 0,
+					transformationType: args.type,
+					isActive: true,
+				});
+				return true;
+			} catch {
+				return false;
+			}
+		},
+		[recipesUpsertMutation],
+	);
+
+	useEffect(() => {
+		if (autoSeedSecondaryRecipesDoneRef.current) return;
+		if (!products.length) return;
+		if (!dashboardStock.length) return;
+		if (recipesUpsertMutation.isPending) return;
+
+		const parentsNeeding = dashboardStock.filter((p) => {
+			if (p.stock_pieces <= 0) return false;
+			if (p.transformationTypes.length > 0) return false;
+			const n = normalizeProductName(p.name);
+			return n.includes("pierna") || n.includes("espaldilla") || n.includes("cabeza");
+		});
+
+		if (!parentsNeeding.length) {
+			autoSeedSecondaryRecipesDoneRef.current = true;
+			return;
+		}
+
+		autoSeedSecondaryRecipesDoneRef.current = true;
+
+		const run = async () => {
+			let created = 0;
+
+			const huesoPreferred = findBestProductByTokens({
+				include: ["hueso"],
+				exclude: ["americano", "c/h", "con hueso"],
+			});
+			const huesoFallback = findBestProductByTokens({ include: ["hueso"] });
+			const hueso = huesoPreferred ?? huesoFallback ?? null;
+			if (!hueso) return;
+
+			for (const parent of parentsNeeding) {
+				const n = normalizeProductName(parent.name);
+
+				if (n.includes("pierna")) {
+					const pulpaPierna = findBestProductByTokens({
+						include: ["pulpa", "pierna"],
+					});
+					const pulpaFallback = findBestProductByTokens({
+						include: ["pulpa"],
+						exclude: ["espaldilla", "jamon"],
+					});
+					const pulpa = pulpaPierna ?? pulpaFallback ?? null;
+					if (!pulpa) continue;
+					created += (await ensureRecipe({
+						parentId: parent.id,
+						childId: pulpa.id,
+						type: "SIN_HUESO",
+						pieces: 1,
+					}))
+						? 1
+						: 0;
+					created += (await ensureRecipe({
+						parentId: parent.id,
+						childId: hueso.id,
+						type: "SIN_HUESO",
+						pieces: 1,
+					}))
+						? 1
+						: 0;
+				}
+
+				if (n.includes("espaldilla")) {
+					const pulpaEspaldilla = findBestProductByTokens({
+						include: ["pulpa", "espaldilla"],
+					});
+					if (!pulpaEspaldilla) continue;
+					created += (await ensureRecipe({
+						parentId: parent.id,
+						childId: pulpaEspaldilla.id,
+						type: "SIN_HUESO",
+						pieces: 1,
+					}))
+						? 1
+						: 0;
+					created += (await ensureRecipe({
+						parentId: parent.id,
+						childId: hueso.id,
+						type: "SIN_HUESO",
+						pieces: 1,
+					}))
+						? 1
+						: 0;
+				}
+
+				if (n.includes("cabeza")) {
+					const headChildren: Array<{ name: string; pieces: number; tokens: string[] }> =
+						[
+							{ name: "MASCARA COMPLETA", pieces: 1, tokens: ["mascara"] },
+							{ name: "PAPADA", pieces: 1, tokens: ["papada"] },
+							{ name: "CACHETE", pieces: 2, tokens: ["cachete"] },
+							{ name: "LENGUA", pieces: 1, tokens: ["lengua"] },
+							{ name: "OREJAS", pieces: 2, tokens: ["orejas"] },
+							{ name: "TROMPA", pieces: 1, tokens: ["trompa"] },
+							{ name: "SESOS", pieces: 1, tokens: ["sesos"] },
+						];
+
+					for (const c of headChildren) {
+						const child = findBestProductByTokens({ include: c.tokens });
+						if (!child) continue;
+						created += (await ensureRecipe({
+							parentId: parent.id,
+							childId: child.id,
+							type: "DESPIECE_CABEZA",
+							pieces: c.pieces,
+						}))
+							? 1
+							: 0;
+					}
+				}
+			}
+
+			if (created > 0) {
+				toast.success(
+					`Listo: habilitadas opciones de Pierna/Espaldilla (SIN_HUESO) y Cabeza (DESPIECE_CABEZA). Recetas agregadas: ${created}.`,
+				);
+			}
+			const missingTargets: string[] = [];
+			const hasPierna = parentsNeeding.some((p) =>
+				normalizeProductName(p.name).includes("pierna"),
+			);
+			const hasEspaldilla = parentsNeeding.some((p) =>
+				normalizeProductName(p.name).includes("espaldilla"),
+			);
+			if (hasPierna) {
+				const pulpaPierna = findBestProductByTokens({
+					include: ["pulpa", "pierna"],
+				});
+				const pulpaFallback = findBestProductByTokens({
+					include: ["pulpa"],
+					exclude: ["espaldilla", "jamon"],
+				});
+				if (!pulpaPierna && !pulpaFallback) missingTargets.push("PULPA DE PIERNA");
+			}
+			if (hasEspaldilla) {
+				const pulpaEspaldilla = findBestProductByTokens({
+					include: ["pulpa", "espaldilla"],
+				});
+				if (!pulpaEspaldilla) missingTargets.push("PULPA DE ESPALDILLA");
+			}
+			if (missingTargets.length) {
+				toast.error(
+					`Faltan productos para habilitar SIN_HUESO: ${missingTargets.join(
+						", ",
+					)}. Crea esos productos y recarga.`,
+				);
+			}
+			invalidateStockQueries();
+		};
+
+		run();
+	}, [
+		dashboardStock,
+		ensureRecipe,
+		findBestProductByTokens,
+		invalidateStockQueries,
+		normalizeProductName,
+		products.length,
+		recipesUpsertMutation.isPending,
+	]);
+
 	const mediasAmerican = batchMediasAmerican;
 	const npLomoQty = batchMediasNacionalLomo;
 	const npEspilomoQty = batchMediasNacionalEspilomo;
@@ -716,13 +917,27 @@ export default function DisassemblyPage() {
 					continue;
 				}
 
-				const intermediateType = getDefaultTypeForParent(childId);
 				const leaveKey = `${args.rootId}:${childId}`;
-				const leaveComplete = Math.max(
-					0,
-					Math.min(dashboardIntermediateLeave[leaveKey] ?? 0, v.pieces),
-				);
+				const auto =
+					dashboardIntermediateAuto[leaveKey] ??
+					defaultAutoSplitForIntermediate(v.name);
+				const intermediateType =
+					dashboardType[childId] ?? getDefaultTypeForParent(childId);
+				const leaveComplete = auto
+					? Math.max(
+							0,
+							Math.min(dashboardIntermediateLeave[leaveKey] ?? 0, v.pieces),
+						)
+					: v.pieces;
 				const qtyToProcess = v.pieces - leaveComplete;
+				if (leaveComplete > 0) {
+					leafRows.push({
+						id: childId,
+						name: v.name,
+						pieces: leaveComplete,
+						origin: v.origin,
+					});
+				}
 				if (qtyToProcess <= 0) continue;
 
 				const children = effectiveChildrenForParent(childId, intermediateType);
@@ -776,7 +991,10 @@ export default function DisassemblyPage() {
 			return { rows: leafRows, conflicts: conflictList };
 		},
 		[
+			dashboardIntermediateAuto,
 			dashboardIntermediateLeave,
+			dashboardType,
+			defaultAutoSplitForIntermediate,
 			displayType,
 			effectiveChildrenForParent,
 			expectedPieces,
@@ -948,11 +1166,19 @@ export default function DisassemblyPage() {
 				.filter(([, v]) => v.pieces > 0 && isIntermediateChildName(v.name))
 				.map(([childId, v]) => {
 					const key = `${canalProduct.id}:${childId}`;
+					const auto =
+						dashboardIntermediateAuto[key] ??
+						defaultAutoSplitForIntermediate(v.name);
 					const leave = Math.max(
 						0,
 						Math.min(dashboardIntermediateLeave[key] ?? 0, v.pieces),
 					);
-					return { productId: childId, leaveComplete: leave };
+					return {
+						productId: childId,
+						transformationType:
+							dashboardType[childId] ?? getDefaultTypeForParent(childId),
+						leaveComplete: auto ? leave : v.pieces,
+					};
 				});
 
 			await pipelineMutation.mutateAsync({
@@ -1487,12 +1713,16 @@ export default function DisassemblyPage() {
 											.filter((x) => x.addPieces > 0)
 											.sort((a, b) => a.childName.localeCompare(b.childName));
 
-										const intermediateOutputs = isCanal
-											? outputs.filter((o) => isIntermediateName(o.childName))
+										const intermediateOutputs = outputs.filter((o) =>
+											isIntermediateName(o.childName),
+										);
+										const finalOutputs = outputs.filter(
+											(o) => !isIntermediateName(o.childName),
+										);
+
+										const selectedRecipes = type
+											? effectiveChildrenForParent(p.id, type)
 											: [];
-										const finalOutputs = isCanal
-											? outputs.filter((o) => !isIntermediateName(o.childName))
-											: outputs;
 
 										return (
 											<div
@@ -1638,22 +1868,32 @@ export default function DisassemblyPage() {
 																	</div>
 																))}
 
-																{isCanal
+																{intermediateOutputs.length
 																	? intermediateOutputs.map((o) => {
 																			const key = `${p.id}:${o.childId}`;
-																			const leave = Math.max(
-																				0,
-																				Math.min(
-																					dashboardIntermediateLeave[key] ?? 0,
-																					o.addPieces,
-																				),
-																			);
-																			const toSplit = Math.max(
-																				0,
-																				o.addPieces - leave,
-																			);
+																			const auto =
+																				dashboardIntermediateAuto[key] ??
+																				defaultAutoSplitForIntermediate(
+																					o.childName,
+																				);
+																			const leave = auto
+																				? Math.max(
+																						0,
+																						Math.min(
+																							dashboardIntermediateLeave[key] ??
+																								0,
+																							o.addPieces,
+																						),
+																					)
+																				: o.addPieces;
+																			const toSplit = auto
+																				? Math.max(0, o.addPieces - leave)
+																				: 0;
 																			const intermediateType =
+																				dashboardType[o.childId] ??
 																				getDefaultTypeForParent(o.childId);
+																			const availableInternalTypes =
+																				getAvailableTypesForParent(o.childId);
 																			const byTypeChild =
 																				dashboardRecipesByParent.get(o.childId);
 
@@ -1752,6 +1992,13 @@ export default function DisassemblyPage() {
 																					),
 																				);
 
+																			const selectedIntermediateRecipes = auto
+																				? effectiveChildrenForParent(
+																						o.childId,
+																						intermediateType,
+																					)
+																				: [];
+
 																			return (
 																				<div
 																					key={o.childId}
@@ -1779,6 +2026,7 @@ export default function DisassemblyPage() {
 																								min="0"
 																								step="1"
 																								value={leave || ""}
+																								disabled={!auto}
 																								onChange={(e) => {
 																									const val = e.target.value;
 																									const raw =
@@ -1804,14 +2052,55 @@ export default function DisassemblyPage() {
 																								Separar: {toSplit} · Dejar:{" "}
 																								{leave}
 																							</div>
+																							<div className="mt-2">
+																								<Button
+																									type="button"
+																									size="sm"
+																									variant={auto ? "default" : "outline"}
+																									onClick={() =>
+																										setDashboardIntermediateAuto(
+																											(prev) => ({
+																												...prev,
+																												[key]: !auto,
+																											}),
+																										)
+																									}
+																								>
+																									{auto ? "Auto-separar: Sí" : "Auto-separar: No"}
+																								</Button>
+																							</div>
 																						</div>
 																						<div className="space-y-1">
 																							<div className="text-muted-foreground text-xs">
 																								Acción interna
 																							</div>
-																							<div className="text-xs">
-																								{displayType(intermediateType)}
-																							</div>
+																							{availableInternalTypes.length ? (
+																								<Select
+																									value={intermediateType}
+																									onValueChange={(v) =>
+																										setDashboardType((prev) => ({
+																											...prev,
+																											[o.childId]: v,
+																										}))
+																									}
+																									disabled={!auto}
+																								>
+																									<SelectTrigger>
+																										<SelectValue />
+																									</SelectTrigger>
+																									<SelectContent>
+																										{availableInternalTypes.map((t) => (
+																											<SelectItem key={t} value={t}>
+																												{displayType(t)}
+																											</SelectItem>
+																										))}
+																									</SelectContent>
+																								</Select>
+																							) : (
+																								<div className="text-muted-foreground text-xs">
+																									Sin acciones configuradas.
+																								</div>
+																							)}
 																						</div>
 																					</div>
 
@@ -1847,6 +2136,38 @@ export default function DisassemblyPage() {
 																							Se deja completo.
 																						</div>
 																					)}
+
+																					<details className="mt-2 rounded-md bg-background/80 px-2 py-1">
+																						<summary className="cursor-pointer select-none text-muted-foreground text-xs">
+																							Receta interna (por 1 pieza)
+																						</summary>
+																						<div className="mt-2 space-y-1 text-xs">
+																							{selectedIntermediateRecipes.length ? (
+																								selectedIntermediateRecipes.map(
+																									(r) => (
+																										<div
+																											key={r.childId}
+																											className="flex items-center justify-between gap-3"
+																										>
+																											<div className="min-w-0 truncate">
+																												→ {r.childName}
+																											</div>
+																											<div className="shrink-0 text-muted-foreground">
+																												{yieldPiecesPerOne(
+																													r.yieldQuantityPieces,
+																												)}{" "}
+																												pza(s)
+																											</div>
+																										</div>
+																									),
+																								)
+																							) : (
+																								<div className="text-muted-foreground text-xs">
+																									Sin receta configurada.
+																								</div>
+																							)}
+																						</div>
+																					</details>
 																				</div>
 																			);
 																		})
@@ -1857,6 +2178,33 @@ export default function DisassemblyPage() {
 																Sin recetas configuradas para esta acción.
 															</div>
 														)}
+
+														<details className="mt-2 rounded-md bg-background/60 px-2 py-1">
+															<summary className="cursor-pointer select-none text-muted-foreground text-xs">
+																Receta (por 1 pieza)
+															</summary>
+															<div className="mt-2 space-y-1 text-xs">
+																{selectedRecipes.length ? (
+																	selectedRecipes.map((r) => (
+																		<div
+																			key={r.childId}
+																			className="flex items-center justify-between gap-3"
+																		>
+																			<div className="min-w-0 truncate">
+																				→ {r.childName}
+																			</div>
+																			<div className="shrink-0 text-muted-foreground">
+																				{yieldPiecesPerOne(r.yieldQuantityPieces)} pza(s)
+																			</div>
+																		</div>
+																	))
+																) : (
+																	<div className="text-muted-foreground text-xs">
+																		Sin recetas configuradas para esta acción.
+																	</div>
+																)}
+															</div>
+														</details>
 													</div>
 												) : null}
 											</div>

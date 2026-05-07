@@ -203,18 +203,39 @@ export const productsRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			const { in_stock, stock_kg, price_per_kg, price_per_piece, ...rest } =
 				input;
-			const [data] = await db
-				.insert(products)
-				.values({
-					...rest,
-					in_stock: in_stock.toFixed(3),
-					stock_kg: stock_kg.toFixed(3),
-					price_per_kg: price_per_kg?.toFixed(2),
-					price_per_piece: price_per_piece?.toFixed(2),
-					user_uid: ctx.user.id,
-				})
-				.returning();
-			return data;
+			try {
+				const [data] = await db
+					.insert(products)
+					.values({
+						...rest,
+						in_stock: in_stock.toFixed(3),
+						stock_kg: stock_kg.toFixed(3),
+						price_per_kg: price_per_kg?.toFixed(2),
+						price_per_piece: price_per_piece?.toFixed(2),
+						user_uid: ctx.user.id,
+					})
+					.returning();
+				return data;
+			} catch (err) {
+				const e = err as unknown as {
+					code?: string;
+					detail?: string;
+					constraint?: string;
+					message?: string;
+				};
+				const message = [
+					e.code ? `code=${e.code}` : null,
+					e.constraint ? `constraint=${e.constraint}` : null,
+					e.detail ? `detail=${e.detail}` : null,
+					e.message ? `message=${e.message}` : null,
+				]
+					.filter(Boolean)
+					.join(" | ");
+				throw new TRPCError({
+					code: "INTERNAL_SERVER_ERROR",
+					message: message ? `Error creando producto: ${message}` : "Error creando producto",
+				});
+			}
 		}),
 
 	update: adminProcedure
@@ -595,6 +616,7 @@ export const productsRouter = router({
 						z.object({
 							productId: z.number(),
 							leaveComplete: z.number().int().min(0),
+							transformationType: z.string().min(1).optional(),
 						}),
 					)
 					.default([]),
@@ -1069,7 +1091,18 @@ export const productsRouter = router({
 						const qtyToProcess = generated - item.leaveComplete;
 						if (qtyToProcess <= 0) continue;
 
-						const t = chooseType(typesByParentId.get(item.productId) ?? []);
+						const available = typesByParentId.get(item.productId) ?? [];
+						const selected =
+							item.transformationType && item.transformationType.trim().length
+								? item.transformationType.trim()
+								: null;
+						if (selected && !available.includes(selected)) {
+							throw new TRPCError({
+								code: "BAD_REQUEST",
+								message: `Tipo de despiece no disponible para intermedio (id ${item.productId}): ${selected}`,
+							});
+						}
+						const t = selected ?? chooseType(available);
 
 						await applyDisassemblyTx({
 							parentProductId: item.productId,
