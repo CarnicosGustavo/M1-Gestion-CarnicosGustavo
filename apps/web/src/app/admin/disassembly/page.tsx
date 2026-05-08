@@ -393,12 +393,13 @@ export default function DisassemblyPage() {
 			const next = { ...prev };
 			for (const p of dashboardStock) {
 				if (next[p.id] === undefined && p.transformationTypes.length) {
-					next[p.id] = p.transformationTypes[0];
+					const fixed = fixedTypeForCanal(p.name);
+					next[p.id] = fixed ?? p.transformationTypes[0];
 				}
 			}
 			return next;
 		});
-	}, [dashboardStock]);
+	}, [dashboardStock, fixedTypeForCanal]);
 
 	useEffect(() => {
 		if (mapParentId !== 0) return;
@@ -418,6 +419,17 @@ export default function DisassemblyPage() {
 			.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
 			.trim();
 	}, []);
+
+	const fixedTypeForCanal = useCallback(
+		(name: string) => {
+			const n = normalizeProductName(name);
+			if (n.includes("canal americano")) return "AMERICANO";
+			if (n.includes("canal nacional lomo")) return "NACIONAL_LOMO";
+			if (n.includes("canal nacional espilomo")) return "NACIONAL_ESPILOMO";
+			return null;
+		},
+		[normalizeProductName],
+	);
 
 	const isCanalName = useCallback(
 		(name: string) => normalizeProductName(name).includes("canal"),
@@ -504,7 +516,8 @@ export default function DisassemblyPage() {
 		if (!item) return;
 
 		const qty = dashboardQty[productId] ?? 0;
-		const type = dashboardType[productId];
+		const fixed = fixedTypeForCanal(item.name);
+		const type = fixed ?? dashboardType[productId];
 		if (!type || qty <= 0) return;
 
 		const effectiveChildren = effectiveChildrenForParent(item.id, type);
@@ -1805,7 +1818,10 @@ export default function DisassemblyPage() {
 									dashboardProcessables.map((p) => {
 										const qty = dashboardQty[p.id] ?? p.stock_pieces;
 										const type = dashboardType[p.id] ?? "";
-										const disabled = !type || qty <= 0 || qty > p.stock_pieces;
+										const fixed = fixedTypeForCanal(p.name);
+										const effectiveType = fixed ?? type;
+										const disabled =
+											!effectiveType || qty <= 0 || qty > p.stock_pieces;
 										const leaveCompleteQty = Math.max(0, p.stock_pieces - qty);
 										const byType = dashboardRecipesByParent.get(p.id);
 										const isCanal = isCanalName(p.name);
@@ -1819,8 +1835,8 @@ export default function DisassemblyPage() {
 												addPieces: number;
 											}
 										>();
-										const selectedRecipes = type
-											? effectiveChildrenForParent(p.id, type)
+										const selectedRecipes = effectiveType
+											? effectiveChildrenForParent(p.id, effectiveType)
 											: [];
 										for (const r of selectedRecipes) {
 											const addPieces = expectedPieces(r.yieldQuantityPieces, qty);
@@ -1834,7 +1850,7 @@ export default function DisassemblyPage() {
 										}
 
 										const parentNameLower = p.name.toLowerCase();
-										const typeLower = type.toLowerCase();
+										const typeLower = effectiveType.toLowerCase();
 										const shouldAutoRecorte =
 											typeLower.includes("cuadr") &&
 											(typeLower.includes("cuero") ||
@@ -1896,26 +1912,32 @@ export default function DisassemblyPage() {
 														<div className="text-muted-foreground text-xs">
 															Acción
 														</div>
-														<Select
-															value={type}
-															onValueChange={(v) =>
-																setDashboardType((prev) => ({
-																	...prev,
-																	[p.id]: v,
-																}))
-															}
-														>
-															<SelectTrigger>
-																<SelectValue />
-															</SelectTrigger>
-															<SelectContent>
-																{p.transformationTypes.map((t) => (
-																	<SelectItem key={t} value={t}>
-																		{displayType(t)}
-																	</SelectItem>
-																))}
-															</SelectContent>
-														</Select>
+														{fixed ? (
+															<div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
+																{displayType(fixed)}
+															</div>
+														) : (
+															<Select
+																value={type}
+																onValueChange={(v) =>
+																	setDashboardType((prev) => ({
+																		...prev,
+																		[p.id]: v,
+																	}))
+																}
+															>
+																<SelectTrigger>
+																	<SelectValue />
+																</SelectTrigger>
+																<SelectContent>
+																	{p.transformationTypes.map((t) => (
+																		<SelectItem key={t} value={t}>
+																			{displayType(t)}
+																		</SelectItem>
+																	))}
+																</SelectContent>
+															</Select>
+														)}
 													</div>
 
 													<div className="space-y-1">
@@ -1986,7 +2008,7 @@ export default function DisassemblyPage() {
 													</div>
 												</div>
 
-												{type ? (
+												{effectiveType ? (
 													<div className="mt-3 rounded-md bg-muted/30 p-2">
 														<div className="text-muted-foreground text-xs">
 															Genera (al ejecutar)
