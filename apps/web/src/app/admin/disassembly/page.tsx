@@ -378,6 +378,30 @@ export default function DisassemblyPage() {
 		setBatchMode("CANAL_COMPLETO");
 	};
 
+	const displayType = useCallback((t: string) => {
+		return t
+			.replace("NACIONAL_POLINESIA", "NACIONAL")
+			.replace("NACIONAL_", "NACIONAL ");
+	}, []);
+
+	const normalizeProductName = useCallback((name: string) => {
+		return name
+			.toLowerCase()
+			.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+			.trim();
+	}, []);
+
+	const fixedTypeForCanal = useCallback(
+		(name: string) => {
+			const n = normalizeProductName(name);
+			if (n.includes("canal americano")) return "AMERICANO";
+			if (n.includes("canal nacional lomo")) return "NACIONAL_LOMO";
+			if (n.includes("canal nacional espilomo")) return "NACIONAL_ESPILOMO";
+			return null;
+		},
+		[normalizeProductName],
+	);
+
 	useEffect(() => {
 		if (!dashboardStock.length) return;
 
@@ -406,30 +430,6 @@ export default function DisassemblyPage() {
 		if (!dashboardProcessables.length) return;
 		setMapParentId(dashboardProcessables[0].id);
 	}, [dashboardProcessables, mapParentId]);
-
-	const displayType = useCallback((t: string) => {
-		return t
-			.replace("NACIONAL_POLINESIA", "NACIONAL")
-			.replace("NACIONAL_", "NACIONAL ");
-	}, []);
-
-	const normalizeProductName = useCallback((name: string) => {
-		return name
-			.toLowerCase()
-			.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
-			.trim();
-	}, []);
-
-	const fixedTypeForCanal = useCallback(
-		(name: string) => {
-			const n = normalizeProductName(name);
-			if (n.includes("canal americano")) return "AMERICANO";
-			if (n.includes("canal nacional lomo")) return "NACIONAL_LOMO";
-			if (n.includes("canal nacional espilomo")) return "NACIONAL_ESPILOMO";
-			return null;
-		},
-		[normalizeProductName],
-	);
 
 	const isCanalName = useCallback(
 		(name: string) => normalizeProductName(name).includes("canal"),
