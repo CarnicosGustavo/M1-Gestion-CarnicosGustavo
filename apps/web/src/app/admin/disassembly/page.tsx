@@ -138,6 +138,75 @@ export default function DisassemblyPage() {
 		})[0];
 	}, [parentProducts]);
 
+	const canalAmericanoProduct = useMemo(() => {
+		const normalizeName = (name: string) =>
+			name
+				.toLowerCase()
+				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+				.trim();
+		const score = (name: string) => {
+			const n = normalizeName(name);
+			if (n.includes("canal americano")) return 0;
+			if (n.includes("americano") && n.includes("canal")) return 1;
+			return 999;
+		};
+		const candidates = parentProducts.filter((p) =>
+			normalizeName(p.name).includes("canal"),
+		);
+		return candidates.slice().sort((a, b) => {
+			const sa = score(a.name);
+			const sb = score(b.name);
+			if (sa !== sb) return sa - sb;
+			return a.id - b.id;
+		})[0] ?? null;
+	}, [parentProducts]);
+
+	const canalNacionalLomoProduct = useMemo(() => {
+		const normalizeName = (name: string) =>
+			name
+				.toLowerCase()
+				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+				.trim();
+		const score = (name: string) => {
+			const n = normalizeName(name);
+			if (n.includes("canal nacional lomo")) return 0;
+			if (n.includes("nacional lomo") && n.includes("canal")) return 1;
+			return 999;
+		};
+		const candidates = parentProducts.filter((p) =>
+			normalizeName(p.name).includes("canal"),
+		);
+		return candidates.slice().sort((a, b) => {
+			const sa = score(a.name);
+			const sb = score(b.name);
+			if (sa !== sb) return sa - sb;
+			return a.id - b.id;
+		})[0] ?? null;
+	}, [parentProducts]);
+
+	const canalNacionalEspilomoProduct = useMemo(() => {
+		const normalizeName = (name: string) =>
+			name
+				.toLowerCase()
+				.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+				.trim();
+		const score = (name: string) => {
+			const n = normalizeName(name);
+			if (n.includes("canal nacional espilomo")) return 0;
+			if (n.includes("nacional espilomo") && n.includes("canal")) return 1;
+			return 999;
+		};
+		const candidates = parentProducts.filter((p) =>
+			normalizeName(p.name).includes("canal"),
+		);
+		return candidates.slice().sort((a, b) => {
+			const sa = score(a.name);
+			const sb = score(b.name);
+			if (sa !== sb) return sa - sb;
+			return a.id - b.id;
+		})[0] ?? null;
+	}, [parentProducts]);
+
 	const primaryParentProducts = useMemo(() => {
 		if (canalProduct) {
 			const byHierarchy = parentProducts.filter(
@@ -283,11 +352,8 @@ export default function DisassemblyPage() {
 	const [batchMode, setBatchMode] = useState<"CANAL_COMPLETO" | "MEDIA_CANAL">(
 		"CANAL_COMPLETO",
 	);
-	const [lastPurchaseCanalProductId, setLastPurchaseCanalProductId] = useState<
-		number | null
-	>(null);
-	const [lastPurchaseCanalStockPieces, setLastPurchaseCanalStockPieces] =
-		useState<number | null>(null);
+	const [lastPurchaseStockPiecesByProductId, setLastPurchaseStockPiecesByProductId] =
+		useState<Record<number, number>>({});
 
 	const resetPurchaseInputs = () => {
 		setPurchaseWholePigs(0);
@@ -417,8 +483,11 @@ export default function DisassemblyPage() {
 			if (child.includes("cuero")) return false;
 
 			const parentType = (args.parentType ?? "").toLowerCase();
-			const isNacional = parentType.includes("nacional");
-			if (isNacional && child.includes("costillar")) return false;
+			const isEspilomo =
+				parentType.includes("nacional_espilomo") ||
+				parentType.includes("mx espilomo") ||
+				(parentType.includes("nacional") && parentType.includes("espilomo"));
+			if (isEspilomo && child.includes("costillar")) return false;
 
 			return true;
 		},
@@ -500,26 +569,26 @@ export default function DisassemblyPage() {
 		invalidateStockQueries();
 	};
 
-	const canalNationalLomo = useQuery({
-		...trpc.products.getTransformations.queryOptions({
-			parentProductId: canalProduct?.id ?? 0,
-			transformationType: "NACIONAL_LOMO",
-		}),
-		enabled: !!canalProduct,
-	});
 	const canalAmerican = useQuery({
 		...trpc.products.getTransformations.queryOptions({
-			parentProductId: canalProduct?.id ?? 0,
+			parentProductId: canalAmericanoProduct?.id ?? 0,
 			transformationType: "AMERICANO",
 		}),
-		enabled: !!canalProduct,
+		enabled: !!canalAmericanoProduct,
+	});
+	const canalNationalLomo = useQuery({
+		...trpc.products.getTransformations.queryOptions({
+			parentProductId: canalNacionalLomoProduct?.id ?? 0,
+			transformationType: "NACIONAL_LOMO",
+		}),
+		enabled: !!canalNacionalLomoProduct,
 	});
 	const canalNationalEspilomo = useQuery({
 		...trpc.products.getTransformations.queryOptions({
-			parentProductId: canalProduct?.id ?? 0,
+			parentProductId: canalNacionalEspilomoProduct?.id ?? 0,
 			transformationType: "NACIONAL_ESPILOMO",
 		}),
-		enabled: !!canalProduct,
+		enabled: !!canalNacionalEspilomoProduct,
 	});
 
 	const availableTypesQuery = useQuery({
@@ -563,14 +632,19 @@ export default function DisassemblyPage() {
 		trpc.products.registerChannelPurchase.mutationOptions({
 			onSuccess: (data) => {
 				toast.success(
-					`Compra registrada: +${data.mediasAmericano + data.mediasNacionalLomo + data.mediasNacionalEspilomo} medias canales, ${data.newKg} kg total`,
+					`Compra registrada: +${data.totalPieces} medias canales, ${data.totalKg} kg total`,
 				);
 				setBatchMediasAmerican(data.mediasAmericano);
 				setBatchMediasNacionalLomo(data.mediasNacionalLomo);
 				setBatchMediasNacionalEspilomo(data.mediasNacionalEspilomo);
 				setBatchMode(data.purchaseMode);
-				setLastPurchaseCanalProductId(data.productId);
-				setLastPurchaseCanalStockPieces(data.newStock);
+				setLastPurchaseStockPiecesByProductId(() => {
+					const next: Record<number, number> = {};
+					for (const a of data.allocations ?? []) {
+						next[a.productId] = a.newStock;
+					}
+					return next;
+				});
 				setPurchaseWholePigs(0);
 				setPurchaseTotalWeightKg(0);
 				setPurchaseSupplier("");
@@ -1016,36 +1090,6 @@ export default function DisassemblyPage() {
 		],
 	);
 
-	const canalNpPreview = useMemo(() => {
-		const map = new Map<number, { name: string; pieces: number }>();
-
-		for (const row of canalNationalLomo.data ?? []) {
-			const id = row.child_product_id;
-			const name = row.childProduct?.name ?? "-";
-			const pieces = expectedPieces(row.yield_quantity_pieces, npLomoQty);
-			const prev = map.get(id);
-			map.set(id, { name, pieces: (prev?.pieces ?? 0) + pieces });
-		}
-
-		for (const row of canalNationalEspilomo.data ?? []) {
-			const id = row.child_product_id;
-			const name = row.childProduct?.name ?? "-";
-			const pieces = expectedPieces(row.yield_quantity_pieces, npEspilomoQty);
-			const prev = map.get(id);
-			map.set(id, { name, pieces: (prev?.pieces ?? 0) + pieces });
-		}
-
-		return Array.from(map.entries())
-			.map(([id, v]) => ({ id, ...v }))
-			.sort((a, b) => a.name.localeCompare(b.name));
-	}, [
-		canalNationalEspilomo.data,
-		canalNationalLomo.data,
-		expectedPieces,
-		npEspilomoQty,
-		npLomoQty,
-	]);
-
 	const canalAmericanLevel1 = useMemo(() => {
 		return (canalAmerican.data ?? [])
 			.map((r) => ({
@@ -1056,109 +1100,126 @@ export default function DisassemblyPage() {
 			.filter((r) => r.childName !== "-");
 	}, [canalAmerican.data]);
 
-	const canalNationalLevel1 = useMemo(() => {
-		const m = new Map<
-			number,
-			{
-				childId: number;
-				childName: string;
-				yieldQuantityPieces: string | number;
-			}
-		>();
-		for (const r of canalNationalLomo.data ?? []) {
-			m.set(r.child_product_id, {
+	const canalNationalLomoLevel1 = useMemo(() => {
+		return (canalNationalLomo.data ?? [])
+			.map((r) => ({
 				childId: r.child_product_id,
 				childName: r.childProduct?.name ?? "-",
 				yieldQuantityPieces: r.yield_quantity_pieces,
-			});
-		}
-		for (const r of canalNationalEspilomo.data ?? []) {
-			m.set(r.child_product_id, {
+			}))
+			.filter((r) => r.childName !== "-");
+	}, [canalNationalLomo.data]);
+
+	const canalNationalEspilomoLevel1 = useMemo(() => {
+		return (canalNationalEspilomo.data ?? [])
+			.map((r) => ({
 				childId: r.child_product_id,
 				childName: r.childProduct?.name ?? "-",
 				yieldQuantityPieces: r.yield_quantity_pieces,
-			});
-		}
-		return Array.from(m.values()).filter((r) => r.childName !== "-");
-	}, [canalNationalEspilomo.data, canalNationalLomo.data]);
+			}))
+			.filter((r) => r.childName !== "-");
+	}, [canalNationalEspilomo.data]);
 
 	const canalAmericanPreview = useMemo(() => {
-		if (!canalProduct || mediasAmerican <= 0)
+		if (!canalAmericanoProduct || mediasAmerican <= 0)
 			return { rows: [], conflicts: [] };
 		return buildTwoLevelPreview({
-			rootName: canalProduct.name,
-			rootId: canalProduct.id,
+			rootName: canalAmericanoProduct.name,
+			rootId: canalAmericanoProduct.id,
 			rootQty: mediasAmerican,
-			rootStyle: "AMERICANO",
+			rootStyle: "US",
 			level1: canalAmericanLevel1,
-		});
-	}, [buildTwoLevelPreview, canalAmericanLevel1, canalProduct, mediasAmerican]);
-
-	const canalNationalPreview = useMemo(() => {
-		if (!canalProduct || npLomoQty + npEspilomoQty <= 0)
-			return { rows: [], conflicts: [] };
-		return buildTwoLevelPreview({
-			rootName: canalProduct.name,
-			rootId: canalProduct.id,
-			rootQty: npLomoQty + npEspilomoQty,
-			rootStyle: "NACIONAL",
-			level1: canalNationalLevel1,
 		});
 	}, [
 		buildTwoLevelPreview,
-		canalNationalLevel1,
-		canalProduct,
-		npEspilomoQty,
+		canalAmericanLevel1,
+		canalAmericanoProduct,
+		mediasAmerican,
+	]);
+
+	const canalNationalLomoPreview = useMemo(() => {
+		if (!canalNacionalLomoProduct || npLomoQty <= 0)
+			return { rows: [], conflicts: [] };
+		return buildTwoLevelPreview({
+			rootName: canalNacionalLomoProduct.name,
+			rootId: canalNacionalLomoProduct.id,
+			rootQty: npLomoQty,
+			rootStyle: "MX LOMO",
+			level1: canalNationalLomoLevel1,
+		});
+	}, [
+		buildTwoLevelPreview,
+		canalNacionalLomoProduct,
+		canalNationalLomoLevel1,
 		npLomoQty,
 	]);
 
+	const canalNationalEspilomoPreview = useMemo(() => {
+		if (!canalNacionalEspilomoProduct || npEspilomoQty <= 0)
+			return { rows: [], conflicts: [] };
+		return buildTwoLevelPreview({
+			rootName: canalNacionalEspilomoProduct.name,
+			rootId: canalNacionalEspilomoProduct.id,
+			rootQty: npEspilomoQty,
+			rootStyle: "MX ESPILOMO",
+			level1: canalNationalEspilomoLevel1,
+		});
+	}, [
+		buildTwoLevelPreview,
+		canalNacionalEspilomoProduct,
+		canalNationalEspilomoLevel1,
+		npEspilomoQty,
+	]);
+
 	const executeCanalBatch = async () => {
-		if (!canalProduct) return;
-
-		const totalToProcess = mediasAmerican + npLomoQty + npEspilomoQty;
-		if (totalToProcess <= 0) return;
-
-		const canalPiecesAvailable =
-			lastPurchaseCanalProductId === canalProduct.id &&
-			lastPurchaseCanalStockPieces !== null
-				? Math.max(canalProduct.stock_pieces, lastPurchaseCanalStockPieces)
-				: canalProduct.stock_pieces;
-
-		if (canalPiecesAvailable < totalToProcess) {
-			toast.error(
-				`Cantidad excede el stock de canal (disponible ${canalPiecesAvailable}, requerido ${totalToProcess})`,
-			);
-			return;
-		}
-
-		const isIntermediateChildName = (name: string) => isIntermediateName(name);
-
-		const getTransformRowsForStyle = (style: string) => {
-			if (style === "AMERICANO") return canalAmerican.data ?? [];
-			if (style === "NACIONAL_LOMO") return canalNationalLomo.data ?? [];
-			if (style === "NACIONAL_ESPILOMO")
-				return canalNationalEspilomo.data ?? [];
-			return [];
-		};
-
-		const steps: Array<{ qty: number; style: string }> = [];
-		if (mediasAmerican > 0)
-			steps.push({ qty: mediasAmerican, style: "AMERICANO" });
-		if (npLomoQty > 0 || npEspilomoQty > 0) {
+		const steps: Array<{
+			product: (typeof parentProducts)[number];
+			qty: number;
+			style: string;
+			rows: Array<(typeof canalAmerican.data extends Array<infer T> ? T : never)>;
+		}> = [];
+		if (mediasAmerican > 0 && canalAmericanoProduct) {
 			steps.push({
+				product: canalAmericanoProduct,
+				qty: mediasAmerican,
+				style: "AMERICANO",
+				rows: (canalAmerican.data ?? []) as any,
+			});
+		}
+		if (npLomoQty > 0 && canalNacionalLomoProduct) {
+			steps.push({
+				product: canalNacionalLomoProduct,
 				qty: npLomoQty,
 				style: "NACIONAL_LOMO",
-			});
-			steps.push({
-				qty: npEspilomoQty,
-				style: "NACIONAL_ESPILOMO",
+				rows: (canalNationalLomo.data ?? []) as any,
 			});
 		}
+		if (npEspilomoQty > 0 && canalNacionalEspilomoProduct) {
+			steps.push({
+				product: canalNacionalEspilomoProduct,
+				qty: npEspilomoQty,
+				style: "NACIONAL_ESPILOMO",
+				rows: (canalNationalEspilomo.data ?? []) as any,
+			});
+		}
+
+		const piecesAvailableFor = (p: (typeof parentProducts)[number]) => {
+			const last = lastPurchaseStockPiecesByProductId[p.id] ?? 0;
+			return Math.max(p.stock_pieces, last);
+		};
 
 		for (const s of steps) {
 			if (s.qty <= 0) continue;
 
-			const rows = getTransformRowsForStyle(s.style);
+			const available = piecesAvailableFor(s.product);
+			if (available < s.qty) {
+				toast.error(
+					`Cantidad excede el stock (${s.product.name} disponible ${available}, requerido ${s.qty})`,
+				);
+				return;
+			}
+
+			const rows = s.rows as any[];
 			const generatedByChildId = new Map<
 				number,
 				{ name: string; pieces: number }
@@ -1176,13 +1237,13 @@ export default function DisassemblyPage() {
 			}
 
 			const intermediateLeaves = Array.from(generatedByChildId.entries())
-				.filter(([, v]) => v.pieces > 0 && isIntermediateChildName(v.name))
+				.filter(([, v]) => v.pieces > 0 && isIntermediateName(v.name))
 				.map(([childId, v]) => {
-					const key = `${canalProduct.id}:${childId}`;
+					const key = `${s.product.id}:${childId}`;
 					const auto =
 						dashboardIntermediateAuto[key] ??
 						defaultAutoSplitForIntermediate({
-							parentName: canalProduct.name,
+							parentName: s.product.name,
 							parentType: s.style,
 							childName: v.name,
 						});
@@ -1199,7 +1260,7 @@ export default function DisassemblyPage() {
 				});
 
 			await pipelineMutation.mutateAsync({
-				canalProductId: canalProduct.id,
+				canalProductId: s.product.id,
 				qtyProcessCanal: s.qty,
 				transformationType: s.style,
 				intermediateLeaves,
@@ -1425,115 +1486,74 @@ export default function DisassemblyPage() {
 							registra la compra de canales.
 						</div>
 
-						{!canalProduct ? (
+						{!canalAmericanoProduct &&
+						!canalNacionalLomoProduct &&
+						!canalNacionalEspilomoProduct ? (
 							<div className="text-muted-foreground text-sm">
-								No se encontró un producto padre que contenga “canal” en el
-								nombre.
+								No se encontraron productos CANAL (Americano / Nacional Lomo /
+								Nacional Espilomo).
 							</div>
 						) : (
 							<>
 								<div className="grid grid-cols-1 gap-6 md:grid-cols-3">
 									<div className="space-y-2">
-										<Label>Canal (stock)</Label>
-										<div className="rounded-md border px-3 py-2 text-sm">
-											{canalProduct.name} ({canalProduct.stock_pieces}{" "}
-											{t("pieces")})
-										</div>
+										<Label>Canal Americano (stock)</Label>
+										{canalAmericanoProduct ? (
+											<div className="rounded-md border bg-rose-50 px-3 py-2 text-sm">
+												{canalAmericanoProduct.name} (
+												{canalAmericanoProduct.stock_pieces} {t("pieces")})
+											</div>
+										) : (
+											<div className="rounded-md border bg-rose-50 px-3 py-2 text-sm text-muted-foreground">
+												No configurado
+											</div>
+										)}
 									</div>
 
 									<div className="space-y-2">
-										<Label>Última compra cargada</Label>
-										<div className="rounded-md border px-3 py-2 text-sm">
-											{batchMode === "CANAL_COMPLETO"
-												? "Canal completo"
-												: "Media canal"}{" "}
-											| AM medias: {mediasAmerican} | N lomo: {npLomoQty} | N
-											espilomo: {npEspilomoQty}
-										</div>
-										<div className="text-muted-foreground text-xs">
-											Nacional procesa: {npLomoQty} lado lomo + {npEspilomoQty}{" "}
-											lado espilomo
-										</div>
+										<Label>Canal Nacional Lomo (stock)</Label>
+										{canalNacionalLomoProduct ? (
+											<div className="rounded-md border bg-emerald-50 px-3 py-2 text-sm">
+												{canalNacionalLomoProduct.name} (
+												{canalNacionalLomoProduct.stock_pieces} {t("pieces")})
+											</div>
+										) : (
+											<div className="rounded-md border bg-emerald-50 px-3 py-2 text-sm text-muted-foreground">
+												No configurado
+											</div>
+										)}
 									</div>
 
 									<div className="space-y-2">
-										<Label>Totales a procesar</Label>
-										<div className="rounded-md border px-3 py-2 text-sm">
-											AM: {mediasAmerican} medias | N:{" "}
-											{npLomoQty + npEspilomoQty} medias | Total:{" "}
-											{mediasAmerican + npLomoQty + npEspilomoQty}
-										</div>
+										<Label>Canal Nacional Espilomo (stock)</Label>
+										{canalNacionalEspilomoProduct ? (
+											<div className="rounded-md border bg-sky-50 px-3 py-2 text-sm">
+												{canalNacionalEspilomoProduct.name} (
+												{canalNacionalEspilomoProduct.stock_pieces}{" "}
+												{t("pieces")})
+											</div>
+										) : (
+											<div className="rounded-md border bg-sky-50 px-3 py-2 text-sm text-muted-foreground">
+												No configurado
+											</div>
+										)}
 									</div>
 								</div>
 
-								<div className="space-y-4 border-t pt-4">
-									{npLomoQty + npEspilomoQty > 0 &&
-									canalNationalPreview.rows.length ? (
-										<div className="overflow-x-auto rounded-md border">
-											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
-												Vista previa Nacional
-											</div>
-											{canalNationalPreview.conflicts.length ? (
-												<div className="border-b bg-amber-50 px-3 py-2 text-amber-900 text-xs">
-													<div className="flex items-center gap-2">
-														<AlertCircleIcon className="h-4 w-4" />
-														<span className="font-medium">
-															Conflicto: productos generados por múltiples rutas
-														</span>
-													</div>
-													<div className="mt-1">
-														{canalNationalPreview.conflicts
-															.slice(0, 5)
-															.map((c) => c.name)
-															.join(", ")}
-														{canalNationalPreview.conflicts.length > 5
-															? "…"
-															: ""}
-													</div>
-												</div>
-											) : null}
-											<table className="w-full text-sm">
-												<thead className="bg-muted/50">
-													<tr>
-														<th className="p-3 text-left font-medium">
-															{t("childProduct")}
-														</th>
-														<th className="p-3 text-left font-medium">
-															{t("expectedQty")}
-														</th>
-														<th className="p-3 text-left font-medium">
-															{t("expectedWeight")}
-														</th>
-														<th className="p-3 text-left font-medium">
-															Origen
-														</th>
-													</tr>
-												</thead>
-												<tbody>
-													{canalNationalPreview.rows.map((row) => (
-														<tr
-															key={`${row.id}-${row.origin}`}
-															className="border-t"
-														>
-															<td className="p-3">{row.name}</td>
-															<td className="p-3">{row.pieces}</td>
-															<td className="p-3">
-																{realWeightMode ? "Pendiente de pesaje" : "-"}
-															</td>
-															<td className="p-3 text-muted-foreground text-xs">
-																{row.origin}
-															</td>
-														</tr>
-													))}
-												</tbody>
-											</table>
-										</div>
-									) : null}
+								<div className="rounded-md border px-3 py-2 text-sm">
+									Última compra cargada:{" "}
+									{batchMode === "CANAL_COMPLETO"
+										? "Canal completo"
+										: "Media canal"}{" "}
+									| US: {mediasAmerican} medias | MX Lomo: {npLomoQty} medias | MX
+									Espilomo: {npEspilomoQty} medias
+								</div>
 
+								<div className="space-y-4 border-t pt-4">
 									{mediasAmerican > 0 && canalAmericanPreview.rows.length ? (
-										<div className="overflow-x-auto rounded-md border">
-											<div className="bg-muted/50 px-3 py-2 font-medium text-sm">
-												Vista previa Americano
+										<div className="overflow-x-auto rounded-md border bg-rose-50">
+											<div className="bg-rose-100 px-3 py-2 font-medium text-sm">
+												Vista previa US (Americano)
 											</div>
 											{canalAmericanPreview.conflicts.length ? (
 												<div className="border-b bg-amber-50 px-3 py-2 text-amber-900 text-xs">
@@ -1555,7 +1575,7 @@ export default function DisassemblyPage() {
 												</div>
 											) : null}
 											<table className="w-full text-sm">
-												<thead className="bg-muted/50">
+												<thead className="bg-rose-100">
 													<tr>
 														<th className="p-3 text-left font-medium">
 															{t("childProduct")}
@@ -1592,16 +1612,135 @@ export default function DisassemblyPage() {
 										</div>
 									) : null}
 
-									<div className="flex justify-end pt-4">
-										{mediasAmerican + npLomoQty + npEspilomoQty >
-											canalProduct.stock_pieces && (
-											<div className="mr-auto flex items-center gap-2 text-red-600 text-xs">
-												<AlertCircleIcon className="h-3.5 w-3.5" />
-												Cantidad excede el stock de canal
+									{npLomoQty > 0 && canalNationalLomoPreview.rows.length ? (
+										<div className="overflow-x-auto rounded-md border bg-emerald-50">
+											<div className="bg-emerald-100 px-3 py-2 font-medium text-sm">
+												Vista previa MX (Lado Lomo)
 											</div>
-										)}
+											{canalNationalLomoPreview.conflicts.length ? (
+												<div className="border-b bg-amber-50 px-3 py-2 text-amber-900 text-xs">
+													<div className="flex items-center gap-2">
+														<AlertCircleIcon className="h-4 w-4" />
+														<span className="font-medium">
+															Conflicto: productos generados por múltiples rutas
+														</span>
+													</div>
+													<div className="mt-1">
+														{canalNationalLomoPreview.conflicts
+															.slice(0, 5)
+															.map((c) => c.name)
+															.join(", ")}
+														{canalNationalLomoPreview.conflicts.length > 5
+															? "…"
+															: ""}
+													</div>
+												</div>
+											) : null}
+											<table className="w-full text-sm">
+												<thead className="bg-emerald-100">
+													<tr>
+														<th className="p-3 text-left font-medium">
+															{t("childProduct")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedQty")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedWeight")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															Origen
+														</th>
+													</tr>
+												</thead>
+												<tbody>
+													{canalNationalLomoPreview.rows.map((row) => (
+														<tr
+															key={`${row.id}-${row.origin}`}
+															className="border-t"
+														>
+															<td className="p-3">{row.name}</td>
+															<td className="p-3">{row.pieces}</td>
+															<td className="p-3">
+																{realWeightMode ? "Pendiente de pesaje" : "-"}
+															</td>
+															<td className="p-3 text-muted-foreground text-xs">
+																{row.origin}
+															</td>
+														</tr>
+													))}
+												</tbody>
+											</table>
+										</div>
+									) : null}
+
+									{npEspilomoQty > 0 &&
+									canalNationalEspilomoPreview.rows.length ? (
+										<div className="overflow-x-auto rounded-md border bg-sky-50">
+											<div className="bg-sky-100 px-3 py-2 font-medium text-sm">
+												Vista previa MX (Lado Espilomo)
+											</div>
+											{canalNationalEspilomoPreview.conflicts.length ? (
+												<div className="border-b bg-amber-50 px-3 py-2 text-amber-900 text-xs">
+													<div className="flex items-center gap-2">
+														<AlertCircleIcon className="h-4 w-4" />
+														<span className="font-medium">
+															Conflicto: productos generados por múltiples rutas
+														</span>
+													</div>
+													<div className="mt-1">
+														{canalNationalEspilomoPreview.conflicts
+															.slice(0, 5)
+															.map((c) => c.name)
+															.join(", ")}
+														{canalNationalEspilomoPreview.conflicts.length > 5
+															? "…"
+															: ""}
+													</div>
+												</div>
+											) : null}
+											<table className="w-full text-sm">
+												<thead className="bg-sky-100">
+													<tr>
+														<th className="p-3 text-left font-medium">
+															{t("childProduct")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedQty")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															{t("expectedWeight")}
+														</th>
+														<th className="p-3 text-left font-medium">
+															Origen
+														</th>
+													</tr>
+												</thead>
+												<tbody>
+													{canalNationalEspilomoPreview.rows.map((row) => (
+														<tr
+															key={`${row.id}-${row.origin}`}
+															className="border-t"
+														>
+															<td className="p-3">{row.name}</td>
+															<td className="p-3">{row.pieces}</td>
+															<td className="p-3">
+																{realWeightMode ? "Pendiente de pesaje" : "-"}
+															</td>
+															<td className="p-3 text-muted-foreground text-xs">
+																{row.origin}
+															</td>
+														</tr>
+													))}
+												</tbody>
+											</table>
+										</div>
+									) : null}
+
+									<div className="flex justify-end pt-4">
 										{canalAmericanPreview.conflicts.length > 0 ||
-										canalNationalPreview.conflicts.length > 0 ? (
+										canalNationalLomoPreview.conflicts.length > 0 ||
+										canalNationalEspilomoPreview.conflicts.length > 0 ? (
 											<div className="mr-auto flex items-center gap-2 text-amber-700 text-xs">
 												<AlertCircleIcon className="h-3.5 w-3.5" />
 												Hay conflictos de rutas en recetas. Corrige recetas para
@@ -1615,10 +1754,9 @@ export default function DisassemblyPage() {
 												disassemblyMutation.isPending ||
 												pipelineMutation.isPending ||
 												canalAmericanPreview.conflicts.length > 0 ||
-												canalNationalPreview.conflicts.length > 0 ||
-												mediasAmerican + npLomoQty + npEspilomoQty <= 0 ||
-												mediasAmerican + npLomoQty + npEspilomoQty >
-													canalProduct.stock_pieces
+												canalNationalLomoPreview.conflicts.length > 0 ||
+												canalNationalEspilomoPreview.conflicts.length > 0 ||
+												mediasAmerican + npLomoQty + npEspilomoQty <= 0
 											}
 										>
 											{disassemblyMutation.isPending ||

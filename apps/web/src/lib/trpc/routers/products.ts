@@ -1238,15 +1238,6 @@ export const productsRouter = router({
 						.toLowerCase()
 						.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
 						.trim();
-				const scoreCanal = (name: string) => {
-					const n = normalizeProductName(name);
-					if (n === "canal") return 0;
-					if (n.includes("canal") && !n.includes("media")) return 1;
-					if (n.includes("canal")) return 2;
-					return 999;
-				};
-
-				// 1. Encontrar producto CANAL (parent product only)
 				const canalCandidates = await tx
 					.select()
 					.from(products)
@@ -1258,58 +1249,125 @@ export const productsRouter = router({
 						),
 					);
 
-				const canalProduct = canalCandidates.slice().sort((a, b) => {
-					const sa = scoreCanal(a.name);
-					const sb = scoreCanal(b.name);
-					if (sa !== sb) return sa - sb;
-					return a.id - b.id;
-				})[0];
+				const scoreCanalSpecific = (name: string, kind: "US" | "MX_LOMO" | "MX_ESP") => {
+					const n = normalizeProductName(name);
+					if (kind === "US") {
+						if (n.includes("canal americano")) return 0;
+						if (n.includes("americano") && n.includes("canal")) return 1;
+						if (n.includes("canal") && n.includes("americano")) return 2;
+						return 999;
+					}
+					if (kind === "MX_LOMO") {
+						if (n.includes("canal nacional lomo")) return 0;
+						if (n.includes("nacional lomo") && n.includes("canal")) return 1;
+						if (n.includes("lomo") && n.includes("canal") && n.includes("nacional")) return 2;
+						return 999;
+					}
+					if (n.includes("canal nacional espilomo")) return 0;
+					if (n.includes("nacional espilomo") && n.includes("canal")) return 1;
+					if (n.includes("espilomo") && n.includes("canal") && n.includes("nacional")) return 2;
+					return 999;
+				};
 
-				if (!canalProduct) {
+				const pick = (kind: "US" | "MX_LOMO" | "MX_ESP") => {
+					const sorted = canalCandidates.slice().sort((a, b) => {
+						const sa = scoreCanalSpecific(a.name, kind);
+						const sb = scoreCanalSpecific(b.name, kind);
+						if (sa !== sb) return sa - sb;
+						return a.id - b.id;
+					});
+					const best = sorted[0];
+					return best && scoreCanalSpecific(best.name, kind) < 999 ? best : null;
+				};
+
+				const canalUs = pick("US");
+				const canalMxLomo = pick("MX_LOMO");
+				const canalMxEsp = pick("MX_ESP");
+
+				if (mediasAmericano > 0 && !canalUs) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
-						message: "No se encontró producto CANAL",
+						message: "No se encontró producto CANAL AMERICANO",
+					});
+				}
+				if (mediasNacionalLomo > 0 && !canalMxLomo) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "No se encontró producto CANAL NACIONAL LOMO",
+					});
+				}
+				if (mediasNacionalEspilomo > 0 && !canalMxEsp) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "No se encontró producto CANAL NACIONAL ESPILOMO",
 					});
 				}
 
-				// 2. Actualizar stock
-				const currentStock = Number(canalProduct.stock_pieces);
-				const currentKg = Number(canalProduct.stock_kg);
-				const newStock = currentStock + quantityPieces;
-				const newKg = currentKg + input.totalWeightKg;
+				const kgPerMedia = input.totalWeightKg / quantityPieces;
+				const allocations: Array<{
+					productId: number;
+					product: string;
+					addedPieces: number;
+					addedKg: string;
+					previousStock: number;
+					newStock: number;
+					previousKg: number;
+					newKg: string;
+				}> = [];
 
-				await tx
-					.update(products)
-					.set({
-						stock_pieces: newStock,
-						stock_kg: newKg.toFixed(3),
-					})
-					.where(eq(products.id, canalProduct.id));
+				const apply = async (product: (typeof canalCandidates)[number], pieces: number) => {
+					if (pieces <= 0) return;
+					const currentStock = Number(product.stock_pieces);
+					const currentKg = Number(product.stock_kg);
+					const addKg = pieces * kgPerMedia;
+					const newStock = currentStock + pieces;
+					const newKg = currentKg + addKg;
 
-				// 3. Registrar transacción
-				await tx.insert(inventoryTransactions).values({
-					product_id: canalProduct.id,
-					quantity_change_pieces: quantityPieces,
-					quantity_change_kg: input.totalWeightKg.toFixed(3),
-					transaction_type: "COMPRA",
-					notes: [
-						`Compra ${input.purchaseMode === "CANAL_COMPLETO" ? "canal completo" : "media canal"}`,
-						`N:${input.qtyNacional}`,
-						`A:${input.qtyAmericano}`,
-						`medias N lomo:${mediasNacionalLomo}`,
-						`medias N espilomo:${mediasNacionalEspilomo}`,
-						`medias A:${mediasAmericano}`,
-						input.supplier ? `Proveedor: ${input.supplier}` : null,
-						input.notes ?? null,
-					]
-						.filter(Boolean)
-						.join(" | "),
-				});
+					await tx
+						.update(products)
+						.set({
+							stock_pieces: newStock,
+							stock_kg: newKg.toFixed(3),
+						})
+						.where(eq(products.id, product.id));
+
+					await tx.insert(inventoryTransactions).values({
+						product_id: product.id,
+						quantity_change_pieces: pieces,
+						quantity_change_kg: addKg.toFixed(3),
+						transaction_type: "COMPRA",
+						notes: [
+							`Compra ${input.purchaseMode === "CANAL_COMPLETO" ? "canal completo" : "media canal"}`,
+							`N:${input.qtyNacional}`,
+							`A:${input.qtyAmericano}`,
+							`medias N lomo:${mediasNacionalLomo}`,
+							`medias N espilomo:${mediasNacionalEspilomo}`,
+							`medias A:${mediasAmericano}`,
+							input.supplier ? `Proveedor: ${input.supplier}` : null,
+							input.notes ?? null,
+						]
+							.filter(Boolean)
+							.join(" | "),
+					});
+
+					allocations.push({
+						productId: product.id,
+						product: product.name,
+						addedPieces: pieces,
+						addedKg: addKg.toFixed(3),
+						previousStock: currentStock,
+						newStock,
+						previousKg: currentKg,
+						newKg: newKg.toFixed(3),
+					});
+				};
+
+				if (canalUs) await apply(canalUs, mediasAmericano);
+				if (canalMxLomo) await apply(canalMxLomo, mediasNacionalLomo);
+				if (canalMxEsp) await apply(canalMxEsp, mediasNacionalEspilomo);
 
 				return {
 					success: true,
-					productId: canalProduct.id,
-					product: canalProduct.name,
 					purchaseMode: input.purchaseMode,
 					qtyAmericano: input.qtyAmericano,
 					qtyNacional: input.qtyNacional,
@@ -1318,10 +1376,9 @@ export const productsRouter = router({
 					mediasNacionalLomo,
 					mediasNacionalEspilomo,
 					mediasAmericano,
-					previousStock: currentStock,
-					newStock: newStock,
-					previousKg: currentKg,
-					newKg: newKg.toFixed(3),
+					totalPieces: quantityPieces,
+					totalKg: input.totalWeightKg.toFixed(3),
+					allocations,
 				};
 			});
 		}),
