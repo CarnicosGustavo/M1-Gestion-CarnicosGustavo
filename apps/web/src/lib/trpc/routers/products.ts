@@ -962,8 +962,22 @@ export const productsRouter = router({
 				});
 
 				const selectedType = input.transformationType;
+				const normalizeName = (name: string) =>
+					name
+						.toLowerCase()
+						.replace(/^\s*[a-z]{2}\d+(\.\d+)?\s*-\s*/i, "")
+						.trim();
+				const canalName = normalizeName(canal.name);
+				const isSpecificCanal =
+					canalName.includes("canal americano") ||
+					canalName.includes("canal nacional lomo") ||
+					canalName.includes("canal nacional espilomo");
 				const typesToApply =
-					selectedType === "BASE" ? ["BASE"] : ["BASE", selectedType];
+					selectedType === "BASE"
+						? ["BASE"]
+						: isSpecificCanal
+							? [selectedType]
+							: ["BASE", selectedType];
 
 				const canalRecipes = await tx
 					.select()
@@ -1135,7 +1149,7 @@ export const productsRouter = router({
 		.query(async ({ ctx, input }) => {
 			const uid = ctx.user.id;
 			const [parent] = await db
-				.select({ id: products.id })
+				.select({ id: products.id, name: products.name })
 				.from(products)
 				.where(
 					and(
@@ -1153,8 +1167,22 @@ export const productsRouter = router({
 			}
 
 			const selectedType = input.transformationType ?? "BASE";
+			const normalizeName = (name: string) =>
+				name
+					.toLowerCase()
+					.replace(/^\s*[a-z]{2}\d+(\.\d+)?\s*-\s*/i, "")
+					.trim();
+			const parentName = normalizeName(parent.name ?? "");
+			const isSpecificCanal =
+				parentName.includes("canal americano") ||
+				parentName.includes("canal nacional lomo") ||
+				parentName.includes("canal nacional espilomo");
 			const typesToApply =
-				selectedType === "BASE" ? ["BASE"] : ["BASE", selectedType];
+				selectedType === "BASE"
+					? ["BASE"]
+					: isSpecificCanal
+						? [selectedType]
+						: ["BASE", selectedType];
 
 			const rows = await db.query.productTransformations.findMany({
 				where: and(
