@@ -66,6 +66,15 @@ export default function WeighingStationPage() {
 	} = useQuery(trpc.orders.getPendingWeighingOrders.queryOptions());
 	const { data: products = [] } = useQuery(trpc.products.list.queryOptions());
 
+	const batchProduct = useMemo(
+		() => products.find((p) => p.id === batchProductId) ?? null,
+		[products, batchProductId],
+	);
+	const batchPendingPieces = useMemo(() => {
+		if (!batchProduct) return null;
+		return Math.max(0, batchProduct.stock_pieces - batchProduct.weighed_pieces);
+	}, [batchProduct]);
+
 	const selectedOrder = useMemo(
 		() => orders.find((o) => o.id === selectedOrderId),
 		[orders, selectedOrderId],
@@ -138,6 +147,16 @@ export default function WeighingStationPage() {
 		const pieces =
 			batchPieces.trim() === "" ? 0 : Number.parseInt(batchPieces, 10) || 0;
 		if (!Number.isFinite(weight) || weight <= 0) return;
+		if (
+			batchApplyToInventory &&
+			batchPendingPieces !== null &&
+			pieces > batchPendingPieces
+		) {
+			toast.error(
+				`Piezas a pesar exceden pendientes (${pieces} > ${batchPendingPieces})`,
+			);
+			return;
+		}
 
 		recordBatchMutation.mutate({
 			productId: batchProductId,
@@ -357,6 +376,29 @@ export default function WeighingStationPage() {
 							/>
 						</div>
 
+							{batchProduct && (
+								<div className="rounded-md border bg-muted/30 p-3 text-sm">
+									<div className="flex items-center justify-between">
+										<span className="text-muted-foreground">En stock</span>
+										<span className="font-medium">
+											{batchProduct.stock_pieces} piezas
+										</span>
+									</div>
+									<div className="flex items-center justify-between">
+										<span className="text-muted-foreground">Ya pesadas</span>
+										<span className="font-medium">
+											{batchProduct.weighed_pieces} piezas
+										</span>
+									</div>
+									<div className="flex items-center justify-between">
+										<span className="text-muted-foreground">Pendientes</span>
+										<span className="font-medium">
+											{batchPendingPieces ?? 0} piezas
+										</span>
+									</div>
+								</div>
+							)}
+
 						<div className="grid grid-cols-2 gap-3">
 							<div className="space-y-1">
 								<Label>Piezas</Label>
@@ -427,7 +469,11 @@ export default function WeighingStationPage() {
 							disabled={
 								recordBatchMutation.isPending ||
 								!batchProductId ||
-								!(Number.parseFloat(batchWeightKg) > 0)
+								!(Number.parseFloat(batchWeightKg) > 0) ||
+								(batchApplyToInventory &&
+									batchPendingPieces !== null &&
+									(Number.parseInt(batchPieces || "0", 10) || 0) >
+										batchPendingPieces)
 							}
 						>
 							{recordBatchMutation.isPending

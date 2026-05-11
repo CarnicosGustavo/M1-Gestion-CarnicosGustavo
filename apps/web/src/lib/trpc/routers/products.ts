@@ -34,6 +34,7 @@ const productSchema = z.object({
 	unit_of_measure: z.string().nullable(),
 	// New Inventory Dual Fields
 	stock_pieces: z.number(),
+	weighed_pieces: z.number(),
 	stock_kg: z.union([z.number(), z.string()]),
 	is_parent_product: z.boolean(),
 	parent_product_id: z.number().nullable(),
@@ -401,10 +402,13 @@ export const productsRouter = router({
 						});
 					}
 
+					const nextPieces = parent.stock_pieces - quantityToProcess;
+					const nextWeighedPieces = Math.min(parent.weighed_pieces ?? 0, nextPieces);
 					await tx
 						.update(products)
 						.set({
-							stock_pieces: parent.stock_pieces - quantityToProcess,
+							stock_pieces: nextPieces,
+							weighed_pieces: nextWeighedPieces,
 							stock_kg: newStockKg.toFixed(3),
 							// Note: in_stock is deprecated and kept for compatibility
 							// It should only contain whole kg values (integer)
@@ -725,10 +729,13 @@ export const productsRouter = router({
 						});
 					}
 
+					const nextPieces = parent.stock_pieces - args.quantityToProcess;
+					const nextWeighedPieces = Math.min(parent.weighed_pieces ?? 0, nextPieces);
 					await tx
 						.update(products)
 						.set({
-							stock_pieces: parent.stock_pieces - args.quantityToProcess,
+							stock_pieces: nextPieces,
+							weighed_pieces: nextWeighedPieces,
 							stock_kg: newStockKg.toFixed(3),
 						})
 						.where(eq(products.id, args.parentProductId));
@@ -944,10 +951,16 @@ export const productsRouter = router({
 					});
 				}
 
+				const nextCanalPieces = canal.stock_pieces - input.qtyProcessCanal;
+				const nextCanalWeighedPieces = Math.min(
+					canal.weighed_pieces ?? 0,
+					nextCanalPieces,
+				);
 				await tx
 					.update(products)
 					.set({
-						stock_pieces: canal.stock_pieces - input.qtyProcessCanal,
+						stock_pieces: nextCanalPieces,
+						weighed_pieces: nextCanalWeighedPieces,
 						stock_kg: newCanalKg.toFixed(3),
 					})
 					.where(eq(products.id, input.canalProductId));

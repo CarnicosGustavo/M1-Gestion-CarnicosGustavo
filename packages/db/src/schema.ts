@@ -114,6 +114,7 @@ export const products = pgTable("products", {
 	unit_of_measure: varchar("unit_of_measure", { length: 6 }),
 	// Inventario Dual
 	stock_pieces: integer("stock_pieces").notNull().default(0),
+	weighed_pieces: integer("weighed_pieces").notNull().default(0),
 	stock_kg: numeric("stock_kg", { precision: 10, scale: 3 })
 		.notNull()
 		.default("0.000"),

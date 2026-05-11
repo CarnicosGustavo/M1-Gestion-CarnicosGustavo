@@ -452,6 +452,13 @@ export const ordersRouter = router({
 								? Number(item.quantity_kg)
 								: 0;
 							const newStockKg = currentStockKg - itemQuantityKg;
+							const nextPieces = item.quantity_pieces
+								? product.stock_pieces - item.quantity_pieces
+								: product.stock_pieces;
+							const nextWeighedPieces = Math.min(
+								product.weighed_pieces ?? 0,
+								nextPieces,
+							);
 
 							if (newStockKg < 0) {
 								throw new TRPCError({
@@ -463,9 +470,8 @@ export const ordersRouter = router({
 							await tx
 								.update(products)
 								.set({
-									stock_pieces: item.quantity_pieces
-										? product.stock_pieces - item.quantity_pieces
-										: product.stock_pieces,
+									stock_pieces: nextPieces,
+									weighed_pieces: nextWeighedPieces,
 									stock_kg: newStockKg.toFixed(3),
 									// Note: in_stock is deprecated and kept for compatibility
 									// It should only contain whole kg values (integer)

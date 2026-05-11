@@ -22,6 +22,7 @@ const inventoryStatusSchema = z.object({
 	name: z.string(),
 	category: z.string().nullable(),
 	stock_pieces: z.number(),
+	weighed_pieces: z.number(),
 	stock_kg: z.union([z.number(), z.string()]),
 	in_stock: z.union([z.number(), z.string()]),
 	updated_at: z.date().nullable(),
@@ -116,6 +117,7 @@ export const inventoryRouter = router({
 					.update(products)
 					.set({
 						stock_pieces: 0,
+						weighed_pieces: 0,
 						stock_kg: sql`0.000`,
 						in_stock: sql`0.000`,
 						updated_at: new Date(),
@@ -161,6 +163,15 @@ export const inventoryRouter = router({
 				}
 
 				const deltaKg = input.applyToInventory ? input.weightKg : 0;
+				if (input.applyToInventory && input.piecesWeighed > 0) {
+					const pendingPieces = Math.max(0, p.stock_pieces - (p.weighed_pieces ?? 0));
+					if (input.piecesWeighed > pendingPieces) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: `Piezas a pesar exceden pendientes (${input.piecesWeighed} > ${pendingPieces})`,
+						});
+					}
+				}
 				if (deltaKg !== 0) {
 					const currentKg = Number(p.stock_kg);
 					const nextKg = currentKg + deltaKg;
@@ -171,10 +182,30 @@ export const inventoryRouter = router({
 						});
 					}
 
+					const nextWeighedPieces = input.applyToInventory
+						? Math.min(
+								p.stock_pieces,
+								(p.weighed_pieces ?? 0) + input.piecesWeighed,
+							)
+						: p.weighed_pieces ?? 0;
+
 					await tx
 						.update(products)
 						.set({
 							stock_kg: nextKg.toFixed(3),
+							weighed_pieces: nextWeighedPieces,
+							updated_at: new Date(),
+						})
+						.where(eq(products.id, input.productId));
+				} else if (input.applyToInventory && input.piecesWeighed > 0) {
+					const nextWeighedPieces = Math.min(
+						p.stock_pieces,
+						(p.weighed_pieces ?? 0) + input.piecesWeighed,
+					);
+					await tx
+						.update(products)
+						.set({
+							weighed_pieces: nextWeighedPieces,
 							updated_at: new Date(),
 						})
 						.where(eq(products.id, input.productId));
@@ -182,7 +213,8 @@ export const inventoryRouter = router({
 
 				await tx.insert(inventoryTransactions).values({
 					product_id: input.productId,
-					quantity_change_pieces: null,
+					quantity_change_pieces:
+						input.piecesWeighed > 0 ? input.piecesWeighed : null,
 					quantity_change_kg: input.applyToInventory
 						? deltaKg.toFixed(3)
 						: null,
@@ -225,6 +257,7 @@ export const inventoryRouter = router({
 						name: products.name,
 						category: products.category,
 						stock_pieces: products.stock_pieces,
+						weighed_pieces: products.weighed_pieces,
 						stock_kg: products.stock_kg,
 						in_stock: products.in_stock,
 						updated_at: products.updated_at,
@@ -242,6 +275,7 @@ export const inventoryRouter = router({
 					name: products.name,
 					category: products.category,
 					stock_pieces: products.stock_pieces,
+					weighed_pieces: products.weighed_pieces,
 					stock_kg: products.stock_kg,
 					in_stock: products.in_stock,
 					updated_at: products.updated_at,
@@ -297,6 +331,7 @@ export const inventoryRouter = router({
 				const currentStockKg = Number(p.stock_kg);
 				const nextPieces = p.stock_pieces + deltaPieces;
 				const nextStockKg = currentStockKg + deltaKg;
+				const nextWeighedPieces = Math.min(p.weighed_pieces ?? 0, nextPieces);
 
 				if (nextPieces < 0 || nextStockKg < 0) {
 					throw new TRPCError({
@@ -309,6 +344,7 @@ export const inventoryRouter = router({
 					.update(products)
 					.set({
 						stock_pieces: nextPieces,
+						weighed_pieces: nextWeighedPieces,
 						stock_kg: nextStockKg.toFixed(3),
 						// Note: in_stock is deprecated and kept for compatibility
 						// It should only contain whole kg values (integer)
