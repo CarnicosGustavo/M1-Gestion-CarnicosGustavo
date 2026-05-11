@@ -12,6 +12,7 @@ export const db = drizzlePostgres(
 	postgres(databaseUrl, {
 		ssl: "require",
 		...(databaseUrl.includes("pooler.supabase") ? { prepare: false } : null),
+		connection: { options: "-c search_path=public" },
 	}),
 	{ schema },
 );
