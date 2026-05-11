@@ -38,6 +38,9 @@ async function handle(request: Request) {
   const url = new URL(request.url);
   const token = url.searchParams.get("token");
   const mode = url.searchParams.get("mode") === "full" ? "full" : "auth";
+  const forceAuthUser =
+    url.searchParams.get("force") === "1" ||
+    url.searchParams.get("force") === "true";
   const expected = process.env.SEED_TOKEN;
 
   if (!expected || !token || token !== expected) {
@@ -45,7 +48,11 @@ async function handle(request: Request) {
   }
 
   try {
-    const result = await seed({ headers: new Headers(request.headers), mode });
+    const result = await seed({
+      headers: new Headers(request.headers),
+      mode,
+      forceAuthUser,
+    });
     return NextResponse.json({ ok: true, mode, result });
   } catch (err) {
     return NextResponse.json({ ok: false, error: toSafeError(err) }, { status: 500 });

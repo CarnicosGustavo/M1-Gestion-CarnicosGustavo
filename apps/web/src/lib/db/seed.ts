@@ -32,7 +32,7 @@ const EXPENSE_CATEGORIES = [
 
 type SeedMode = "auth" | "full";
 
-async function seedAuthUser(options: { headers?: Headers }) {
+async function seedAuthUser(options: { headers?: Headers; forceRecreate?: boolean }) {
   const legacyUser = await db
     .select({ id: user.id })
     .from(user)
@@ -52,6 +52,11 @@ async function seedAuthUser(options: { headers?: Headers }) {
     .limit(1);
 
   if (existingUser[0]?.id) {
+    if (options.forceRecreate) {
+      await db.delete(session).where(eq(session.userId, existingUser[0].id));
+      await db.delete(account).where(eq(account.userId, existingUser[0].id));
+      await db.delete(user).where(eq(user.id, existingUser[0].id));
+    } else {
     const passwordAccounts = await db
       .select({ count: sql<number>`count(*)` })
       .from(account)
@@ -64,19 +69,32 @@ async function seedAuthUser(options: { headers?: Headers }) {
     await db.delete(session).where(eq(session.userId, existingUser[0].id));
     await db.delete(account).where(eq(account.userId, existingUser[0].id));
     await db.delete(user).where(eq(user.id, existingUser[0].id));
+    }
   }
 
-  return (
+  const created = (
     await auth.api.signUpEmail({
       body: { name: DEMO_NAME, email: DEMO_EMAIL, password: DEMO_PASSWORD },
       headers: options.headers,
     })
   ).user.id;
+
+  await db
+    .update(user)
+    .set({ role: "admin", emailVerified: true, lastSignedIn: new Date(), updatedAt: new Date() })
+    .where(eq(user.id, created));
+
+  return created;
 }
 
-export async function seed(options: { headers?: Headers; mode?: SeedMode } = {}) {
+export async function seed(
+  options: { headers?: Headers; mode?: SeedMode; forceAuthUser?: boolean } = {},
+) {
   const mode = options.mode ?? "auth";
-  const userId = await seedAuthUser({ headers: options.headers });
+  const userId = await seedAuthUser({
+    headers: options.headers,
+    forceRecreate: options.forceAuthUser === true,
+  });
 
   if (mode === "auth") {
     return { userId };
