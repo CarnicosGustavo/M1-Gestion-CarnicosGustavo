@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod/v4";
 import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
@@ -90,7 +90,9 @@ export default function OrdersPage() {
 		error,
 	} = useQuery(trpc.orders.list.queryOptions());
 	const { data: customers = [] } = useQuery(trpc.customers.list.queryOptions());
-	const { data: products = [] } = useQuery(trpc.products.list.queryOptions());
+	const { data: products = [], error: productsError } = useQuery(
+		trpc.products.list.queryOptions(),
+	);
 	const { data: paymentMethods = [] } = useQuery(
 		trpc.paymentMethods.list.queryOptions(),
 	);
@@ -201,6 +203,15 @@ export default function OrdersPage() {
 	const [draftItems, setDraftItems] = useState<OrderDraftItem[]>([]);
 
 	const invalidateKeys = trpc.orders.list.queryOptions().queryKey;
+
+	useEffect(() => {
+		if (!productsError) return;
+		const msg =
+			typeof (productsError as any)?.message === "string"
+				? (productsError as any).message
+				: "Error cargando productos";
+		toast.error(msg);
+	}, [productsError]);
 
 	const createMutation = useCrudMutation({
 		mutationOptions: trpc.orders.create.mutationOptions(),
