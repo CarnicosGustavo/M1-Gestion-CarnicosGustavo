@@ -123,7 +123,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 								id={`user-menu-trigger-${userMenuTriggerId}`}
 							>
 								<Image
-									src={`${process.env.NEXT_PUBLIC_BASE_PATH || ""}/placeholder-user.jpg`}
+									src="/placeholder-user.jpg"
 									width={36}
 									height={36}
 									alt="Avatar"

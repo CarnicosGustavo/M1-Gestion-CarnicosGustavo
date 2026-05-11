@@ -14,7 +14,7 @@ export function TRPCReactProvider({ children }: { children: React.ReactNode }) {
     createTRPCClient<AppRouter>({
       links: [
         httpBatchLink({
-          url: `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/api/trpc`,
+          url: "/api/trpc",
           transformer: superjson,
         }),
       ],
