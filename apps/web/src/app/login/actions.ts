@@ -15,8 +15,17 @@ export async function login(formData: FormData) {
       headers: await headers(),
     });
   } catch (err) {
+    const e = err as unknown as { message?: string; code?: string; status?: number };
+    const reason = [
+      e.code ? `code:${e.code}` : null,
+      typeof e.status === "number" ? `status:${e.status}` : null,
+      e.message ? `msg:${e.message}` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ")
+      .slice(0, 200);
     console.error("SignIn failed:", err);
-    redirect("/login?error=invalid-credentials");
+    redirect(`/login?error=invalid-credentials&reason=${encodeURIComponent(reason)}`);
   }
 
   revalidatePath("/admin", "layout");

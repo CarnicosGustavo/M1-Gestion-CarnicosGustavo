@@ -9,11 +9,15 @@ import { Button } from "@finopenpos/ui/components/button";
 import { useRef } from "react";
 import { useTranslations } from "next-intl";
 import { CLIENT_NAME, DEMO_EMAIL, DEMO_PASSWORD, PROJECT_CREDIT } from "@/lib/constants";
+import { useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const t = useTranslations("login");
+  const searchParams = useSearchParams();
+  const error = searchParams.get("error");
+  const reason = searchParams.get("reason");
 
   function fillDemo() {
     if (emailRef.current) emailRef.current.value = DEMO_EMAIL;
@@ -33,6 +37,14 @@ export default function LoginPage() {
         <Card>
           <form>
             <CardContent className="space-y-4 mt-4">
+              {error ? (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+                  {error}
+                  {reason ? (
+                    <div className="mt-1 text-xs text-red-800">{reason}</div>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="grid gap-2">
                 <Label htmlFor="email">{t("email")}</Label>
                 <Input
