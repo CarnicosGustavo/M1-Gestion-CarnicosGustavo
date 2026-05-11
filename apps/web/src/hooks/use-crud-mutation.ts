@@ -50,7 +50,11 @@ export function useCrudMutation<
       onMutateResult: TOnMutateResult | undefined,
       context: MutationFunctionContext,
     ) => {
-      toast.error(errorMessage);
+      const msg =
+        typeof (error as any)?.message === "string" && (error as any).message.trim()
+          ? `${errorMessage}: ${(error as any).message}`
+          : errorMessage;
+      toast.error(msg);
       originalOnError?.(error, variables, onMutateResult, context);
     },
   });

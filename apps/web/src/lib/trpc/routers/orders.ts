@@ -203,7 +203,12 @@ export const ordersRouter = router({
 					const [product] = await tx
 						.select()
 						.from(products)
-						.where(eq(products.id, item.productId))
+						.where(
+							and(
+								eq(products.id, item.productId),
+								eq(products.user_uid, ctx.user.id),
+							),
+						)
 						.limit(1);
 
 					if (!product)
@@ -245,9 +250,7 @@ export const ordersRouter = router({
 					processedItems.push({
 						product_id: item.productId,
 						product_name: product.name,
-						quantity: item.quantityKg
-							? item.quantityKg / 1000
-							: item.quantityPieces || 0,
+						quantity: item.quantityKg ?? item.quantityPieces ?? 0,
 						quantity_pieces: item.quantityPieces,
 						quantity_kg: quantityKg,
 						unit_price: item.unitPrice,
