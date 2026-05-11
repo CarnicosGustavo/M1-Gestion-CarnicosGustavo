@@ -18,6 +18,20 @@ const REQUIRED_TABLES = [
   "public.inventory_transactions",
 ] as const;
 
+const REQUIRED_USER_COLUMNS = [
+  "id",
+  "name",
+  "email",
+  "email_verified",
+  "image",
+  "created_at",
+  "updated_at",
+  "role",
+  "openId",
+  "loginMethod",
+  "lastSignedIn",
+] as const;
+
 function toSafeError(err: unknown) {
   if (err && typeof err === "object") {
     const anyErr = err as {
@@ -64,6 +78,15 @@ export async function GET() {
   });
 
   try {
+    const info = await client<
+      { current_database: string; current_user: string; search_path: string }[]
+    >`
+      select
+        current_database() as current_database,
+        current_user as current_user,
+        current_setting('search_path') as search_path
+    `;
+
     const rows = await client<{
       rel: string;
       reg: string | null;
@@ -75,10 +98,27 @@ export async function GET() {
     const found = Object.fromEntries(rows.map((r) => [r.rel, r.reg]));
     const missing = rows.filter((r) => !r.reg).map((r) => r.rel);
 
+    const cols = await client<{ column_name: string }[]>`
+      select c.column_name
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'user'
+    `;
+    const existingUserColumns = cols.map((c) => c.column_name);
+    const missingUserColumns = REQUIRED_USER_COLUMNS.filter(
+      (c) => !existingUserColumns.includes(c),
+    );
+
     return NextResponse.json({
       ok: true,
+      db: info[0] ?? null,
       found,
       missing,
+      user_columns: {
+        required: REQUIRED_USER_COLUMNS,
+        existing: existingUserColumns,
+        missing: missingUserColumns,
+      },
     });
   } catch (err) {
     return NextResponse.json({ ok: false, error: toSafeError(err) }, { status: 500 });
