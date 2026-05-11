@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+function safeHost(value: string | undefined) {
+  if (!value) return null;
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
 function parseDatabaseUrl(databaseUrl: string | undefined) {
   if (!databaseUrl) return null;
   try {
@@ -23,10 +32,13 @@ function parseDatabaseUrl(databaseUrl: string | undefined) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const databaseUrl = process.env.DATABASE_URL;
   const baseUrl = process.env.BASE_URL;
   const betterAuthUrl = process.env.BETTER_AUTH_URL;
+  const requestHost = new URL(req.url).host;
+  const baseUrlHost = safeHost(baseUrl);
+  const betterAuthUrlHost = safeHost(betterAuthUrl);
 
   return NextResponse.json({
     ok: true,
@@ -42,6 +54,15 @@ export async function GET() {
       DATABASE_URL_parsed: parseDatabaseUrl(databaseUrl),
       BASE_URL_set: Boolean(baseUrl),
       BETTER_AUTH_URL_set: Boolean(betterAuthUrl),
+      hosts: {
+        requestHost,
+        baseUrlHost,
+        betterAuthUrlHost,
+        base_matches_request: baseUrlHost ? baseUrlHost === requestHost : null,
+        betterAuth_matches_request: betterAuthUrlHost
+          ? betterAuthUrlHost === requestHost
+          : null,
+      },
     },
   });
 }
