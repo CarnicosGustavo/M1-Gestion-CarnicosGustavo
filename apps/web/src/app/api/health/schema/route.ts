@@ -87,6 +87,10 @@ export async function GET() {
         current_setting('search_path') as search_path
     `;
 
+    const resolved = await client<{ user_reg: string | null }[]>`
+      select to_regclass('user') as user_reg
+    `;
+
     const rows = await client<{
       rel: string;
       reg: string | null;
@@ -109,9 +113,20 @@ export async function GET() {
       (c) => !existingUserColumns.includes(c),
     );
 
+    const userTables = await client<{ table_schema: string; table_name: string }[]>`
+      select table_schema, table_name
+      from information_schema.tables
+      where table_name = 'user'
+      order by table_schema
+    `;
+
     return NextResponse.json({
       ok: true,
       db: info[0] ?? null,
+      resolved: {
+        user_reg: resolved[0]?.user_reg ?? null,
+        user_tables: userTables,
+      },
       found,
       missing,
       user_columns: {
