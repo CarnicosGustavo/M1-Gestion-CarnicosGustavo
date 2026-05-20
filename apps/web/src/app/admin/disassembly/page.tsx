@@ -63,9 +63,9 @@ export default function DisassemblyPage() {
 
 	const [isClient, setIsClient] = useState(false);
 
-	const [purchaseWholePigs, setPurchaseWholePigs] = useState<number>(0);
+	const [purchaseWholePigsAmericano, setPurchaseWholePigsAmericano] = useState<number>(0);
+	const [purchaseWholePigsNacional, setPurchaseWholePigsNacional] = useState<number>(0);
 	const [purchasePricePerKg, setPurchasePricePerKg] = useState<number>(0);
-	const [purchaseCutStyle, setPurchaseCutStyle] = useState<"US" | "MX">("US");
 	const [purchaseTotalWeightKg, setPurchaseTotalWeightKg] = useState<number>(0);
 	const [purchaseSupplier, setPurchaseSupplier] = useState<string>("");
 	const [purchaseNotes, setPurchaseNotes] = useState<string>("");
@@ -151,15 +151,12 @@ export default function DisassemblyPage() {
 			if (n.includes("americano") && n.includes("canal")) return 1;
 			return 999;
 		};
-		const candidates = parentProducts.filter((p) =>
-			normalizeName(p.name).includes("canal"),
-		);
-		return candidates.slice().sort((a, b) => {
-			const sa = score(a.name);
-			const sb = score(b.name);
-			if (sa !== sb) return sa - sb;
-			return a.id - b.id;
-		})[0] ?? null;
+		const candidates = parentProducts
+			.map((p) => ({ p, s: score(p.name) }))
+			.filter((x) => x.s < 999)
+			.sort((a, b) => a.s - b.s || a.p.id - b.p.id);
+
+		return candidates[0]?.p ?? null;
 	}, [parentProducts]);
 
 	const canalNacionalLomoProduct = useMemo(() => {
@@ -170,19 +167,18 @@ export default function DisassemblyPage() {
 				.trim();
 		const score = (name: string) => {
 			const n = normalizeName(name);
-			if (n.includes("canal nacional lomo")) return 0;
-			if (n.includes("nacional lomo") && n.includes("canal")) return 1;
+			if (n.includes("canal nacional lomo") || n.includes("canal nacional lado lomo"))
+				return 0;
+			if (n.includes("nacional") && n.includes("lomo") && n.includes("canal"))
+				return 1;
 			return 999;
 		};
-		const candidates = parentProducts.filter((p) =>
-			normalizeName(p.name).includes("canal"),
-		);
-		return candidates.slice().sort((a, b) => {
-			const sa = score(a.name);
-			const sb = score(b.name);
-			if (sa !== sb) return sa - sb;
-			return a.id - b.id;
-		})[0] ?? null;
+		const candidates = parentProducts
+			.map((p) => ({ p, s: score(p.name) }))
+			.filter((x) => x.s < 999)
+			.sort((a, b) => a.s - b.s || a.p.id - b.p.id);
+
+		return candidates[0]?.p ?? null;
 	}, [parentProducts]);
 
 	const canalNacionalEspilomoProduct = useMemo(() => {
@@ -193,19 +189,21 @@ export default function DisassemblyPage() {
 				.trim();
 		const score = (name: string) => {
 			const n = normalizeName(name);
-			if (n.includes("canal nacional espilomo")) return 0;
-			if (n.includes("nacional espilomo") && n.includes("canal")) return 1;
+			if (
+				n.includes("canal nacional espilomo") ||
+				n.includes("canal nacional lado espilomo")
+			)
+				return 0;
+			if (n.includes("nacional") && n.includes("espilomo") && n.includes("canal"))
+				return 1;
 			return 999;
 		};
-		const candidates = parentProducts.filter((p) =>
-			normalizeName(p.name).includes("canal"),
-		);
-		return candidates.slice().sort((a, b) => {
-			const sa = score(a.name);
-			const sb = score(b.name);
-			if (sa !== sb) return sa - sb;
-			return a.id - b.id;
-		})[0] ?? null;
+		const candidates = parentProducts
+			.map((p) => ({ p, s: score(p.name) }))
+			.filter((x) => x.s < 999)
+			.sort((a, b) => a.s - b.s || a.p.id - b.p.id);
+
+		return candidates[0]?.p ?? null;
 	}, [parentProducts]);
 
 	const primaryParentProducts = useMemo(() => {
@@ -357,9 +355,9 @@ export default function DisassemblyPage() {
 		useState<Record<number, number>>({});
 
 	const resetPurchaseInputs = () => {
-		setPurchaseWholePigs(0);
+		setPurchaseWholePigsAmericano(0);
+		setPurchaseWholePigsNacional(0);
 		setPurchasePricePerKg(0);
-		setPurchaseCutStyle("US");
 		setPurchaseTotalWeightKg(0);
 		setPurchaseSupplier("");
 		setPurchaseNotes("");
@@ -1171,15 +1169,21 @@ export default function DisassemblyPage() {
 			.filter((r) => r.childName !== "-");
 	}, [canalNationalEspilomo.data]);
 
+	const totalMediasInPurchase = useMemo(() => {
+		return (purchaseWholePigsAmericano + purchaseWholePigsNacional) * 2;
+	}, [purchaseWholePigsAmericano, purchaseWholePigsNacional]);
+
+	const weightPerMediaInPurchase = useMemo(() => {
+		if (totalMediasInPurchase <= 0) return 0;
+		return purchaseTotalWeightKg / totalMediasInPurchase;
+	}, [purchaseTotalWeightKg, totalMediasInPurchase]);
+
 	const canalAmericanPreview = useMemo(() => {
 		if (!canalAmericanoProduct || mediasAmerican <= 0)
 			return { rows: [], conflicts: [] };
 
-		// Estimar peso proporcional si es CANAL_COMPLETO
-		const estimatedWeight =
-			purchaseCutStyle === "US" && purchaseWholePigs > 0
-				? (purchaseTotalWeightKg / (purchaseWholePigs * 2)) * mediasAmerican
-				: 0;
+		// Estimar peso proporcional
+		const estimatedWeight = weightPerMediaInPurchase * mediasAmerican;
 
 		return buildTwoLevelPreview({
 			rootName: canalAmericanoProduct.name,
@@ -1194,19 +1198,14 @@ export default function DisassemblyPage() {
 		canalAmericanLevel1,
 		canalAmericanoProduct,
 		mediasAmerican,
-		purchaseCutStyle,
-		purchaseTotalWeightKg,
-		purchaseWholePigs,
+		weightPerMediaInPurchase,
 	]);
 
 	const canalNationalLomoPreview = useMemo(() => {
 		if (!canalNacionalLomoProduct || npLomoQty <= 0)
 			return { rows: [], conflicts: [] };
 
-		const estimatedWeight =
-			purchaseCutStyle === "MX" && purchaseWholePigs > 0
-				? (purchaseTotalWeightKg / (purchaseWholePigs * 2)) * npLomoQty
-				: 0;
+		const estimatedWeight = weightPerMediaInPurchase * npLomoQty;
 
 		return buildTwoLevelPreview({
 			rootName: canalNacionalLomoProduct.name,
@@ -1221,19 +1220,14 @@ export default function DisassemblyPage() {
 		canalNacionalLomoProduct,
 		canalNationalLomoLevel1,
 		npLomoQty,
-		purchaseCutStyle,
-		purchaseTotalWeightKg,
-		purchaseWholePigs,
+		weightPerMediaInPurchase,
 	]);
 
 	const canalNationalEspilomoPreview = useMemo(() => {
 		if (!canalNacionalEspilomoProduct || npEspilomoQty <= 0)
 			return { rows: [], conflicts: [] };
 
-		const estimatedWeight =
-			purchaseCutStyle === "MX" && purchaseWholePigs > 0
-				? (purchaseTotalWeightKg / (purchaseWholePigs * 2)) * npEspilomoQty
-				: 0;
+		const estimatedWeight = weightPerMediaInPurchase * npEspilomoQty;
 
 		return buildTwoLevelPreview({
 			rootName: canalNacionalEspilomoProduct.name,
@@ -1248,9 +1242,7 @@ export default function DisassemblyPage() {
 		canalNacionalEspilomoProduct,
 		canalNationalEspilomoLevel1,
 		npEspilomoQty,
-		purchaseCutStyle,
-		purchaseTotalWeightKg,
-		purchaseWholePigs,
+		weightPerMediaInPurchase,
 	]);
 
 	const executeCanalBatch = async () => {
@@ -1403,19 +1395,19 @@ export default function DisassemblyPage() {
 							Espilomo
 						</p>
 
-						<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+						<div className="grid grid-cols-1 gap-4 md:grid-cols-4">
 							<div className="space-y-1">
 								<Label className="text-blue-900 text-sm">
-									Cerdos completos (vivos)
+									Cerdos Americanos (vivos)
 								</Label>
 								<Input
 									type="number"
 									min="0"
 									step="1"
-									value={purchaseWholePigs || ""}
+									value={purchaseWholePigsAmericano || ""}
 									onChange={(e) => {
 										const val = e.target.value;
-										setPurchaseWholePigs(
+										setPurchaseWholePigsAmericano(
 											val === ""
 												? 0
 												: Math.max(0, Number.parseInt(val, 10) || 0),
@@ -1426,19 +1418,24 @@ export default function DisassemblyPage() {
 							</div>
 
 							<div className="space-y-1">
-								<Label className="text-blue-900 text-sm">Estilo</Label>
-								<Select
-									value={purchaseCutStyle}
-									onValueChange={(v) => setPurchaseCutStyle(v as "US" | "MX")}
-								>
-									<SelectTrigger>
-										<SelectValue placeholder="Selecciona" />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="MX">🇲🇽 MX (Nacional)</SelectItem>
-										<SelectItem value="US">🇺🇸 US (Americano)</SelectItem>
-									</SelectContent>
-								</Select>
+								<Label className="text-blue-900 text-sm">
+									Cerdos Nacionales (vivos)
+								</Label>
+								<Input
+									type="number"
+									min="0"
+									step="1"
+									value={purchaseWholePigsNacional || ""}
+									onChange={(e) => {
+										const val = e.target.value;
+										setPurchaseWholePigsNacional(
+											val === ""
+												? 0
+												: Math.max(0, Number.parseInt(val, 10) || 0),
+										);
+									}}
+									placeholder="Ej: 10"
+								/>
 							</div>
 
 							<div className="space-y-1">
@@ -1481,12 +1478,11 @@ export default function DisassemblyPage() {
 							</div>
 						</div>
 
-						{purchaseWholePigs > 0 ? (
+						{purchaseWholePigsAmericano > 0 || purchaseWholePigsNacional > 0 ? (
 							<div className="text-muted-foreground text-xs">
 								Genera:{" "}
-								{purchaseCutStyle === "US"
-									? `${purchaseWholePigs * 2} medias (Americano)`
-									: `${purchaseWholePigs} medias lado Lomo + ${purchaseWholePigs} medias lado Espilomo (Nacional)`}
+								{purchaseWholePigsAmericano > 0 ? `${purchaseWholePigsAmericano * 2} medias (Americano) ` : ""}
+								{purchaseWholePigsNacional > 0 ? `${purchaseWholePigsNacional} medias lado Lomo + ${purchaseWholePigsNacional} medias lado Espilomo (Nacional)` : ""}
 							</div>
 						) : null}
 
@@ -1504,14 +1500,12 @@ export default function DisassemblyPage() {
 								<Button
 									size="sm"
 									onClick={() => {
-										if (purchaseWholePigs <= 0 || purchaseTotalWeightKg <= 0)
+										if ((purchaseWholePigsAmericano <= 0 && purchaseWholePigsNacional <= 0) || purchaseTotalWeightKg <= 0)
 											return;
 										purchaseMutation.mutate({
 											purchaseMode: "CANAL_COMPLETO",
-											qtyAmericano:
-												purchaseCutStyle === "US" ? purchaseWholePigs : 0,
-											qtyNacional:
-												purchaseCutStyle === "MX" ? purchaseWholePigs : 0,
+											qtyAmericano: purchaseWholePigsAmericano,
+											qtyNacional: purchaseWholePigsNacional,
 											qtyNacionalLomo: 0,
 											qtyNacionalEspilomo: 0,
 											totalWeightKg: purchaseTotalWeightKg,
@@ -1521,7 +1515,7 @@ export default function DisassemblyPage() {
 										});
 									}}
 									disabled={
-										purchaseWholePigs <= 0 ||
+										(purchaseWholePigsAmericano <= 0 && purchaseWholePigsNacional <= 0) ||
 										purchaseTotalWeightKg <= 0 ||
 										purchaseMutation.isPending
 									}

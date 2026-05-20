@@ -1287,37 +1287,35 @@ export const productsRouter = router({
 				const scoreCanalSpecific = (name: string, kind: "US" | "MX_LOMO" | "MX_ESP") => {
 					const n = normalizeProductName(name);
 					if (kind === "US") {
-						if (n === "canal") return 0; // Priorizar 'CANAL' simple si no hay americano
-						if (n.includes("canal americano")) return 1;
-						if (n.includes("americano") && n.includes("canal")) return 2;
-						if (n.includes("canal")) return 3;
+						if (n.includes("canal americano")) return 0;
+						if (n.includes("americano") && n.includes("canal")) return 1;
+						if (n === "canal" || n === "canal americano") return 2;
 						return 999;
 					}
 					if (kind === "MX_LOMO") {
-						if (n === "canal") return 0;
-						if (n.includes("canal nacional lomo")) return 1;
-						if (n.includes("nacional lomo") && n.includes("canal")) return 2;
-						if (n.includes("canal")) return 3;
+						if (n.includes("canal nacional lado lomo") || n.includes("canal nacional lomo")) return 0;
+						if (n.includes("nacional") && n.includes("lomo") && n.includes("canal")) return 1;
+						if (n.includes("nacional") && n.includes("canal") && !n.includes("americano") && !n.includes("espilomo")) return 2;
+						if (n === "canal") return 3;
 						return 999;
 					}
-					if (n === "canal") return 0;
-					if (n.includes("canal nacional espilomo")) return 1;
-					if (n.includes("nacional espilomo") && n.includes("canal")) return 2;
-					if (n.includes("canal")) return 3;
+					if (kind === "MX_ESP") {
+						if (n.includes("canal nacional lado espilomo") || n.includes("canal nacional espilomo")) return 0;
+						if (n.includes("nacional") && n.includes("espilomo") && n.includes("canal")) return 1;
+						if (n.includes("nacional") && n.includes("canal") && !n.includes("americano") && !n.includes("lomo")) return 2;
+						if (n === "canal") return 3;
+						return 999;
+					}
 					return 999;
 				};
 
 				const pick = (kind: "US" | "MX_LOMO" | "MX_ESP") => {
-					const sorted = canalCandidates
-						.slice()
-						.sort((a, b) => {
-							const sa = scoreCanalSpecific(a.name, kind);
-							const sb = scoreCanalSpecific(b.name, kind);
-							if (sa !== sb) return sa - sb;
-							return a.id - b.id;
-						});
-					const best = sorted[0];
-					return best && scoreCanalSpecific(best.name, kind) < 999 ? best : null;
+					const scored = canalCandidates
+						.map(p => ({ p, score: scoreCanalSpecific(p.name, kind) }))
+						.filter(x => x.score < 999)
+						.sort((a, b) => a.score - b.score || a.p.id - b.p.id);
+					
+					return scored[0]?.p ?? null;
 				};
 
 				const canalUs = pick("US");
