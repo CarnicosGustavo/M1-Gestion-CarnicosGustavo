@@ -256,6 +256,7 @@ const messages = {
 		weight: "Peso",
 		pendingWeight: "Peso pendiente",
 		weighed: "Pesado",
+		orders: "Pedidos",
 		weighingStation: "Estación de pesaje",
 		weighingStationDescription: "Registra el peso de los productos.",
 		registerWeight: "Registrar peso",
