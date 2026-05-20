@@ -48,6 +48,7 @@ const productSchema = z.object({
 
 const productWithParentsSchema = productSchema.extend({
 	parent_product_ids: z.array(z.number()),
+	yield_weight_ratio: z.union([z.string(), z.number()]).nullable().optional(),
 });
 
 const productTransformationSchema = z.object({
@@ -138,8 +139,15 @@ export const productsRouter = router({
 			}
 
 			const rows = await db
-				.select()
+				.select({
+					...products,
+					yield_weight_ratio: productTransformations.yield_weight_ratio,
+				})
 				.from(products)
+				.leftJoin(
+					productTransformations,
+					eq(products.id, productTransformations.child_product_id),
+				)
 				.where(
 					and(
 						eq(products.user_uid, uid),
@@ -1293,30 +1301,35 @@ export const productsRouter = router({
 				const scoreCanalSpecific = (name: string, kind: "US" | "MX_LOMO" | "MX_ESP") => {
 					const n = normalizeProductName(name);
 					if (kind === "US") {
-						if (n.includes("canal americano")) return 0;
-						if (n.includes("americano") && n.includes("canal")) return 1;
-						if (n.includes("canal") && n.includes("americano")) return 2;
+						if (n === "canal") return 0; // Priorizar 'CANAL' simple si no hay americano
+						if (n.includes("canal americano")) return 1;
+						if (n.includes("americano") && n.includes("canal")) return 2;
+						if (n.includes("canal")) return 3;
 						return 999;
 					}
 					if (kind === "MX_LOMO") {
-						if (n.includes("canal nacional lomo")) return 0;
-						if (n.includes("nacional lomo") && n.includes("canal")) return 1;
-						if (n.includes("lomo") && n.includes("canal") && n.includes("nacional")) return 2;
+						if (n === "canal") return 0;
+						if (n.includes("canal nacional lomo")) return 1;
+						if (n.includes("nacional lomo") && n.includes("canal")) return 2;
+						if (n.includes("canal")) return 3;
 						return 999;
 					}
-					if (n.includes("canal nacional espilomo")) return 0;
-					if (n.includes("nacional espilomo") && n.includes("canal")) return 1;
-					if (n.includes("espilomo") && n.includes("canal") && n.includes("nacional")) return 2;
+					if (n === "canal") return 0;
+					if (n.includes("canal nacional espilomo")) return 1;
+					if (n.includes("nacional espilomo") && n.includes("canal")) return 2;
+					if (n.includes("canal")) return 3;
 					return 999;
 				};
 
 				const pick = (kind: "US" | "MX_LOMO" | "MX_ESP") => {
-					const sorted = canalCandidates.slice().sort((a, b) => {
-						const sa = scoreCanalSpecific(a.name, kind);
-						const sb = scoreCanalSpecific(b.name, kind);
-						if (sa !== sb) return sa - sb;
-						return a.id - b.id;
-					});
+					const sorted = canalCandidates
+						.slice()
+						.sort((a, b) => {
+							const sa = scoreCanalSpecific(a.name, kind);
+							const sb = scoreCanalSpecific(b.name, kind);
+							if (sa !== sb) return sa - sb;
+							return a.id - b.id;
+						});
 					const best = sorted[0];
 					return best && scoreCanalSpecific(best.name, kind) < 999 ? best : null;
 				};
@@ -1328,19 +1341,19 @@ export const productsRouter = router({
 				if (mediasAmericano > 0 && !canalUs) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
-						message: "No se encontró producto CANAL AMERICANO",
+						message: "No se encontró el producto CANAL. Por favor, asegúrese de que el producto 'CANAL' esté registrado como producto padre.",
 					});
 				}
 				if (mediasNacionalLomo > 0 && !canalMxLomo) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
-						message: "No se encontró producto CANAL NACIONAL LOMO",
+						message: "No se encontró el producto CANAL. Por favor, asegúrese de que el producto 'CANAL' esté registrado como producto padre.",
 					});
 				}
 				if (mediasNacionalEspilomo > 0 && !canalMxEsp) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
-						message: "No se encontró producto CANAL NACIONAL ESPILOMO",
+						message: "No se encontró el producto CANAL. Por favor, asegúrese de que el producto 'CANAL' esté registrado como producto padre.",
 					});
 				}
 
@@ -1507,6 +1520,7 @@ export const productsRouter = router({
 							childName: z.string(),
 							childStockPieces: z.number(),
 							yieldQuantityPieces: z.union([z.string(), z.number()]),
+							yieldWeightRatio: z.union([z.string(), z.number()]).nullable(),
 						}),
 					),
 				}),
@@ -1552,6 +1566,7 @@ export const productsRouter = router({
 					transformationType: productTransformations.transformation_type,
 					childId: productTransformations.child_product_id,
 					yieldQuantityPieces: productTransformations.yield_quantity_pieces,
+					yieldWeightRatio: productTransformations.yield_weight_ratio,
 					childName: child.name,
 					childStockPieces: child.stock_pieces,
 				})
@@ -1578,6 +1593,7 @@ export const productsRouter = router({
 							childName: string;
 							childStockPieces: number;
 							yieldQuantityPieces: string | number;
+							yieldWeightRatio: string | number | null;
 						}
 					>;
 				}
@@ -1606,6 +1622,7 @@ export const productsRouter = router({
 						childName: r.childName,
 						childStockPieces: r.childStockPieces,
 						yieldQuantityPieces: r.yieldQuantityPieces,
+						yieldWeightRatio: r.yieldWeightRatio,
 					});
 				}
 			}
@@ -1621,6 +1638,7 @@ export const productsRouter = router({
 							childName: c.childName,
 							childStockPieces: c.childStockPieces,
 							yieldQuantityPieces: c.yieldQuantityPieces,
+							yieldWeightRatio: c.yieldWeightRatio,
 						})),
 				}))
 				.sort((a, b) => {

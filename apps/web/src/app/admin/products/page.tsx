@@ -103,6 +103,20 @@ export default function Products() {
 			),
 		},
 		{
+			key: "yield_ratio",
+			header: "% Rend.",
+			hideOnMobile: true,
+			render: (row) => {
+				// Buscar si este producto tiene una receta como hijo
+				const ratio = (row as any).yield_weight_ratio;
+				if (ratio !== undefined && ratio !== null) {
+					const percentage = (Number(ratio) * 100).toFixed(1);
+					return <span className="font-medium text-blue-600">{percentage}%</span>;
+				}
+				return <span className="text-muted-foreground text-xs">-</span>;
+			},
+		},
+		{
 			key: "price",
 			header: tc("price"),
 			sortable: true,

@@ -1,26 +1,53 @@
 import { db } from "../apps/web/src/lib/db";
-import { productTransformations } from "../apps/web/src/lib/db/schema";
-import { sql } from "drizzle-orm";
+import { products, productTransformations } from "../apps/web/src/lib/db/schema";
+import { sql, inArray } from "drizzle-orm";
 
 async function insertRecipes() {
   try {
     console.log("🔄 Insertando recetas NACIONAL_LOMO y NACIONAL_ESPILOMO...\n");
 
-    // Product IDs (NOTE: Using parent_product_id = 533 which is "XX9 - CANAL", not 7)
-    // The system uses the older XX-prefixed product naming for parent products
-    const CANAL = 533;        // XX9 - CANAL (parent product)
-    const LOMO = 556;         // XX32 - LOMO
-    const PECHO = 569;        // XX45 - PECHO
-    const CUERO = 609;        // XX13 - CUERO
-    const PATAS = 568;        // XX44 - PATAS
-    const MANOS = 560;        // XX35 - MANOS
-    const PIERNA = 571;       // XX47 - PIERNA
-    const ESPALDILLA = 544;   // XX20 - ESPALDILLA
-    const FILETE = 547;       // XX23 - FILETE
-    const ESPILOMO = 545;     // XX21 - ESPILOMO
-    const CABEZA = 605;
+    const productNames = [
+      "CANAL",
+      "LOMO",
+      "PECHO",
+      "CUERO",
+      "PATAS",
+      "MANOS",
+      "PIERNA",
+      "ESPALDILLA",
+      "FILETE",
+      "ESPILOMO",
+      "CABEZA",
+    ];
 
-    console.log("📋 IDs de productos:\n");
+    const results = await db
+      .select({ id: products.id, name: products.name })
+      .from(products)
+      .where(inArray(products.name, productNames));
+
+    const productMap: { [key: string]: number } = {};
+    for (const prod of results) {
+      productMap[prod.name] = prod.id;
+    }
+
+    const CANAL = productMap["CANAL"];
+    const LOMO = productMap["LOMO"];
+    const PECHO = productMap["PECHO"];
+    const CUERO = productMap["CUERO"];
+    const PATAS = productMap["PATAS"];
+    const MANOS = productMap["MANOS"];
+    const PIERNA = productMap["PIERNA"];
+    const ESPALDILLA = productMap["ESPALDILLA"];
+    const FILETE = productMap["FILETE"];
+    const ESPILOMO = productMap["ESPILOMO"];
+    const CABEZA = productMap["CABEZA"];
+
+    if (!CANAL) {
+      console.error("❌ Error: No se encontró el producto CANAL. Asegúrate de que el seed haya corrido.");
+      process.exit(1);
+    }
+
+    console.log("📋 IDs de productos encontrados:\n");
     console.log(`CANAL: ${CANAL}, LOMO: ${LOMO}, PECHO: ${PECHO}`);
     console.log(`CUERO: ${CUERO}, PATAS: ${PATAS}, MANOS: ${MANOS}`);
     console.log(`PIERNA: ${PIERNA}, ESPALDILLA: ${ESPALDILLA}, FILETE: ${FILETE}`);

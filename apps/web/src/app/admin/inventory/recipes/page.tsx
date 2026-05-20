@@ -163,7 +163,7 @@ export default function RecipesPage() {
 		childName: z.string().optional(),
 		transformationType: z.string().min(1),
 		yieldQuantityPieces: z.number().min(0),
-		yieldWeightRatio: z.number().min(0),
+		yieldWeightPercentage: z.number().min(0).max(100),
 		isActive: z.boolean().default(true),
 	});
 
@@ -199,7 +199,7 @@ export default function RecipesPage() {
 			childName: "",
 			transformationType: "BASE",
 			yieldQuantityPieces: 0,
-			yieldWeightRatio: 0,
+			yieldWeightPercentage: 0,
 			isActive: true,
 		},
 		validators: {
@@ -232,7 +232,7 @@ export default function RecipesPage() {
 				childProductId: value.childProductId,
 				childName: shouldRenameChild ? proposedChildName : undefined,
 				yieldQuantityPieces: value.yieldQuantityPieces,
-				yieldWeightRatio: value.yieldWeightRatio,
+				yieldWeightRatio: value.yieldWeightPercentage / 100, // Convert percentage to ratio
 				transformationType: value.transformationType,
 				isActive: value.isActive,
 			});
@@ -254,7 +254,7 @@ export default function RecipesPage() {
 		form.setFieldValue("childName", r.childProduct.name);
 		form.setFieldValue("transformationType", r.transformation_type);
 		form.setFieldValue("yieldQuantityPieces", Number(r.yield_quantity_pieces));
-		form.setFieldValue("yieldWeightRatio", Number(r.yield_weight_ratio));
+		form.setFieldValue("yieldWeightPercentage", Number(r.yield_weight_ratio) * 100);
 		form.setFieldValue("isActive", r.is_active);
 		setShowAdvanced(Number(r.yield_weight_ratio) > 0);
 		setIsDialogOpen(true);
@@ -441,6 +441,44 @@ export default function RecipesPage() {
 			accessorFn: (r) => Number(r.yield_quantity_pieces),
 		},
 		{
+			key: "rendimiento",
+			header: "% Rend.",
+			sortable: true,
+			accessorFn: (r) => Number(r.yield_weight_ratio) * 100,
+			render: (r) => {
+				const percentage = (Number(r.yield_weight_ratio) * 100).toFixed(1);
+				return <span className="font-medium text-blue-600">{percentage}%</span>;
+			},
+		},
+		{
+			key: "suggested_price",
+			header: "Precio Sug.",
+			render: (r) => {
+				const ratio = Number(r.yield_weight_ratio);
+				if (ratio <= 0) return <span className="text-muted-foreground">-</span>;
+				
+				// Buscar el precio del padre
+				const parent = allProducts.find(p => p.id === r.parent_product_id);
+				if (!parent || !parent.price_per_kg) return <span className="text-muted-foreground">-</span>;
+				
+				const parentPrice = Number(parent.price_per_kg);
+				// El precio sugerido es el costo del padre distribuido por rendimiento
+				// Nota: Esta es una estimación simple. En la realidad el precio sugerido
+				// suele ser mayor para compensar mermas.
+				const suggested = parentPrice / ratio; 
+				return (
+					<div className="flex flex-col">
+						<span className="text-xs font-bold text-green-700">
+							{formatCurrency(suggested * 100, locale)}
+						</span>
+						<span className="text-[9px] text-muted-foreground leading-none">
+							Est. base rendimiento
+						</span>
+					</div>
+				);
+			},
+		},
+		{
 			key: "active",
 			header: "Activa",
 			accessorFn: (r) => (r.is_active ? "Sí" : "No"),
@@ -608,8 +646,9 @@ export default function RecipesPage() {
 										[
 											"all",
 											"BASE",
-											"NACIONAL",
 											"AMERICANO",
+											"NACIONAL_LOMO",
+											"NACIONAL_ESPILOMO",
 											"POLINESIO",
 										] as const
 									).map((v) => (
@@ -620,7 +659,9 @@ export default function RecipesPage() {
 											variant={typeFilter === v ? "default" : "outline"}
 											onClick={() => setTypeFilter(v)}
 										>
-											{v === "all" ? "Todos" : v}
+											{v === "all"
+												? "Todos"
+												: v.replace("NACIONAL_", "").replace("_", " ")}
 										</Button>
 									))}
 								</div>
@@ -650,8 +691,9 @@ export default function RecipesPage() {
 						</div>
 
 						<div className="mt-3 text-muted-foreground text-sm">
-							Configura cuántas piezas salen por cada pieza padre. El peso se
-							captura después en báscula (por defecto no estimamos kg).
+							Configura el rendimiento de cada pieza. El sistema estima el peso
+							basándose en el porcentaje de rendimiento (%) configurado por
+							estilo de canal.
 						</div>
 					</>
 				)}
@@ -822,37 +864,29 @@ export default function RecipesPage() {
 								)}
 							</form.Field>
 
-							<form.Field name="yieldWeightRatio">
+							<form.Field name="yieldWeightPercentage">
 								{(field) => (
-									<>
-										<div className="flex items-center justify-end">
-											<Button
-												type="button"
-												variant="outline"
-												size="sm"
-												onClick={() => setShowAdvanced((v) => !v)}
-											>
-												{showAdvanced ? "Ocultar avanzado" : "Mostrar avanzado"}
-											</Button>
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
+										<Label className="sm:text-right text-blue-600 font-semibold">
+											Rendimiento (%)
+										</Label>
+										<div className="col-span-3 flex items-center gap-2">
+											<Input
+												type="number"
+												step="0.01"
+												value={String(field.state.value)}
+												onChange={(e) =>
+													field.handleChange(Number(e.target.value))
+												}
+												onBlur={field.handleBlur}
+												placeholder="Ej. 15.5"
+											/>
+											<span className="text-muted-foreground text-sm">%</span>
 										</div>
-										{showAdvanced ? (
-											<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-												<Label className="sm:text-right">
-													Kg estimado (opcional)
-												</Label>
-												<div className="col-span-3">
-													<Input
-														type="number"
-														value={String(field.state.value)}
-														onChange={(e) =>
-															field.handleChange(Number(e.target.value))
-														}
-														onBlur={field.handleBlur}
-													/>
-												</div>
-											</div>
-										) : null}
-									</>
+										<div className="col-start-2 col-span-3 text-[10px] text-muted-foreground">
+											Porcentaje del peso del canal que representa esta pieza.
+										</div>
+									</div>
 								)}
 							</form.Field>
 

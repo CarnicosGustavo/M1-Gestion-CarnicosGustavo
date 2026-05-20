@@ -208,6 +208,7 @@ const messages = {
 		paymentMethod: "Método de pago",
 		createdAt: "Creado el",
 		orderNotFound: "Pedido no encontrado",
+		disassemblyManagement: "Gestión de Despiece",
 	},
 	cashier: {
 		title: "Transacciones de caja",

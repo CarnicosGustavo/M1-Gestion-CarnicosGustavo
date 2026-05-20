@@ -971,26 +971,38 @@ export default function DisassemblyPage() {
 			rootName: string;
 			rootId: number;
 			rootQty: number;
+			rootWeight?: number;
 			rootStyle: string;
 			level1: Array<{
 				childId: number;
 				childName: string;
 				yieldQuantityPieces: string | number;
+				yieldWeightRatio?: string | number | null;
 			}>;
 		}) => {
 			const level1Generated = new Map<
 				number,
-				{ name: string; pieces: number; origin: string }
+				{
+					name: string;
+					pieces: number;
+					weight: number;
+					origin: string;
+				}
 			>();
 
 			const rootOrigin = `${args.rootName} (${displayType(args.rootStyle)})`;
 			for (const r of args.level1) {
 				const pieces = expectedPieces(r.yieldQuantityPieces, args.rootQty);
 				if (pieces <= 0) continue;
+
+				const ratio = Number(r.yieldWeightRatio || 0);
+				const weight = args.rootWeight ? args.rootWeight * ratio : 0;
+
 				const prev = level1Generated.get(r.childId);
 				level1Generated.set(r.childId, {
 					name: r.childName,
 					pieces: (prev?.pieces ?? 0) + pieces,
+					weight: (prev?.weight ?? 0) + weight,
 					origin: rootOrigin,
 				});
 			}
@@ -999,6 +1011,7 @@ export default function DisassemblyPage() {
 				id: number;
 				name: string;
 				pieces: number;
+				weight: number;
 				origin: string;
 			}> = [];
 
@@ -1008,6 +1021,7 @@ export default function DisassemblyPage() {
 						id: childId,
 						name: v.name,
 						pieces: v.pieces,
+						weight: v.weight,
 						origin: v.origin,
 					});
 					continue;
@@ -1030,11 +1044,18 @@ export default function DisassemblyPage() {
 						)
 					: v.pieces;
 				const qtyToProcess = v.pieces - leaveComplete;
+
+				// Distribuir peso proporcionalmente a las piezas
+				const weightPerPiece = v.pieces > 0 ? v.weight / v.pieces : 0;
+				const weightToLeave = leaveComplete * weightPerPiece;
+				const weightToProcess = v.weight - weightToLeave;
+
 				if (leaveComplete > 0) {
 					leafRows.push({
 						id: childId,
 						name: v.name,
 						pieces: leaveComplete,
+						weight: weightToLeave,
 						origin: v.origin,
 					});
 				}
@@ -1048,10 +1069,15 @@ export default function DisassemblyPage() {
 						qtyToProcess,
 					);
 					if (childPieces <= 0) continue;
+
+					const childRatio = Number((c as any).yieldWeightRatio || 0);
+					const childWeight = weightToProcess * childRatio;
+
 					leafRows.push({
 						id: c.childId,
 						name: c.childName,
 						pieces: childPieces,
+						weight: childWeight,
 						origin: intermediateOrigin,
 					});
 				}
@@ -1061,7 +1087,12 @@ export default function DisassemblyPage() {
 
 			const conflicts = new Map<
 				number,
-				{ name: string; origins: string[]; total: number }
+				{
+					name: string;
+					origins: string[];
+					totalPieces: number;
+					totalWeight: number;
+				}
 			>();
 			for (const row of leafRows) {
 				const prev = conflicts.get(row.id);
@@ -1069,7 +1100,8 @@ export default function DisassemblyPage() {
 					conflicts.set(row.id, {
 						name: row.name,
 						origins: [row.origin],
-						total: row.pieces,
+						totalPieces: row.pieces,
+						totalWeight: row.weight,
 					});
 					continue;
 				}
@@ -1079,7 +1111,8 @@ export default function DisassemblyPage() {
 				conflicts.set(row.id, {
 					name: prev.name,
 					origins,
-					total: prev.total + row.pieces,
+					totalPieces: prev.totalPieces + row.pieces,
+					totalWeight: prev.totalWeight + row.weight,
 				});
 			}
 
@@ -1109,6 +1142,7 @@ export default function DisassemblyPage() {
 				childId: r.child_product_id,
 				childName: r.childProduct?.name ?? "-",
 				yieldQuantityPieces: r.yield_quantity_pieces,
+				yieldWeightRatio: r.yield_weight_ratio,
 			}))
 			.filter((r) => r.childName !== "-");
 	}, [canalAmerican.data]);
@@ -1119,6 +1153,7 @@ export default function DisassemblyPage() {
 				childId: r.child_product_id,
 				childName: r.childProduct?.name ?? "-",
 				yieldQuantityPieces: r.yield_quantity_pieces,
+				yieldWeightRatio: r.yield_weight_ratio,
 			}))
 			.filter((r) => r.childName !== "-");
 	}, [canalNationalLomo.data]);
@@ -1129,6 +1164,7 @@ export default function DisassemblyPage() {
 				childId: r.child_product_id,
 				childName: r.childProduct?.name ?? "-",
 				yieldQuantityPieces: r.yield_quantity_pieces,
+				yieldWeightRatio: r.yield_weight_ratio,
 			}))
 			.filter((r) => r.childName !== "-");
 	}, [canalNationalEspilomo.data]);
@@ -1136,10 +1172,18 @@ export default function DisassemblyPage() {
 	const canalAmericanPreview = useMemo(() => {
 		if (!canalAmericanoProduct || mediasAmerican <= 0)
 			return { rows: [], conflicts: [] };
+
+		// Estimar peso proporcional si es CANAL_COMPLETO
+		const estimatedWeight =
+			purchaseCutStyle === "US" && purchaseWholePigs > 0
+				? (purchaseTotalWeightKg / (purchaseWholePigs * 2)) * mediasAmerican
+				: 0;
+
 		return buildTwoLevelPreview({
 			rootName: canalAmericanoProduct.name,
 			rootId: canalAmericanoProduct.id,
 			rootQty: mediasAmerican,
+			rootWeight: estimatedWeight || undefined,
 			rootStyle: "US",
 			level1: canalAmericanLevel1,
 		});
@@ -1148,15 +1192,25 @@ export default function DisassemblyPage() {
 		canalAmericanLevel1,
 		canalAmericanoProduct,
 		mediasAmerican,
+		purchaseCutStyle,
+		purchaseTotalWeightKg,
+		purchaseWholePigs,
 	]);
 
 	const canalNationalLomoPreview = useMemo(() => {
 		if (!canalNacionalLomoProduct || npLomoQty <= 0)
 			return { rows: [], conflicts: [] };
+
+		const estimatedWeight =
+			purchaseCutStyle === "MX" && purchaseWholePigs > 0
+				? (purchaseTotalWeightKg / (purchaseWholePigs * 2)) * npLomoQty
+				: 0;
+
 		return buildTwoLevelPreview({
 			rootName: canalNacionalLomoProduct.name,
 			rootId: canalNacionalLomoProduct.id,
 			rootQty: npLomoQty,
+			rootWeight: estimatedWeight || undefined,
 			rootStyle: "MX LOMO",
 			level1: canalNationalLomoLevel1,
 		});
@@ -1165,15 +1219,25 @@ export default function DisassemblyPage() {
 		canalNacionalLomoProduct,
 		canalNationalLomoLevel1,
 		npLomoQty,
+		purchaseCutStyle,
+		purchaseTotalWeightKg,
+		purchaseWholePigs,
 	]);
 
 	const canalNationalEspilomoPreview = useMemo(() => {
 		if (!canalNacionalEspilomoProduct || npEspilomoQty <= 0)
 			return { rows: [], conflicts: [] };
+
+		const estimatedWeight =
+			purchaseCutStyle === "MX" && purchaseWholePigs > 0
+				? (purchaseTotalWeightKg / (purchaseWholePigs * 2)) * npEspilomoQty
+				: 0;
+
 		return buildTwoLevelPreview({
 			rootName: canalNacionalEspilomoProduct.name,
 			rootId: canalNacionalEspilomoProduct.id,
 			rootQty: npEspilomoQty,
+			rootWeight: estimatedWeight || undefined,
 			rootStyle: "MX ESPILOMO",
 			level1: canalNationalEspilomoLevel1,
 		});
@@ -1182,6 +1246,9 @@ export default function DisassemblyPage() {
 		canalNacionalEspilomoProduct,
 		canalNationalEspilomoLevel1,
 		npEspilomoQty,
+		purchaseCutStyle,
+		purchaseTotalWeightKg,
+		purchaseWholePigs,
 	]);
 
 	const executeCanalBatch = async () => {
@@ -1450,13 +1517,20 @@ export default function DisassemblyPage() {
 						)}
 
 						<div className="flex gap-3">
-							<Input
-								type="text"
-								placeholder="Proveedor (opcional)"
-								value={purchaseSupplier}
-								onChange={(e) => setPurchaseSupplier(e.target.value)}
-								className="max-w-xs"
-							/>
+							<div className="max-w-xs">
+								<Input
+									type="text"
+									placeholder="Proveedor (opcional)"
+									value={purchaseSupplier}
+									onChange={(e) => setPurchaseSupplier(e.target.value)}
+									className="w-full"
+									list="proveedores-list"
+								/>
+								<datalist id="proveedores-list">
+									<option value="La Barca" />
+									<option value="Proveedor 2" />
+								</datalist>
+							</div>
 							<Input
 								type="text"
 								placeholder="Notas (opcional)"
@@ -1613,7 +1687,15 @@ export default function DisassemblyPage() {
 															<td className="p-3">{row.name}</td>
 															<td className="p-3">{row.pieces}</td>
 															<td className="p-3">
-																{realWeightMode ? "Pendiente de pesaje" : "-"}
+																{realWeightMode ? (
+																	<span className="text-muted-foreground italic">
+																		Pendiente
+																	</span>
+																) : (
+																	<span className="font-medium text-blue-600">
+																		{row.weight.toFixed(3)} kg
+																	</span>
+																)}
 															</td>
 															<td className="p-3 text-muted-foreground text-xs">
 																{row.origin}
@@ -1675,7 +1757,15 @@ export default function DisassemblyPage() {
 															<td className="p-3">{row.name}</td>
 															<td className="p-3">{row.pieces}</td>
 															<td className="p-3">
-																{realWeightMode ? "Pendiente de pesaje" : "-"}
+																{realWeightMode ? (
+																	<span className="text-muted-foreground italic">
+																		Pendiente
+																	</span>
+																) : (
+																	<span className="font-medium text-blue-600">
+																		{row.weight.toFixed(3)} kg
+																	</span>
+																)}
 															</td>
 															<td className="p-3 text-muted-foreground text-xs">
 																{row.origin}
@@ -1738,7 +1828,15 @@ export default function DisassemblyPage() {
 															<td className="p-3">{row.name}</td>
 															<td className="p-3">{row.pieces}</td>
 															<td className="p-3">
-																{realWeightMode ? "Pendiente de pesaje" : "-"}
+																{realWeightMode ? (
+																	<span className="text-muted-foreground italic">
+																		Pendiente
+																	</span>
+																) : (
+																	<span className="font-medium text-blue-600">
+																		{row.weight.toFixed(3)} kg
+																	</span>
+																)}
 															</td>
 															<td className="p-3 text-muted-foreground text-xs">
 																{row.origin}

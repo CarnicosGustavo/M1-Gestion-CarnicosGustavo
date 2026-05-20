@@ -12,12 +12,13 @@ import { useTRPC } from "@/lib/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "next-intl";
 import { formatCurrency } from "@/lib/utils";
+import { OrderDisassemblyManager } from "@/components/order-disassembly-manager";
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const orderId = parseInt(id);
   const trpc = useTRPC();
-  const { data: order, isLoading } = useQuery(trpc.orders.get.queryOptions({ id: orderId })) as { data: any; isLoading: boolean };
+  const { data: order, isLoading, refetch } = useQuery(trpc.orders.get.queryOptions({ id: orderId })) as { data: any; isLoading: boolean; refetch: any };
   const t = useTranslations("orders");
   const tc = useTranslations("common");
   const locale = useLocale();
@@ -88,6 +89,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </dl>
         </CardContent>
       </Card>
+
+      <OrderDisassemblyManager 
+        orderId={orderId} 
+        orderItems={order.orderItems || []} 
+        onSuccess={() => refetch()} 
+      />
 
       {order.orderItems && order.orderItems.length > 0 && (
         <Card>
