@@ -417,7 +417,6 @@ export const inventoryRouter = router({
 		)
 		.output(z.array(recipeSchema))
 		.query(async ({ ctx, input }) => {
-			const uid = ctx.user.id;
 			const parent = alias(products, "parent_products");
 			const child = alias(products, "child_products");
 
@@ -445,15 +444,10 @@ export const inventoryRouter = router({
 				.innerJoin(child, eq(child.id, productTransformations.child_product_id))
 				.where(
 					and(
-						eq(parent.user_uid, uid),
-						eq(child.user_uid, uid),
-						input?.parentProductId !== undefined
-							? eq(
-									productTransformations.parent_product_id,
-									input.parentProductId,
-								)
+						input?.parentProductId
+							? eq(productTransformations.parent_product_id, input.parentProductId)
 							: undefined,
-						input?.transformationType
+						input?.transformationType && input.transformationType !== "all"
 							? eq(
 									productTransformations.transformation_type,
 									input.transformationType,
@@ -464,16 +458,12 @@ export const inventoryRouter = router({
 							: eq(productTransformations.is_active, true),
 					),
 				)
-				.orderBy(
-					asc(parent.name),
-					asc(productTransformations.transformation_type),
-					asc(child.name),
-				);
+				.orderBy(asc(parent.name), asc(child.name));
 
 			return rows;
 		}),
 
-	recipesUpsert: almacenProcedure
+	recipesUpsert: adminProcedure
 		.input(
 			z.object({
 				id: z.number().optional(),
@@ -488,18 +478,13 @@ export const inventoryRouter = router({
 		)
 		.output(z.object({ success: z.boolean(), id: z.number() }))
 		.mutation(async ({ ctx, input }) => {
-			const uid = ctx.user.id;
-
+			// El admin puede modificar cualquier receta en el sistema.
+			// No filtramos por UID del admin para permitir gestionar el catálogo global.
 			return db.transaction(async (tx) => {
 				const [parentRow] = await tx
 					.select({ id: products.id })
 					.from(products)
-					.where(
-						and(
-							eq(products.id, input.parentProductId),
-							eq(products.user_uid, uid),
-						),
-					)
+					.where(eq(products.id, input.parentProductId))
 					.limit(1);
 				const [childRow] = await tx
 					.select({
@@ -507,12 +492,7 @@ export const inventoryRouter = router({
 						parent_product_id: products.parent_product_id,
 					})
 					.from(products)
-					.where(
-						and(
-							eq(products.id, input.childProductId),
-							eq(products.user_uid, uid),
-						),
-					)
+					.where(eq(products.id, input.childProductId))
 					.limit(1);
 
 				if (!parentRow || !childRow) {
@@ -615,26 +595,15 @@ export const inventoryRouter = router({
 			});
 		}),
 
-	recipesSetActive: almacenProcedure
+	recipesSetActive: adminProcedure
 		.input(z.object({ id: z.number(), isActive: z.boolean() }))
 		.output(z.object({ success: z.boolean() }))
 		.mutation(async ({ ctx, input }) => {
-			const uid = ctx.user.id;
-			const parent = alias(products, "parent_products_for_toggle");
-
+			// El admin puede activar/desactivar cualquier receta globalmente.
 			const [row] = await db
 				.select({ id: productTransformations.id })
 				.from(productTransformations)
-				.innerJoin(
-					parent,
-					eq(parent.id, productTransformations.parent_product_id),
-				)
-				.where(
-					and(
-						eq(productTransformations.id, input.id),
-						eq(parent.user_uid, uid),
-					),
-				)
+				.where(eq(productTransformations.id, input.id))
 				.limit(1);
 
 			if (!row) {

@@ -64,6 +64,7 @@ export default function DisassemblyPage() {
 	const [isClient, setIsClient] = useState(false);
 
 	const [purchaseWholePigs, setPurchaseWholePigs] = useState<number>(0);
+	const [purchasePricePerKg, setPurchasePricePerKg] = useState<number>(0);
 	const [purchaseCutStyle, setPurchaseCutStyle] = useState<"US" | "MX">("US");
 	const [purchaseTotalWeightKg, setPurchaseTotalWeightKg] = useState<number>(0);
 	const [purchaseSupplier, setPurchaseSupplier] = useState<string>("");
@@ -357,6 +358,7 @@ export default function DisassemblyPage() {
 
 	const resetPurchaseInputs = () => {
 		setPurchaseWholePigs(0);
+		setPurchasePricePerKg(0);
 		setPurchaseCutStyle("US");
 		setPurchaseTotalWeightKg(0);
 		setPurchaseSupplier("");
@@ -1455,6 +1457,28 @@ export default function DisassemblyPage() {
 									placeholder="Ej: 250.5"
 								/>
 							</div>
+
+							<div className="space-y-1">
+								<Label className="text-blue-900 text-sm">
+									Precio por Kilo ($)
+								</Label>
+								<Input
+									type="number"
+									min="0"
+									step="0.01"
+									value={purchasePricePerKg || ""}
+									onChange={(e) => {
+										const val = e.target.value;
+										setPurchasePricePerKg(
+											val === "" ? 0 : Math.max(0, Number.parseFloat(val) || 0),
+										);
+									}}
+									placeholder="Ej: 85.00"
+								/>
+								<div className="text-[10px] text-muted-foreground">
+									Se actualizará el costo del canal para estimar precios de piezas.
+								</div>
+							</div>
 						</div>
 
 						{purchaseWholePigs > 0 ? (
@@ -1491,6 +1515,7 @@ export default function DisassemblyPage() {
 											qtyNacionalLomo: 0,
 											qtyNacionalEspilomo: 0,
 											totalWeightKg: purchaseTotalWeightKg,
+											pricePerKg: purchasePricePerKg > 0 ? purchasePricePerKg : undefined,
 											supplier: purchaseSupplier || undefined,
 											notes: purchaseNotes || undefined,
 										});

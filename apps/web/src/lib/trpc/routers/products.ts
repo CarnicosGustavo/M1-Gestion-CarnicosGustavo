@@ -696,12 +696,7 @@ export const productsRouter = router({
 					const [parent] = await tx
 						.select()
 						.from(products)
-						.where(
-							and(
-								eq(products.id, args.parentProductId),
-								eq(products.user_uid, uid),
-							),
-						)
+						.where(eq(products.id, args.parentProductId))
 						.limit(1);
 
 					if (!parent) {
@@ -813,12 +808,7 @@ export const productsRouter = router({
 						const [child] = await tx
 							.select()
 							.from(products)
-							.where(
-								and(
-									eq(products.id, recipe.child_product_id),
-									eq(products.user_uid, uid),
-								),
-							)
+							.where(eq(products.id, recipe.child_product_id))
 							.limit(1);
 
 						if (!child) continue;
@@ -859,12 +849,7 @@ export const productsRouter = router({
 						const recorteCandidates = await tx
 							.select()
 							.from(products)
-							.where(
-								and(
-									eq(products.user_uid, uid),
-									sql`LOWER(${products.name}) LIKE '%recorte%'`,
-								),
-							);
+							.where(sql`LOWER(${products.name}) LIKE '%recorte%'`);
 
 						const normalizeName = (name: string) =>
 							name
@@ -1253,6 +1238,7 @@ export const productsRouter = router({
 				qtyNacionalLomo: z.number().int().min(0).optional().default(0),
 				qtyNacionalEspilomo: z.number().int().min(0).optional().default(0),
 				totalWeightKg: z.number().positive("Debe ser mayor a 0"),
+				pricePerKg: z.number().optional(),
 				supplier: z.string().optional(),
 				notes: z.string().optional(),
 			}),
@@ -1369,7 +1355,10 @@ export const productsRouter = router({
 					newKg: string;
 				}> = [];
 
-				const apply = async (product: (typeof canalCandidates)[number], pieces: number) => {
+				const apply = async (
+					product: (typeof canalCandidates)[number],
+					pieces: number,
+				) => {
 					if (pieces <= 0) return;
 					const currentStock = Number(product.stock_pieces);
 					const currentKg = Number(product.stock_kg);
@@ -1377,12 +1366,18 @@ export const productsRouter = router({
 					const newStock = currentStock + pieces;
 					const newKg = currentKg + addKg;
 
+					const updateData: Partial<typeof products.$inferInsert> = {
+						stock_pieces: newStock,
+						stock_kg: newKg.toFixed(3),
+					};
+
+					if (input.pricePerKg && input.pricePerKg > 0) {
+						updateData.price_per_kg = input.pricePerKg.toFixed(2);
+					}
+
 					await tx
 						.update(products)
-						.set({
-							stock_pieces: newStock,
-							stock_kg: newKg.toFixed(3),
-						})
+						.set(updateData)
 						.where(eq(products.id, product.id));
 
 					await tx.insert(inventoryTransactions).values({
@@ -1534,9 +1529,7 @@ export const productsRouter = router({
 					id: products.id,
 				})
 				.from(products)
-				.where(
-					and(eq(products.user_uid, uid), sql`${products.stock_pieces} > 0`),
-				);
+				.where(sql`${products.stock_pieces} > 0`);
 
 			if (!stocked.length) return [];
 
@@ -1576,7 +1569,6 @@ export const productsRouter = router({
 					and(
 						inArray(productTransformations.parent_product_id, parentIds),
 						eq(productTransformations.is_active, true),
-						eq(child.user_uid, uid),
 					),
 				);
 
