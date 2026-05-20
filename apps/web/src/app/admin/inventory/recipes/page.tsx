@@ -41,6 +41,8 @@ import { toast } from "sonner";
 import { z } from "zod/v4";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
+import { formatCurrency } from "@/lib/utils";
+import { useLocale } from "next-intl";
 
 type Recipe = RouterOutputs["inventory"]["recipesList"][number];
 type Product = RouterOutputs["products"]["list"][number];
@@ -49,6 +51,7 @@ export default function RecipesPage() {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
 	const tc = useTranslations("common");
+	const locale = useLocale();
 
 	const [viewMode, setViewMode] = useState<"table" | "map">("table");
 	const [search, setSearch] = useState("");
