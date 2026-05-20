@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
 import { orders, orderItems, customers, products } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 
 export const ticketsRouter = router({
   generateTicket: protectedProcedure
@@ -27,7 +27,7 @@ export const ticketsRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const order = await db.query.orders.findFirst({
-        where: and(eq(orders.id, input.orderId), eq(orders.user_uid, ctx.user.id)),
+        where: and(eq(orders.id, input.orderId), or(eq(orders.user_uid, ctx.user.id), eq(orders.user_uid, "system"))),
         with: {
           customer: true,
           orderItems: true,

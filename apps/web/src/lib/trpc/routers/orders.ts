@@ -11,7 +11,7 @@ import {
 	inventoryTransactions,
 	purchaseOrders,
 } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { alias } from "drizzle-orm/pg-core";
 
@@ -124,7 +124,10 @@ export const ordersRouter = router({
 		.output(orderDetailSchema.nullable())
 		.query(async ({ ctx, input }) => {
 			const result = await db.query.orders.findFirst({
-				where: and(eq(orders.id, input.id), eq(orders.user_uid, ctx.user.id)),
+				where: and(
+					eq(orders.id, input.id),
+					or(eq(orders.user_uid, ctx.user.id), eq(orders.user_uid, "system"))
+				),
 				with: {
 					customer: { columns: { name: true } },
 					orderItems: {
@@ -164,7 +167,7 @@ export const ordersRouter = router({
 		.output(z.array(orderWithCustomerSchema))
 		.query(async ({ ctx }) => {
 			return db.query.orders.findMany({
-				where: eq(orders.user_uid, ctx.user.id),
+				where: or(eq(orders.user_uid, ctx.user.id), eq(orders.user_uid, "system")),
 				with: {
 					customer: {
 						columns: { name: true },
@@ -187,7 +190,7 @@ export const ordersRouter = router({
 		.query(async ({ ctx }) => {
 			const results = await db.query.orders.findMany({
 				where: and(
-					eq(orders.user_uid, ctx.user.id),
+					or(eq(orders.user_uid, ctx.user.id), eq(orders.user_uid, "system")),
 					eq(orders.requires_weighing, true),
 				),
 				with: {
@@ -238,7 +241,7 @@ export const ordersRouter = router({
 			const uid = ctx.user.id;
 
 			const order = await db.query.orders.findFirst({
-				where: and(eq(orders.id, input.orderId), eq(orders.user_uid, uid)),
+				where: and(eq(orders.id, input.orderId), or(eq(orders.user_uid, uid), eq(orders.user_uid, "system"))),
 				with: {
 					orderItems: {
 						with: {
@@ -1347,7 +1350,7 @@ export const ordersRouter = router({
 					.where(
 						and(
 							eq(orders.id, input.orderId),
-							eq(orders.user_uid, ctx.user.id),
+							or(eq(orders.user_uid, ctx.user.id), eq(orders.user_uid, "system")),
 							eq(orders.status, "LISTA_PARA_COBRO"),
 						),
 					)
@@ -1479,7 +1482,7 @@ export const ordersRouter = router({
 			const [updated] = await db
 				.update(orders)
 				.set(updateData)
-				.where(and(eq(orders.id, id), eq(orders.user_uid, ctx.user.id)))
+				.where(and(eq(orders.id, id), or(eq(orders.user_uid, ctx.user.id), eq(orders.user_uid, "system"))))
 				.returning();
 
 			const customer = updated?.customer_id
@@ -1509,7 +1512,7 @@ export const ordersRouter = router({
 				await tx
 					.delete(orders)
 					.where(
-						and(eq(orders.id, input.id), eq(orders.user_uid, ctx.user.id)),
+						and(eq(orders.id, input.id), or(eq(orders.user_uid, ctx.user.id), eq(orders.user_uid, "system"))),
 					);
 			});
 			return { success: true };
