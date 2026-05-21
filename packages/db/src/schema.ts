@@ -503,7 +503,7 @@ export const orderRelations = relations(orders, ({ one, many }) => ({
 		fields: [orders.customer_id],
 		references: [customers.id],
 	}),
-	items: many(orderItems),
+	orderItems: many(orderItems),
 	webOrder: one(webOrders, {
 		fields: [orders.web_order_id],
 		references: [webOrders.id],
