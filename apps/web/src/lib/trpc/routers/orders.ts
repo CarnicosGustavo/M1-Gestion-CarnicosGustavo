@@ -185,7 +185,7 @@ export const ordersRouter = router({
 				summary: "Get orders pending weighing",
 			},
 		})
-		.input(z.any().optional())
+		.input(z.object({}).strict())
 		.output(z.array(orderDetailSchema))
 		.query(async ({ ctx }) => {
 			const results = await db.query.orders.findMany({
