@@ -252,7 +252,6 @@ export const orderItems = pgTable("order_items", {
 		.notNull()
 		.references(() => orders.id),
 	product_id: integer("product_id")
-		.notNull()
 		.references(() => products.id),
 	product_name: varchar("product_name", { length: 255 }).notNull(),
 	quantity: integer("quantity"),
