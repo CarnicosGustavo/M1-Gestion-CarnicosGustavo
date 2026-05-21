@@ -9,6 +9,7 @@ import {
 	TrashIcon,
 	EyeIcon,
 	ShoppingCartIcon,
+	PrinterIcon,
 } from "lucide-react";
 import { Button } from "@finopenpos/ui/components/button";
 import {
@@ -58,6 +59,7 @@ import type { RouterOutputs } from "@/lib/trpc/router";
 import { useTranslations, useLocale } from "next-intl";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
+import { TicketModal } from "@/components/ticket-modal";
 
 type Order = RouterOutputs["orders"]["list"][number];
 type OrderStatus = "completed" | "pending" | "cancelled";
@@ -193,6 +195,8 @@ export default function OrdersPage() {
 	const [searchTerm, setSearchTerm] = useState("");
 	const [statusFilter, setStatusFilter] = useState("all");
 	const [editCustomerName, setEditCustomerName] = useState("");
+
+	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
 
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [draftCustomer, setDraftCustomer] = useState<CustomerRow | null>(null);
@@ -475,6 +479,18 @@ export default function OrdersPage() {
 					icon={<TrashIcon className="w-4 h-4" />}
 					label={tc("delete")}
 				/>
+				<Button
+					size="icon"
+					variant="ghost"
+					onClick={(e) => {
+						e.stopPropagation();
+						setTicketOrderId(row.id);
+					}}
+					title="Imprimir Ticket"
+				>
+					<PrinterIcon className="w-4 h-4" />
+					<span className="sr-only">Imprimir Ticket</span>
+				</Button>
 				<Link
 					href={`/admin/orders/${row.id}`}
 					prefetch={false}
@@ -655,6 +671,14 @@ export default function OrdersPage() {
 				onConfirm={handleDelete}
 				description={t("deleteMessage")}
 			/>
+
+			{ticketOrderId !== null && (
+				<TicketModal
+					orderId={ticketOrderId}
+					open={ticketOrderId !== null}
+					onClose={() => setTicketOrderId(null)}
+				/>
+			)}
 
 			<Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
 				<DialogContent className="max-w-3xl">
