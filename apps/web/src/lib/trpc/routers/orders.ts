@@ -177,14 +177,7 @@ export const ordersRouter = router({
 		}),
 
 	getPendingWeighingOrders: protectedProcedure
-		.meta({
-			openapi: {
-				method: "GET",
-				path: "/orders/pending-weighing",
-				tags: ["Orders"],
-				summary: "Get orders pending weighing",
-			},
-		})
+		.input(z.void())
 		.output(z.array(orderDetailSchema))
 		.query(async ({ ctx }) => {
 			const results = await db.query.orders.findMany({
