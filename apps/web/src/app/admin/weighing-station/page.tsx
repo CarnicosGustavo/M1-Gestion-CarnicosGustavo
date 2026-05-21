@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
@@ -15,6 +15,8 @@ import {
 	ChevronRightIcon,
 	MessageSquareIcon,
 	PackageIcon,
+	ChevronLeftIcon,
+	ChevronRight,
 } from "lucide-react";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
@@ -42,6 +44,22 @@ import {
 	SelectValue,
 } from "@finopenpos/ui/components/select";
 import { Combobox } from "@finopenpos/ui/components/combobox";
+import { cn } from "@finopenpos/ui/lib/utils";
+
+// ---------------------------------------------------------------------------
+// Contenedores / Tara predefinida
+// ---------------------------------------------------------------------------
+const CONTAINERS = [
+	{ id: "ninguno",    label: "Sin recipiente", tare: 0 },
+	{ id: "tambo_azul", label: "Tambo Azul",     tare: 2.5 },
+	{ id: "tara",       label: "Tara",            tare: 1.2 },
+	{ id: "cubeta",     label: "Cubeta",          tare: 0.9 },
+	{ id: "otro",       label: "Otro",            tare: null },
+] as const;
+
+type ContainerId = (typeof CONTAINERS)[number]["id"];
+
+// ---------------------------------------------------------------------------
 
 export default function WeighingStationPage() {
 	const trpc = useTRPC();
@@ -50,56 +68,92 @@ export default function WeighingStationPage() {
 	const tc = useTranslations("common");
 	const locale = useLocale();
 
+	// Orden seleccionada
 	const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
-	const [actualWeight, setActualWeight] = useState<string>("");
+	// Índice del artículo actual dentro de los pendientes
+	const [currentItemIndex, setCurrentItemIndex] = useState(0);
 
+	// Peso bruto ingresado
+	const [actualWeight, setActualWeight] = useState("");
+
+	// Contenedor / Tara
+	const [containerId, setContainerId] = useState<ContainerId>("ninguno");
+	const [customTare, setCustomTare] = useState("0.000");
+
+	// Diálogo de pesaje por lote
 	const [batchOpen, setBatchOpen] = useState(false);
 	const [batchProductId, setBatchProductId] = useState<number | null>(null);
-	const [batchPieces, setBatchPieces] = useState<string>("");
-	const [batchWeightKg, setBatchWeightKg] = useState<string>("");
+	const [batchPieces, setBatchPieces] = useState("");
+	const [batchWeightKg, setBatchWeightKg] = useState("");
 	const [batchApplyToInventory, setBatchApplyToInventory] = useState(true);
 
+	// ---------------------------------------------------------------------------
+	// Queries
+	// ---------------------------------------------------------------------------
 	const {
 		data: orders = [],
 		isLoading: isLoadingOrders,
 		refetch: refetchOrders,
 	} = useQuery(trpc.orders.getPendingWeighingOrders.queryOptions());
+
 	const { data: products = [] } = useQuery(trpc.products.list.queryOptions());
 
-	const batchProduct = useMemo(
-		() => products.find((p) => p.id === batchProductId) ?? null,
-		[products, batchProductId],
-	);
-	const batchPendingPieces = useMemo(() => {
-		if (!batchProduct) return null;
-		return Math.max(0, batchProduct.stock_pieces - batchProduct.weighed_pieces);
-	}, [batchProduct]);
-
+	// ---------------------------------------------------------------------------
+	// Derivados de orden / artículo
+	// ---------------------------------------------------------------------------
 	const selectedOrder = useMemo(
 		() => orders.find((o) => o.id === selectedOrderId),
 		[orders, selectedOrderId],
 	);
 
-	const nextItem = useMemo(
+	const pendingItems = useMemo(
 		() =>
-			selectedOrder?.orderItems?.find(
+			selectedOrder?.orderItems?.filter(
 				(item) => item.status === "PENDIENTE_PESAJE",
-			),
+			) ?? [],
 		[selectedOrder],
 	);
 
-	// Si la orden seleccionada ya no tiene items pendientes, deseleccionarla
-	useEffect(() => {
-		if (selectedOrderId && !nextItem && !isLoadingOrders) {
-			setSelectedOrderId(null);
-		}
-	}, [nextItem, selectedOrderId, isLoadingOrders]);
+	const clampedIndex = Math.min(currentItemIndex, Math.max(0, pendingItems.length - 1));
+	const currentItem = pendingItems[clampedIndex] ?? null;
 
+	// Deseleccionar orden cuando ya no queden artículos pendientes
+	useEffect(() => {
+		if (selectedOrderId && pendingItems.length === 0 && !isLoadingOrders) {
+			setSelectedOrderId(null);
+			setCurrentItemIndex(0);
+		}
+	}, [pendingItems.length, selectedOrderId, isLoadingOrders]);
+
+	// Resetear índice al cambiar de orden
+	useEffect(() => {
+		setCurrentItemIndex(0);
+		setActualWeight("");
+	}, [selectedOrderId]);
+
+	// ---------------------------------------------------------------------------
+	// Cálculo de tara / neto
+	// ---------------------------------------------------------------------------
+	const containerDef = CONTAINERS.find((c) => c.id === containerId)!;
+	const tareKg =
+		containerId === "otro"
+			? parseFloat(customTare) || 0
+			: (containerDef.tare ?? 0);
+
+	const grossKg = parseFloat(actualWeight) || 0;
+	const netKg = Math.max(0, grossKg - tareKg);
+	const hasValidWeight = netKg > 0;
+
+	// ---------------------------------------------------------------------------
+	// Mutations
+	// ---------------------------------------------------------------------------
 	const updateWeightMutation = useMutation(
 		trpc.orders.updateOrderItemWeight.mutationOptions({
 			onSuccess: () => {
 				toast.success(t("weighed"));
 				setActualWeight("");
+				// Avanzar al siguiente artículo (el índice sigue igual; el item pesado
+				// desaparece de pendingItems, así el mismo índice apunta al siguiente)
 				refetchOrders();
 			},
 			onError: (error) => {
@@ -117,15 +171,9 @@ export default function WeighingStationPage() {
 				setBatchWeightKg("");
 				setBatchApplyToInventory(true);
 				setBatchOpen(false);
-				queryClient.invalidateQueries({
-					queryKey: trpc.products.list.queryKey(),
-				});
-				queryClient.invalidateQueries({
-					queryKey: trpc.products.disassemblyDashboard.queryKey(),
-				});
-				queryClient.invalidateQueries({
-					queryKey: trpc.inventory.status.queryKey(),
-				});
+				queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
+				queryClient.invalidateQueries({ queryKey: trpc.products.disassemblyDashboard.queryKey() });
+				queryClient.invalidateQueries({ queryKey: trpc.inventory.status.queryKey() });
 			},
 			onError: (error) => {
 				toast.error(error.message);
@@ -133,31 +181,53 @@ export default function WeighingStationPage() {
 		}),
 	);
 
-	const handleRegisterWeight = () => {
-		if (!nextItem || !actualWeight || parseFloat(actualWeight) <= 0) return;
+	// ---------------------------------------------------------------------------
+	// Handlers
+	// ---------------------------------------------------------------------------
+	const handleRegisterWeight = useCallback(() => {
+		if (!currentItem || !hasValidWeight) return;
 		updateWeightMutation.mutate({
-			orderItemId: nextItem.id,
-			actualWeightKg: Math.round(parseFloat(actualWeight) * 1000),
+			orderItemId: currentItem.id,
+			actualWeightKg: Math.round(netKg * 1000),
 		});
+	}, [currentItem, hasValidWeight, netKg, updateWeightMutation]);
+
+	const handleTare = () => {
+		setActualWeight("");
 	};
+
+	const handlePrevItem = () => {
+		setCurrentItemIndex((i) => Math.max(0, i - 1));
+		setActualWeight("");
+	};
+
+	const handleNextItem = () => {
+		setCurrentItemIndex((i) => Math.min(i + 1, pendingItems.length - 1));
+		setActualWeight("");
+	};
+
+	const batchProduct = useMemo(
+		() => products.find((p) => p.id === batchProductId) ?? null,
+		[products, batchProductId],
+	);
+	const batchPendingPieces = useMemo(() => {
+		if (!batchProduct) return null;
+		return Math.max(0, batchProduct.stock_pieces - batchProduct.weighed_pieces);
+	}, [batchProduct]);
 
 	const handleRegisterBatch = () => {
 		if (!batchProductId) return;
 		const weight = Number.parseFloat(batchWeightKg);
-		const pieces =
-			batchPieces.trim() === "" ? 0 : Number.parseInt(batchPieces, 10) || 0;
+		const pieces = batchPieces.trim() === "" ? 0 : Number.parseInt(batchPieces, 10) || 0;
 		if (!Number.isFinite(weight) || weight <= 0) return;
 		if (
 			batchApplyToInventory &&
 			batchPendingPieces !== null &&
 			pieces > batchPendingPieces
 		) {
-			toast.error(
-				`Piezas a pesar exceden pendientes (${pieces} > ${batchPendingPieces})`,
-			);
+			toast.error(`Piezas a pesar exceden pendientes (${pieces} > ${batchPendingPieces})`);
 			return;
 		}
-
 		recordBatchMutation.mutate({
 			productId: batchProductId,
 			piecesWeighed: Math.max(0, pieces),
@@ -166,6 +236,9 @@ export default function WeighingStationPage() {
 		});
 	};
 
+	// ---------------------------------------------------------------------------
+	// Render
+	// ---------------------------------------------------------------------------
 	if (isLoadingOrders) {
 		return <Skeleton className="h-[600px] w-full" />;
 	}
@@ -180,7 +253,9 @@ export default function WeighingStationPage() {
 			</div>
 
 			<div className="grid h-[calc(100vh-160px)] grid-cols-1 gap-6 lg:grid-cols-3">
-				{/* Sidebar: Pendientes */}
+				{/* ----------------------------------------------------------------- */}
+				{/* Sidebar: Lista de órdenes pendientes                              */}
+				{/* ----------------------------------------------------------------- */}
 				<Card className="flex flex-col overflow-hidden lg:col-span-1">
 					<CardHeader className="bg-muted/50 border-b">
 						<CardTitle className="flex items-center gap-2">
@@ -204,13 +279,14 @@ export default function WeighingStationPage() {
 									<button
 										key={order.id}
 										onClick={() => setSelectedOrderId(order.id)}
-										className={`w-full text-left p-4 hover:bg-accent transition-colors flex items-center justify-between group ${
-											selectedOrderId === order.id ? "bg-accent" : ""
-										}`}
+										className={cn(
+											"w-full text-left p-4 hover:bg-accent transition-colors flex items-center justify-between group",
+											selectedOrderId === order.id && "bg-accent",
+										)}
 									>
 										<div className="space-y-1">
 											<div className="font-medium flex items-center gap-2">
-												#{order.id} -{" "}
+												#{order.id} –{" "}
 												{order.customer?.name || "Consumidor Final"}
 												{order.whatsapp_message_id && (
 													<Badge
@@ -223,16 +299,16 @@ export default function WeighingStationPage() {
 												)}
 											</div>
 											<div className="text-xs text-muted-foreground">
-												{order.orderItems.length} {t("items").toLowerCase()}{" "}
-												{t("pendingWeight").toLowerCase()}
+												{order.orderItems.length} artículo(s) pendiente(s)
 											</div>
 										</div>
 										<ChevronRightIcon
-											className={`w-5 h-5 text-muted-foreground transition-transform ${
+											className={cn(
+												"w-5 h-5 text-muted-foreground transition-transform",
 												selectedOrderId === order.id
 													? "translate-x-1"
-													: "opacity-0 group-hover:opacity-100"
-											}`}
+													: "opacity-0 group-hover:opacity-100",
+											)}
 										/>
 									</button>
 								))}
@@ -241,100 +317,242 @@ export default function WeighingStationPage() {
 					</CardContent>
 				</Card>
 
-				{/* Main: Captura de Peso */}
+				{/* ----------------------------------------------------------------- */}
+				{/* Panel principal: captura de peso                                  */}
+				{/* ----------------------------------------------------------------- */}
 				<Card className="flex flex-col overflow-hidden lg:col-span-2">
-					{selectedOrder && nextItem ? (
+					{selectedOrder && currentItem ? (
 						<>
-							<CardHeader className="border-b">
+							{/* Encabezado de orden */}
+							<CardHeader className="border-b py-3 px-6">
 								<div className="flex items-center justify-between">
-									<div className="space-y-1">
-										<CardTitle>
+									<div className="space-y-0.5">
+										<CardTitle className="text-lg">
 											{selectedOrder.customer?.name || "Consumidor Final"}
 										</CardTitle>
-										<CardDescription>
-											{t("orderId")}: #{selectedOrder.id}
-										</CardDescription>
+										<CardDescription>Pedido #{selectedOrder.id}</CardDescription>
 									</div>
 									<div className="text-right">
-										<div className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+										<div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
 											{tc("total")}
 										</div>
-										<div className="text-2xl font-bold">
+										<div className="text-xl font-bold">
 											{formatCurrency(selectedOrder.total_amount, locale)}
 										</div>
 									</div>
 								</div>
 							</CardHeader>
-							<CardContent className="flex-1 flex flex-col items-center justify-center p-12 space-y-12 text-center">
-								<div className="space-y-4">
-									<div className="text-sm font-medium text-primary uppercase tracking-widest">
-										{t("nextItem")}
-									</div>
-									<h2 className="text-5xl font-extrabold tracking-tight">
-										{nextItem.quantity_pieces} {nextItem.product?.name}
-									</h2>
-									<p className="text-muted-foreground text-lg">
-										{nextItem.product?.category}
+
+							<CardContent className="flex-1 flex flex-col p-6 gap-5 overflow-y-auto">
+								{/* Artículo actual -------------------------------------------------- */}
+								<div className="text-center space-y-1">
+									<p className="text-xs font-semibold text-primary uppercase tracking-widest">
+										Siguiente artículo
 									</p>
+									<h2 className="text-4xl font-extrabold tracking-tight">
+										{currentItem.quantity_pieces}&nbsp;{currentItem.product?.name ?? currentItem.product_name}
+									</h2>
+									{currentItem.product?.category && (
+										<p className="text-muted-foreground text-sm">
+											{currentItem.product.category}
+										</p>
+									)}
 								</div>
 
-								<div className="w-full max-w-sm space-y-4">
-									<div className="space-y-2">
-										<Label htmlFor="weight" className="text-xl font-semibold">
-											{t("actualWeight")}
-										</Label>
-										<div className="relative">
+								{/* Selector de recipiente ----------------------------------------- */}
+								<div className="space-y-2">
+									<Label className="text-sm font-semibold">Recipiente</Label>
+									<div className="flex flex-wrap gap-2">
+										{CONTAINERS.map((c) => (
+											<button
+												key={c.id}
+												type="button"
+												onClick={() => {
+													setContainerId(c.id);
+													if (c.id !== "otro") setActualWeight("");
+												}}
+												className={cn(
+													"px-4 py-2 rounded-xl border text-sm font-medium transition-all",
+													containerId === c.id
+														? "bg-primary text-primary-foreground border-primary shadow"
+														: "bg-muted/40 hover:bg-muted border-border",
+												)}
+											>
+												{c.label}
+												{c.tare !== null && c.tare > 0 && (
+													<span className="ml-1 opacity-60 text-xs">
+														({c.tare.toFixed(3)} kg)
+													</span>
+												)}
+											</button>
+										))}
+									</div>
+
+									{/* Input de tara personalizada */}
+									{containerId === "otro" && (
+										<div className="flex items-center gap-2 mt-1">
+											<Label className="text-xs text-muted-foreground whitespace-nowrap">
+												Peso del recipiente (kg)
+											</Label>
 											<Input
-												id="weight"
 												type="number"
 												step="0.001"
-												autoFocus
-												value={actualWeight}
-												onChange={(e) => setActualWeight(e.target.value)}
-												onKeyDown={(e) =>
-													e.key === "Enter" && handleRegisterWeight()
-												}
-												className="text-6xl h-32 text-center font-mono font-bold rounded-2xl border-4 focus-visible:ring-offset-4"
+												min="0"
+												value={customTare}
+												onChange={(e) => setCustomTare(e.target.value)}
+												onFocus={(e) => e.currentTarget.select()}
+												className="w-32 text-center font-mono"
 												placeholder="0.000"
 											/>
-											<div className="absolute right-6 top-1/2 -translate-y-1/2 text-4xl font-bold text-muted-foreground pointer-events-none">
-												kg
-											</div>
+										</div>
+									)}
+
+									{/* Tara activa (solo informativo, para contenedores predefinidos) */}
+									{containerId !== "ninguno" && containerId !== "otro" && (
+										<div className="flex items-center gap-2 mt-1">
+											<Label className="text-xs text-muted-foreground whitespace-nowrap">
+												Peso del recipiente (kg)
+											</Label>
+											<Input
+												type="number"
+												step="0.001"
+												min="0"
+												value={tareKg.toFixed(3)}
+												onChange={(e) => {
+													// Permite ajustar manualmente aunque sea contenedor predefinido
+													setContainerId("otro");
+													setCustomTare(e.target.value);
+												}}
+												onFocus={(e) => e.currentTarget.select()}
+												className="w-32 text-center font-mono"
+											/>
+											<span className="text-xs text-muted-foreground">
+												(editable)
+											</span>
+										</div>
+									)}
+								</div>
+
+								{/* Input de peso bruto -------------------------------------------- */}
+								<div className="space-y-2">
+									<div className="flex items-center justify-between">
+										<Label htmlFor="weight" className="text-sm font-semibold">
+											Peso bruto (kg)
+										</Label>
+										<button
+											type="button"
+											onClick={handleTare}
+											className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-lg border border-border bg-muted hover:bg-muted/80 transition-colors"
+											title="Limpiar / poner en cero (TARE)"
+										>
+											TARE
+										</button>
+									</div>
+									<div className="relative">
+										<Input
+											id="weight"
+											type="number"
+											step="0.001"
+											min="0"
+											autoFocus
+											value={actualWeight}
+											onChange={(e) => setActualWeight(e.target.value)}
+											onKeyDown={(e) => {
+												if (e.key === "Enter") handleRegisterWeight();
+											}}
+											onFocus={(e) => e.currentTarget.select()}
+											className="text-5xl h-24 text-center font-mono font-bold rounded-2xl border-2 focus-visible:ring-offset-2 pr-20"
+											placeholder="0.000"
+										/>
+										<div className="absolute right-5 top-1/2 -translate-y-1/2 text-3xl font-bold text-muted-foreground pointer-events-none">
+											kg
 										</div>
 									</div>
+								</div>
+
+								{/* Resumen bruto / tara / neto ------------------------------------ */}
+								{(containerId !== "ninguno" || grossKg > 0) && (
+									<div className="rounded-2xl border bg-muted/30 px-5 py-3 space-y-1 text-sm">
+										<div className="flex justify-between text-muted-foreground">
+											<span>Peso bruto</span>
+											<span className="font-mono">{grossKg.toFixed(3)} kg</span>
+										</div>
+										{tareKg > 0 && (
+											<div className="flex justify-between text-muted-foreground">
+												<span>(–) Tara ({containerDef.label})</span>
+												<span className="font-mono">–{tareKg.toFixed(3)} kg</span>
+											</div>
+										)}
+										<div className="flex justify-between font-bold text-base border-t pt-1 mt-1">
+											<span>= Peso neto</span>
+											<span
+												className={cn(
+													"font-mono",
+													netKg > 0 ? "text-green-600" : "text-muted-foreground",
+												)}
+											>
+												{netKg.toFixed(3)} kg
+											</span>
+										</div>
+									</div>
+								)}
+
+								{/* Botones de acción ---------------------------------------------- */}
+								<div className="flex gap-3 mt-auto">
+									<Button
+										variant="outline"
+										size="lg"
+										className="h-16 flex-1 text-base font-semibold rounded-2xl"
+										onClick={handlePrevItem}
+										disabled={clampedIndex === 0}
+									>
+										<ChevronLeftIcon className="w-5 h-5 mr-2" />
+										Anterior
+									</Button>
 
 									<Button
 										size="lg"
-										className="w-full h-20 text-2xl font-bold rounded-2xl shadow-lg hover:shadow-xl transition-all"
+										className="h-16 flex-[3] text-lg font-bold rounded-2xl shadow-lg hover:shadow-xl transition-all"
 										onClick={handleRegisterWeight}
 										disabled={
-											updateWeightMutation.isPending ||
-											!actualWeight ||
-											parseFloat(actualWeight) <= 0
+											updateWeightMutation.isPending || !hasValidWeight
 										}
 									>
 										{updateWeightMutation.isPending ? (
 											tc("loading")
 										) : (
 											<>
-												<ScaleIcon className="w-8 h-8 mr-3" />
-												{t("registerWeight")}
+												<ScaleIcon className="w-6 h-6 mr-2" />
+												Registrar {netKg > 0 ? `${netKg.toFixed(3)} kg` : "peso"}
 											</>
 										)}
 									</Button>
+
+									<Button
+										variant="outline"
+										size="lg"
+										className="h-16 flex-1 text-base font-semibold rounded-2xl"
+										onClick={handleNextItem}
+										disabled={clampedIndex >= pendingItems.length - 1}
+									>
+										Siguiente
+										<ChevronRight className="w-5 h-5 ml-2" />
+									</Button>
 								</div>
 
-								<div className="flex gap-2">
-									{selectedOrder.orderItems.map((item, i) => (
+								{/* Dots de progreso ---------------------------------------------- */}
+								<div className="flex justify-center gap-2">
+									{selectedOrder.orderItems.map((item) => (
 										<div
 											key={item.id}
-											className={`w-3 h-3 rounded-full ${
-												item.id === nextItem.id
-													? "bg-primary animate-pulse"
+											className={cn(
+												"w-3 h-3 rounded-full transition-all",
+												item.id === currentItem.id
+													? "bg-primary scale-125"
 													: item.status === "PESADO"
 														? "bg-green-500"
-														: "bg-muted"
-											}`}
+														: "bg-muted",
+											)}
 										/>
 									))}
 								</div>
@@ -355,14 +573,15 @@ export default function WeighingStationPage() {
 				</Card>
 			</div>
 
+			{/* ------------------------------------------------------------------- */}
+			{/* Diálogo de pesaje por lote                                          */}
+			{/* ------------------------------------------------------------------- */}
 			<Dialog open={batchOpen} onOpenChange={setBatchOpen}>
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Pesaje de producción</DialogTitle>
 						<DialogDescription>
 							Registra el peso total de un lote (X piezas) de un producto.
-							Puedes sumar el peso al inventario o solo registrarlo para
-							despacho.
 						</DialogDescription>
 					</DialogHeader>
 
@@ -376,28 +595,22 @@ export default function WeighingStationPage() {
 							/>
 						</div>
 
-							{batchProduct && (
-								<div className="rounded-md border bg-muted/30 p-3 text-sm">
-									<div className="flex items-center justify-between">
-										<span className="text-muted-foreground">En stock</span>
-										<span className="font-medium">
-											{batchProduct.stock_pieces} piezas
-										</span>
-									</div>
-									<div className="flex items-center justify-between">
-										<span className="text-muted-foreground">Ya pesadas</span>
-										<span className="font-medium">
-											{batchProduct.weighed_pieces} piezas
-										</span>
-									</div>
-									<div className="flex items-center justify-between">
-										<span className="text-muted-foreground">Pendientes</span>
-										<span className="font-medium">
-											{batchPendingPieces ?? 0} piezas
-										</span>
-									</div>
+						{batchProduct && (
+							<div className="rounded-md border bg-muted/30 p-3 text-sm">
+								<div className="flex items-center justify-between">
+									<span className="text-muted-foreground">En stock</span>
+									<span className="font-medium">{batchProduct.stock_pieces} piezas</span>
 								</div>
-							)}
+								<div className="flex items-center justify-between">
+									<span className="text-muted-foreground">Ya pesadas</span>
+									<span className="font-medium">{batchProduct.weighed_pieces} piezas</span>
+								</div>
+								<div className="flex items-center justify-between">
+									<span className="text-muted-foreground">Pendientes</span>
+									<span className="font-medium">{batchPendingPieces ?? 0} piezas</span>
+								</div>
+							</div>
+						)}
 
 						<div className="grid grid-cols-2 gap-3">
 							<div className="space-y-1">
@@ -448,15 +661,12 @@ export default function WeighingStationPage() {
 							</Select>
 						</div>
 
-						<div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-							<div className="flex items-center gap-2">
-								<PackageIcon className="h-4 w-4" />
-								<span>
-									Si eliges “primera vez”, se suma el peso al stock_kg del
-									producto. Si eliges “ya estaba pesado”, no cambia el
-									inventario.
-								</span>
-							</div>
+						<div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground flex items-center gap-2">
+							<PackageIcon className="h-4 w-4 shrink-0" />
+							<span>
+								"Primera vez" suma el peso al stock_kg del producto. "Ya estaba
+								pesado" no modifica el inventario.
+							</span>
 						</div>
 					</div>
 
@@ -472,13 +682,10 @@ export default function WeighingStationPage() {
 								!(Number.parseFloat(batchWeightKg) > 0) ||
 								(batchApplyToInventory &&
 									batchPendingPieces !== null &&
-									(Number.parseInt(batchPieces || "0", 10) || 0) >
-										batchPendingPieces)
+									(Number.parseInt(batchPieces || "0", 10) || 0) > batchPendingPieces)
 							}
 						>
-							{recordBatchMutation.isPending
-								? tc("loading")
-								: "Registrar pesaje"}
+							{recordBatchMutation.isPending ? tc("loading") : "Registrar pesaje"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
