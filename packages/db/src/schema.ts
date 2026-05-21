@@ -3,11 +3,13 @@ import {
 	boolean,
 	customType,
 	integer,
+	jsonb,
 	numeric,
 	pgEnum,
 	pgTable,
 	text,
 	timestamp,
+	uuid,
 	varchar,
 	type AnyPgColumn,
 } from "drizzle-orm/pg-core";
@@ -92,6 +94,23 @@ export const verification = pgTable("verification", {
 });
 
 // --- TABLAS DE NEGOCIO (CÁRNICOS GUSTAVO) ---
+
+// Pedidos recibidos desde el sitio web (carnicosgustavo.com)
+export const webOrders = pgTable("web_orders", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	source: varchar("source", { length: 50 }).default("website"),
+	business_name: text("business_name").notNull(),
+	contact_name: text("contact_name").notNull(),
+	phone: text("phone").notNull(),
+	delivery_address: text("delivery_address"),
+	notes: text("notes"),
+	location_label: text("location_label"),
+	items: jsonb("items").notNull(), // [{productId, name, quantity}]
+	items_count: integer("items_count"),
+	user_agent: text("user_agent"),
+	whatsapp_message: text("whatsapp_message"),
+	created_at: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
 
 export const products = pgTable("products", {
 	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -224,6 +243,7 @@ export const orders = pgTable("orders", {
 	created_at: timestamp("created_at").defaultNow(),
 	updated_at: timestamp("updated_at").defaultNow(),
 	requires_weighing: boolean("requires_weighing").notNull().default(false),
+	web_order_id: uuid("web_order_id").references(() => webOrders.id),
 });
 
 export const orderItems = pgTable("order_items", {
@@ -474,12 +494,20 @@ export const priceListItemRelations = relations(priceListItems, ({ one }) => ({
 	}),
 }));
 
+export const webOrderRelations = relations(webOrders, ({ many }) => ({
+	orders: many(orders),
+}));
+
 export const orderRelations = relations(orders, ({ one, many }) => ({
 	customer: one(customers, {
 		fields: [orders.customer_id],
 		references: [customers.id],
 	}),
 	items: many(orderItems),
+	webOrder: one(webOrders, {
+		fields: [orders.web_order_id],
+		references: [webOrders.id],
+	}),
 }));
 
 export const orderItemRelations = relations(orderItems, ({ one }) => ({
