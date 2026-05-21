@@ -192,7 +192,16 @@ export default function WeighingStationPage() {
 		});
 	}, [currentItem, hasValidWeight, netKg, updateWeightMutation]);
 
+	// Limpiar peso bruto (TARE)
 	const handleTare = () => {
+		setActualWeight("");
+	};
+
+	// Capturar el peso actual como tara del recipiente y dejar la báscula en cero
+	const handleCaptureTare = () => {
+		if (!actualWeight || parseFloat(actualWeight) <= 0) return;
+		setCustomTare(parseFloat(actualWeight).toFixed(3));
+		setContainerId("otro");
 		setActualWeight("");
 	};
 
@@ -202,7 +211,10 @@ export default function WeighingStationPage() {
 	};
 
 	const handleNextItem = () => {
-		setCurrentItemIndex((i) => Math.min(i + 1, pendingItems.length - 1));
+		setCurrentItemIndex((i) => {
+			const next = i + 1;
+			return next < pendingItems.length ? next : i;
+		});
 		setActualWeight("");
 	};
 
@@ -347,7 +359,10 @@ export default function WeighingStationPage() {
 								{/* Artículo actual -------------------------------------------------- */}
 								<div className="text-center space-y-1">
 									<p className="text-xs font-semibold text-primary uppercase tracking-widest">
-										Siguiente artículo
+										Artículo{" "}
+										<span className="text-foreground">
+											{clampedIndex + 1} de {pendingItems.length}
+										</span>
 									</p>
 									<h2 className="text-4xl font-extrabold tracking-tight">
 										{currentItem.quantity_pieces}&nbsp;{currentItem.product?.name ?? currentItem.product_name}
@@ -435,18 +450,31 @@ export default function WeighingStationPage() {
 
 								{/* Input de peso bruto -------------------------------------------- */}
 								<div className="space-y-2">
-									<div className="flex items-center justify-between">
+									<div className="flex items-center justify-between gap-2">
 										<Label htmlFor="weight" className="text-sm font-semibold">
 											Peso bruto (kg)
 										</Label>
-										<button
-											type="button"
-											onClick={handleTare}
-											className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-lg border border-border bg-muted hover:bg-muted/80 transition-colors"
-											title="Limpiar / poner en cero (TARE)"
-										>
-											TARE
-										</button>
+										<div className="flex gap-1">
+											{/* CAPTURAR: toma el peso actual como tara y deja en cero */}
+											<button
+												type="button"
+												onClick={handleCaptureTare}
+												disabled={!actualWeight || parseFloat(actualWeight) <= 0}
+												className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+												title="Poner este peso como tara del recipiente y dejar la báscula en cero"
+											>
+												Capturar
+											</button>
+											{/* TARE: limpiar input (báscula en cero) */}
+											<button
+												type="button"
+												onClick={handleTare}
+												className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-lg border border-border bg-muted hover:bg-muted/80 transition-colors"
+												title="Limpiar / poner en cero (TARE)"
+											>
+												TARE
+											</button>
+										</div>
 									</div>
 									<div className="relative">
 										<Input
@@ -504,7 +532,7 @@ export default function WeighingStationPage() {
 										size="lg"
 										className="h-16 flex-1 text-base font-semibold rounded-2xl"
 										onClick={handlePrevItem}
-										disabled={clampedIndex === 0}
+										disabled={currentItemIndex === 0}
 									>
 										<ChevronLeftIcon className="w-5 h-5 mr-2" />
 										Anterior
@@ -514,9 +542,7 @@ export default function WeighingStationPage() {
 										size="lg"
 										className="h-16 flex-[3] text-lg font-bold rounded-2xl shadow-lg hover:shadow-xl transition-all"
 										onClick={handleRegisterWeight}
-										disabled={
-											updateWeightMutation.isPending || !hasValidWeight
-										}
+										disabled={updateWeightMutation.isPending || !hasValidWeight}
 									>
 										{updateWeightMutation.isPending ? (
 											tc("loading")
@@ -533,7 +559,7 @@ export default function WeighingStationPage() {
 										size="lg"
 										className="h-16 flex-1 text-base font-semibold rounded-2xl"
 										onClick={handleNextItem}
-										disabled={clampedIndex >= pendingItems.length - 1}
+										disabled={currentItemIndex >= pendingItems.length - 1}
 									>
 										Siguiente
 										<ChevronRight className="w-5 h-5 ml-2" />
