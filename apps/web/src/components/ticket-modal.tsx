@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
 import { Button } from "@finopenpos/ui/components/button";
@@ -23,186 +24,241 @@ interface TicketModalProps {
 export function TicketModal({ orderId, open, onClose }: TicketModalProps) {
 	const trpc = useTRPC();
 	const locale = useLocale();
+	const ticketRef = useRef<HTMLDivElement>(null);
 
 	const { data: ticket, isLoading } = useQuery({
 		...trpc.tickets.generateTicket.queryOptions({ orderId }),
 		enabled: open,
 	});
 
+	// Imprime abriendo una ventana nueva con SOLO el ticket (sin URL/headers)
 	const handlePrint = () => {
-		window.print();
+		if (!ticketRef.current) return;
+
+		const printWin = window.open("", "_blank", "width=350,height=700");
+		if (!printWin) return;
+
+		const html = ticketRef.current.innerHTML;
+
+		printWin.document.write(`<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ticket #${ticket?.ticketNumber ?? ""}</title>
+<style>
+@page {
+  margin: 0;
+  size: 80mm auto;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  background: white;
+  color: black;
+}
+body {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 6mm;
+  width: 80mm;
+  box-sizing: border-box;
+}
+.ticket-header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px; }
+.ticket-header h1 { font-size: 14px; letter-spacing: 2px; margin: 0; }
+.ticket-header p { font-size: 10px; color: #555; margin: 2px 0 0; }
+.ticket-info { margin-bottom: 6px; }
+.ticket-row { display: flex; justify-content: space-between; gap: 4px; }
+.ticket-row .label { color: #555; }
+.ticket-row .value { font-weight: bold; }
+.ticket-items { border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 6px 0; margin: 6px 0; }
+.ticket-items-header { display: flex; justify-content: space-between; font-size: 9px; color: #555; margin-bottom: 4px; }
+.item-line { display: flex; justify-content: space-between; gap: 4px; margin-bottom: 2px; }
+.item-line .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-line .price { font-weight: 600; white-space: nowrap; }
+.item-detail { font-size: 9px; color: #555; padding-left: 8px; margin-bottom: 2px; }
+.ticket-total { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; padding-top: 4px; }
+.ticket-status { display: flex; justify-content: space-between; font-size: 9px; color: #555; }
+.ticket-notes { border-top: 1px dashed #000; padding-top: 6px; margin-top: 6px; font-size: 9px; color: #555; }
+.ticket-notes strong { font-weight: 600; }
+.ticket-footer { text-align: center; font-size: 9px; color: #555; margin-top: 8px; padding-top: 6px; border-top: 1px dashed #000; }
+</style>
+</head>
+<body>${html}</body>
+</html>`);
+
+		printWin.document.close();
+
+		// Esperar a que cargue y luego imprimir
+		printWin.onload = () => {
+			setTimeout(() => {
+				printWin.print();
+				printWin.close();
+			}, 200);
+		};
+	};
+
+	// Renderiza el contenido del ticket (se usa tanto en modal como para imprimir)
+	const renderTicketContent = () => {
+		if (!ticket) return null;
+
+		const statusLabel =
+			ticket.status === "completed" || ticket.status === "COMPLETADA"
+				? "Completado"
+				: ticket.status === "cancelled"
+					? "Cancelado"
+					: ticket.status === "LISTA_PARA_COBRO"
+						? "Listo para cobro"
+						: "Pendiente";
+
+		return (
+			<>
+				<div className="ticket-header">
+					<h1>CARNICOS GUSTAVO</h1>
+					<p>Nota de Pedido</p>
+				</div>
+
+				<div className="ticket-info">
+					<div className="ticket-row">
+						<span className="value">{ticket.ticketNumber}</span>
+						<span>
+							{new Date(ticket.date).toLocaleDateString("es-MX", {
+								day: "2-digit",
+								month: "2-digit",
+								year: "2-digit",
+							})}{" "}
+							{new Date(ticket.date).toLocaleTimeString("es-MX", {
+								hour: "2-digit",
+								minute: "2-digit",
+							})}
+						</span>
+					</div>
+					<div className="ticket-row">
+						<span className="label">Cliente</span>
+						<span className="value">
+							{ticket.customerName ?? "Consumidor Final"}
+						</span>
+					</div>
+				</div>
+
+				<div className="ticket-items">
+					<div className="ticket-items-header">
+						<span>PRODUCTO</span>
+						<span>IMPORTE</span>
+					</div>
+					{ticket.items.map((item, i) => {
+						const hasKg =
+							item.quantityKg && parseFloat(item.quantityKg) > 0;
+						const subtotal = parseFloat(item.subtotal) || 0;
+						return (
+							<div key={i}>
+								<div className="item-line">
+									<span className="name">
+										{item.quantityPieces ?? 1}x {item.productName}
+									</span>
+									<span className="price">
+										{subtotal > 0
+											? formatCurrency(
+													Math.round(subtotal * 100),
+													locale,
+												)
+											: "—"}
+									</span>
+								</div>
+								{hasKg && (
+									<div className="item-detail">
+										{parseFloat(item.quantityKg!).toFixed(3)} kg
+										{item.unitPrice !== "0" && (
+											<>
+												{" "}@{" "}
+												{formatCurrency(
+													Math.round(parseFloat(item.unitPrice) * 100),
+													locale,
+												)}
+												/kg
+											</>
+										)}
+									</div>
+								)}
+							</div>
+						);
+					})}
+				</div>
+
+				<div className="ticket-total">
+					<span>TOTAL</span>
+					<span>
+						{formatCurrency(
+							Math.round(parseFloat(ticket.totalAmount) * 100),
+							locale,
+						)}
+					</span>
+				</div>
+
+				<div className="ticket-status">
+					<span>Estado</span>
+					<span>{statusLabel}</span>
+				</div>
+
+				{ticket.notes && (
+					<div className="ticket-notes">
+						<strong>Notas: </strong>
+						{ticket.notes}
+					</div>
+				)}
+
+				<div className="ticket-footer">
+					&iexcl;Gracias por su preferencia!
+				</div>
+			</>
+		);
 	};
 
 	return (
-		<>
-			{/* Estilos de impresión: solo muestra el área del ticket */}
-			<style>{`
-        @media print {
-          body > * { display: none !important; }
-          #ticket-print-area {
-            display: block !important;
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 80mm !important;
-            padding: 6mm !important;
-            font-family: monospace !important;
-            font-size: 11px !important;
-            background: white !important;
-            color: black !important;
-          }
-          #ticket-print-area * {
-            visibility: visible !important;
-          }
-        }
-      `}</style>
+		<Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+			<DialogContent className="max-w-sm">
+				<DialogHeader>
+					<DialogTitle className="flex items-center gap-2">
+						<PrinterIcon className="w-4 h-4" />
+						Ticket de Pedido
+					</DialogTitle>
+				</DialogHeader>
 
-			<Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-				<DialogContent className="max-w-sm">
-					<DialogHeader>
-						<DialogTitle className="flex items-center gap-2">
-							<PrinterIcon className="w-4 h-4" />
-							Ticket de Pedido
-						</DialogTitle>
-					</DialogHeader>
-
-					{isLoading ? (
-						<div className="space-y-2">
-							{Array.from({ length: 6 }).map((_, i) => (
-								<Skeleton key={i} className="h-4 w-full" />
-							))}
-						</div>
-					) : ticket ? (
-						<div
-							id="ticket-print-area"
-							className="font-mono text-xs border rounded-lg p-4 bg-white space-y-0"
-						>
-							{/* Encabezado */}
-							<div className="text-center border-b border-dashed pb-2 mb-2">
-								<p className="font-bold text-sm tracking-widest">
-									CARNICOS GUSTAVO
-								</p>
-								<p className="text-[10px] text-muted-foreground">
-									Nota de Pedido
-								</p>
-							</div>
-
-							{/* Datos del ticket */}
-							<div className="mb-2 space-y-0.5">
-								<div className="flex justify-between">
-									<span className="font-bold">{ticket.ticketNumber}</span>
-									<span>
-										{new Date(ticket.date).toLocaleDateString("es-MX", {
-											day: "2-digit",
-											month: "2-digit",
-											year: "2-digit",
-										})}{" "}
-										{new Date(ticket.date).toLocaleTimeString("es-MX", {
-											hour: "2-digit",
-											minute: "2-digit",
-										})}
-									</span>
-								</div>
-								<div className="flex justify-between">
-									<span className="text-muted-foreground">Cliente</span>
-									<span className="font-medium">
-										{ticket.customerName ?? "Consumidor Final"}
-									</span>
-								</div>
-							</div>
-
-							{/* Artículos */}
-							<div className="border-t border-dashed border-b border-dashed py-2 my-2 space-y-1">
-								<div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-									<span>ARTÍCULO</span>
-									<span>KG / PRECIO</span>
-								</div>
-								{ticket.items.map((item, i) => {
-									const hasKg =
-										item.quantityKg && parseFloat(item.quantityKg) > 0;
-									const subtotal = parseFloat(item.subtotal) || 0;
-									return (
-										<div key={i} className="space-y-0">
-											<div className="flex justify-between gap-1">
-												<span className="flex-1 truncate">
-													{item.quantityPieces ?? 1}x {item.productName}
-												</span>
-												<span className="font-medium whitespace-nowrap">
-													{subtotal > 0
-														? formatCurrency(Math.round(subtotal * 100), locale)
-														: "—"}
-												</span>
-											</div>
-											{hasKg && (
-												<div className="text-muted-foreground text-[10px] ml-2">
-													{parseFloat(item.quantityKg!).toFixed(3)} kg @{" "}
-													{item.unitPrice !== "0"
-														? formatCurrency(
-																Math.round(parseFloat(item.unitPrice) * 100),
-																locale,
-															)
-														: "—"}
-													/kg
-												</div>
-											)}
-										</div>
-									);
-								})}
-							</div>
-
-							{/* Total */}
-							<div className="flex justify-between font-bold text-sm pt-1">
-								<span>TOTAL</span>
-								<span>
-									{formatCurrency(
-										Math.round(parseFloat(ticket.totalAmount) * 100),
-										locale,
-									)}
-								</span>
-							</div>
-
-							{/* Estado */}
-							<div className="flex justify-between text-[10px] text-muted-foreground pt-0.5">
-								<span>Estado</span>
-								<span>
-									{ticket.status === "completed"
-										? "Completado"
-										: ticket.status === "cancelled"
-											? "Cancelado"
-											: "Pendiente"}
-								</span>
-							</div>
-
-							{/* Notas */}
-							{ticket.notes && (
-								<div className="mt-2 pt-2 border-t border-dashed text-[10px] text-muted-foreground">
-									<span className="font-medium">Notas: </span>
-									{ticket.notes}
-								</div>
-							)}
-
-							{/* Pie de página */}
-							<div className="text-center text-[10px] text-muted-foreground mt-2 pt-2 border-t border-dashed">
-								¡Gracias por su preferencia!
-							</div>
-						</div>
-					) : (
-						<p className="text-muted-foreground text-sm">
-							No se pudo cargar el ticket.
-						</p>
-					)}
-
-					<div className="flex justify-end gap-2 pt-2">
-						<Button variant="secondary" onClick={onClose}>
-							Cerrar
-						</Button>
-						<Button onClick={handlePrint} disabled={!ticket}>
-							<PrinterIcon className="w-4 h-4 mr-2" />
-							Imprimir
-						</Button>
+				{isLoading ? (
+					<div className="space-y-2">
+						{Array.from({ length: 6 }).map((_, i) => (
+							<Skeleton key={i} className="h-4 w-full" />
+						))}
 					</div>
-				</DialogContent>
-			</Dialog>
-		</>
+				) : ticket ? (
+					<div
+						ref={ticketRef}
+						className="font-mono text-xs border rounded-lg p-4 bg-white"
+						style={{
+							fontFamily: "'Courier New', Courier, monospace",
+							fontSize: "11px",
+							lineHeight: "1.4",
+							color: "#000",
+						}}
+					>
+						{renderTicketContent()}
+					</div>
+				) : (
+					<p className="text-muted-foreground text-sm">
+						No se pudo cargar el ticket.
+					</p>
+				)}
+
+				<div className="flex justify-end gap-2 pt-2">
+					<Button variant="secondary" onClick={onClose}>
+						Cerrar
+					</Button>
+					<Button onClick={handlePrint} disabled={!ticket}>
+						<PrinterIcon className="w-4 h-4 mr-2" />
+						Imprimir
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
 	);
 }
