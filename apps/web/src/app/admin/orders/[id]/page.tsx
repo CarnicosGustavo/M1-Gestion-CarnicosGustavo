@@ -11,6 +11,7 @@ import {
 	PrinterIcon,
 	FilePenIcon,
 	TrashIcon,
+	BanknoteIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -41,6 +42,27 @@ import { toast } from "sonner";
 
 type OrderStatus = "completed" | "pending" | "cancelled";
 
+// Mapea cualquier estado interno a etiqueta y color visible
+function getStatusDisplay(status: string): { label: string; color: string } {
+	switch (status) {
+		case "COMPLETADA":
+		case "completed":
+			return { label: "Pagada", color: "text-green-600" };
+		case "LISTA_PARA_COBRO":
+			return { label: "Lista para cobro", color: "text-blue-600" };
+		case "PROCESANDO_PAGO":
+			return { label: "Procesando pago", color: "text-blue-600" };
+		case "PENDIENTE_PESAJE":
+			return { label: "Por pesar", color: "text-yellow-600" };
+		case "PARCIAL_DISPONIBLE":
+			return { label: "Parcial (falta comprar)", color: "text-orange-600" };
+		case "cancelled":
+			return { label: "Cancelada", color: "text-red-600" };
+		default:
+			return { label: "Pendiente", color: "text-yellow-600" };
+	}
+}
+
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
 	const { id } = use(params);
 	const orderId = parseInt(id);
@@ -55,8 +77,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 	const [ticketOpen, setTicketOpen] = useState(false);
 	const [editOpen, setEditOpen] = useState(false);
 	const [deleteOpen, setDeleteOpen] = useState(false);
+	const [payOpen, setPayOpen] = useState(false);
+	const [payMethodId, setPayMethodId] = useState<string>("");
 	const [editStatus, setEditStatus] = useState<OrderStatus>("pending");
 	const [editTotal, setEditTotal] = useState("");
+
+	const { data: paymentMethods } = useQuery(
+		trpc.paymentMethods.list.queryOptions(),
+	) as { data: { id: number; name: string }[] | undefined };
 
 	const invalidateKey = trpc.orders.list.queryOptions().queryKey;
 
@@ -83,6 +111,24 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 		}),
 	);
 
+	const payMutation = useMutation(
+		trpc.orders.completeOrderPayment.mutationOptions({
+			onSuccess: () => {
+				toast.success("Pedido liquidado y cobrado");
+				setPayOpen(false);
+				refetch();
+				queryClient.invalidateQueries({ queryKey: invalidateKey });
+			},
+			onError: (err: any) =>
+				toast.error(err.message ?? "No se pudo liquidar el pedido"),
+		}),
+	);
+
+	const openPay = () => {
+		setPayMethodId(paymentMethods?.[0]?.id?.toString() ?? "");
+		setPayOpen(true);
+	};
+
 	const openEdit = () => {
 		setEditStatus((order?.status ?? "pending") as OrderStatus);
 		setEditTotal(order?.total_amount ? (order.total_amount / 100).toString() : "0");
@@ -102,14 +148,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 		return <div className="text-muted-foreground">{t("orderNotFound")}</div>;
 	}
 
-	const statusColor =
-		order.status === "completed" ? "text-green-600" :
-		order.status === "cancelled" ? "text-red-600" :
-		"text-yellow-600";
-	const statusLabel =
-		order.status === "completed" ? tc("completed") :
-		order.status === "cancelled" ? tc("cancelled") :
-		tc("pending");
+	const { label: statusLabel, color: statusColor } = getStatusDisplay(order.status);
+	const canCharge = order.status === "LISTA_PARA_COBRO";
 
 	return (
 		<div className="space-y-6 max-w-3xl">
@@ -128,6 +168,16 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
 				{/* Acciones */}
 				<div className="flex items-center gap-2">
+					{canCharge && (
+						<Button
+							size="sm"
+							className="bg-green-600 hover:bg-green-700"
+							onClick={openPay}
+						>
+							<BanknoteIcon className="w-4 h-4 mr-2" />
+							Liquidar / Cobrar
+						</Button>
+					)}
 					<Button variant="outline" size="sm" onClick={() => setTicketOpen(true)}>
 						<PrinterIcon className="w-4 h-4 mr-2" />
 						Imprimir Ticket
@@ -392,6 +442,58 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 				onConfirm={() => deleteMutation.mutate({ id: orderId })}
 				description={t("deleteMessage")}
 			/>
+
+			{/* ── Dialog de Cobro / Liquidación ── */}
+			<Dialog open={payOpen} onOpenChange={(o) => !o && setPayOpen(false)}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Liquidar pedido #{order.id}</DialogTitle>
+					</DialogHeader>
+					<div className="grid gap-4 py-2">
+						<div className="rounded-lg bg-slate-50 p-3">
+							<div className="text-xs text-muted-foreground">Total a cobrar</div>
+							<div className="text-2xl font-bold">
+								{formatCurrency(order.total_amount, locale)}
+							</div>
+						</div>
+						<div className="space-y-1">
+							<Label>Método de pago</Label>
+							<Select value={payMethodId} onValueChange={setPayMethodId}>
+								<SelectTrigger>
+									<SelectValue placeholder="Selecciona método" />
+								</SelectTrigger>
+								<SelectContent>
+									{(paymentMethods ?? []).map((pm) => (
+										<SelectItem key={pm.id} value={pm.id.toString()}>
+											{pm.name}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						<p className="text-xs text-muted-foreground">
+							Al liquidar se descuenta el inventario y se registra el cobro.
+						</p>
+					</div>
+					<DialogFooter>
+						<Button variant="secondary" onClick={() => setPayOpen(false)}>
+							{tc("cancel")}
+						</Button>
+						<Button
+							className="bg-green-600 hover:bg-green-700"
+							disabled={payMutation.isPending || !payMethodId}
+							onClick={() =>
+								payMutation.mutate({
+									orderId,
+									paymentMethodId: parseInt(payMethodId),
+								})
+							}
+						>
+							{payMutation.isPending ? "Cobrando…" : "Confirmar cobro"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

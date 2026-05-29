@@ -64,6 +64,27 @@ import { TicketModal } from "@/components/ticket-modal";
 type Order = RouterOutputs["orders"]["list"][number];
 type OrderStatus = "completed" | "pending" | "cancelled";
 
+// Mapea cualquier estado interno a etiqueta y color visible en la lista
+function getOrderStatusDisplay(status: string): { label: string; color: string } {
+	switch (status) {
+		case "COMPLETADA":
+		case "completed":
+			return { label: "Pagada", color: "text-green-600" };
+		case "LISTA_PARA_COBRO":
+			return { label: "Lista para cobro", color: "text-blue-600" };
+		case "PROCESANDO_PAGO":
+			return { label: "Procesando pago", color: "text-blue-600" };
+		case "PENDIENTE_PESAJE":
+			return { label: "Por pesar", color: "text-yellow-600" };
+		case "PARCIAL_DISPONIBLE":
+			return { label: "Parcial", color: "text-orange-600" };
+		case "cancelled":
+			return { label: "Cancelada", color: "text-red-600" };
+		default:
+			return { label: "Pendiente", color: "text-yellow-600" };
+	}
+}
+
 type ProductRow = RouterOutputs["products"]["list"][number];
 type CustomerRow = RouterOutputs["customers"]["list"][number];
 type PaymentMethodRow = RouterOutputs["paymentMethods"]["list"][number];
@@ -135,19 +156,7 @@ export default function OrdersPage() {
 			header: tc("status"),
 			sortable: true,
 			render: (row) => {
-				const s = row.status ?? "pending";
-				const color =
-					s === "completed"
-						? "text-green-600"
-						: s === "cancelled"
-							? "text-red-600"
-							: "text-yellow-600";
-				const label =
-					s === "completed"
-						? tc("completed")
-						: s === "cancelled"
-							? tc("cancelled")
-							: tc("pending");
+				const { label, color } = getOrderStatusDisplay(row.status ?? "pending");
 				return <span className={color}>{label}</span>;
 			},
 		},

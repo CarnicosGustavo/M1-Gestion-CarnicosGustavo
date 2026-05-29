@@ -2,15 +2,15 @@ import { z } from "zod/v4";
 import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
 import { customers } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 
 const customerSchema = z.object({
   id: z.number(),
-  name: z.string(),
-  email: z.string(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
   phone: z.string().nullable(),
   status: z.string().nullable(),
-  user_uid: z.string(),
+  user_uid: z.string().nullable(),
   created_at: z.date().nullable(),
 });
 
@@ -20,7 +20,12 @@ export const customersRouter = router({
     .input(z.void())
     .output(z.array(customerSchema))
     .query(async ({ ctx }) => {
-      return db.select().from(customers).where(eq(customers.user_uid, ctx.user.id));
+      // Incluye los clientes propios del usuario Y los creados desde la web
+      // (pedidos web se sincronizan con user_uid = 'system')
+      return db
+        .select()
+        .from(customers)
+        .where(or(eq(customers.user_uid, ctx.user.id), eq(customers.user_uid, "system")));
     }),
 
   create: protectedProcedure

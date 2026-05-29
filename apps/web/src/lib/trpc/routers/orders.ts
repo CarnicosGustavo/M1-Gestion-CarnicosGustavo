@@ -1424,7 +1424,8 @@ export const ordersRouter = router({
 				await tx.insert(transactions).values({
 					order_id: input.orderId,
 					payment_method_id: input.paymentMethodId,
-					amount: Math.round(Number(orderData.total_amount) * 100),
+					// total_amount ya está en centavos (misma convención que el path de creación)
+					amount: Math.round(Number(orderData.total_amount)),
 					user_uid: ctx.user.id,
 					status: "completed",
 					category: "selling",
