@@ -191,6 +191,39 @@ export const yieldSheetItems = pgTable("yield_sheet_items", {
 	sort_order: integer("sort_order").notNull().default(0),
 });
 
+// --- COBRANZA / CRÉDITO ---
+export const creditAccounts = pgTable("credit_accounts", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	customer_id: integer("customer_id").notNull(),
+	credit_limit: numeric("credit_limit", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	terms_days: integer("terms_days").notNull().default(0),
+	created_at: timestamp("created_at").defaultNow(),
+	updated_at: timestamp("updated_at").defaultNow(),
+});
+
+export const creditCharges = pgTable("credit_charges", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	customer_id: integer("customer_id").notNull(),
+	order_id: integer("order_id"),
+	amount: numeric("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+	concept: varchar("concept", { length: 255 }),
+	charge_date: date("charge_date").defaultNow(),
+	source: varchar("source", { length: 30 }).notNull().default("ticket_viejo"),
+	created_at: timestamp("created_at").defaultNow(),
+});
+
+export const creditPayments = pgTable("credit_payments", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	customer_id: integer("customer_id").notNull(),
+	amount: numeric("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+	payment_date: date("payment_date").defaultNow(),
+	method: varchar("method", { length: 50 }),
+	notes: text("notes"),
+	created_at: timestamp("created_at").defaultNow(),
+});
+
 // Precios por cliente (override por producto)
 export const customerPrices = pgTable("customer_prices", {
 	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

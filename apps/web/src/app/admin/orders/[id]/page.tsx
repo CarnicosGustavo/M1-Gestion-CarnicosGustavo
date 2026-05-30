@@ -79,6 +79,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 	const [deleteOpen, setDeleteOpen] = useState(false);
 	const [payOpen, setPayOpen] = useState(false);
 	const [payMethodId, setPayMethodId] = useState<string>("");
+	const [payType, setPayType] = useState<"contado" | "credito">("contado");
 	const [editStatus, setEditStatus] = useState<OrderStatus>("pending");
 	const [editTotal, setEditTotal] = useState("");
 
@@ -124,8 +125,22 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 		}),
 	);
 
+	const creditMutation = useMutation(
+		trpc.orders.completeOrderOnCredit.mutationOptions({
+			onSuccess: () => {
+				toast.success("Pedido dejado a crédito (cuenta por cobrar)");
+				setPayOpen(false);
+				refetch();
+				queryClient.invalidateQueries({ queryKey: invalidateKey });
+			},
+			onError: (err: any) =>
+				toast.error(err.message ?? "No se pudo dejar a crédito"),
+		}),
+	);
+
 	const openPay = () => {
 		setPayMethodId(paymentMethods?.[0]?.id?.toString() ?? "");
+		setPayType("contado");
 		setPayOpen(true);
 	};
 
@@ -456,41 +471,84 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 								{formatCurrency(order.total_amount, locale)}
 							</div>
 						</div>
+						{/* Tipo de cobro */}
 						<div className="space-y-1">
-							<Label>Método de pago</Label>
-							<Select value={payMethodId} onValueChange={setPayMethodId}>
-								<SelectTrigger>
-									<SelectValue placeholder="Selecciona método" />
-								</SelectTrigger>
-								<SelectContent>
-									{(paymentMethods ?? []).map((pm) => (
-										<SelectItem key={pm.id} value={pm.id.toString()}>
-											{pm.name}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
+							<Label>Tipo de cobro</Label>
+							<div className="grid grid-cols-2 gap-2">
+								<button
+									type="button"
+									onClick={() => setPayType("contado")}
+									className={`rounded-lg border px-3 py-2 text-sm font-bold ${
+										payType === "contado"
+											? "border-green-600 bg-green-50 text-green-700"
+											: "border-black/15 text-cg-black"
+									}`}
+								>
+									Contado
+								</button>
+								<button
+									type="button"
+									onClick={() => setPayType("credito")}
+									className={`rounded-lg border px-3 py-2 text-sm font-bold ${
+										payType === "credito"
+											? "border-orange-500 bg-orange-50 text-orange-700"
+											: "border-black/15"
+									}`}
+								>
+									Crédito
+								</button>
+							</div>
 						</div>
+
+						{payType === "contado" && (
+							<div className="space-y-1">
+								<Label>Método de pago</Label>
+								<Select value={payMethodId} onValueChange={setPayMethodId}>
+									<SelectTrigger>
+										<SelectValue placeholder="Selecciona método" />
+									</SelectTrigger>
+									<SelectContent>
+										{(paymentMethods ?? []).map((pm) => (
+											<SelectItem key={pm.id} value={pm.id.toString()}>
+												{pm.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+						)}
 						<p className="text-xs text-muted-foreground">
-							Al liquidar se descuenta el inventario y se registra el cobro.
+							{payType === "contado"
+								? "Al liquidar se descuenta el inventario y se registra el cobro."
+								: "Se descuenta el inventario y el total queda como cuenta por cobrar en Cobranza."}
 						</p>
 					</div>
 					<DialogFooter>
 						<Button variant="secondary" onClick={() => setPayOpen(false)}>
 							{tc("cancel")}
 						</Button>
-						<Button
-							className="bg-green-600 hover:bg-green-700"
-							disabled={payMutation.isPending || !payMethodId}
-							onClick={() =>
-								payMutation.mutate({
-									orderId,
-									paymentMethodId: parseInt(payMethodId),
-								})
-							}
-						>
-							{payMutation.isPending ? "Cobrando…" : "Confirmar cobro"}
-						</Button>
+						{payType === "contado" ? (
+							<Button
+								className="bg-green-600 hover:bg-green-700"
+								disabled={payMutation.isPending || !payMethodId}
+								onClick={() =>
+									payMutation.mutate({
+										orderId,
+										paymentMethodId: parseInt(payMethodId),
+									})
+								}
+							>
+								{payMutation.isPending ? "Cobrando…" : "Confirmar cobro"}
+							</Button>
+						) : (
+							<Button
+								className="bg-orange-600 hover:bg-orange-700"
+								disabled={creditMutation.isPending}
+								onClick={() => creditMutation.mutate({ orderId })}
+							>
+								{creditMutation.isPending ? "Guardando…" : "Dejar a crédito"}
+							</Button>
+						)}
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>

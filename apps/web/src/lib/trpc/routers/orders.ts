@@ -10,6 +10,7 @@ import {
 	productTransformations,
 	inventoryTransactions,
 	purchaseOrders,
+	creditCharges,
 } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -1431,6 +1432,112 @@ export const ordersRouter = router({
 					category: "selling",
 					type: "income",
 					description: `Cobro final pedido #${input.orderId}`,
+				});
+
+				return { success: true };
+			});
+		}),
+
+	// Liquidar pedido A CRÉDITO: descuenta inventario y crea cuenta por cobrar
+	completeOrderOnCredit: protectedProcedure
+		.input(z.object({ orderId: z.number() }))
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ ctx, input }) => {
+			return db.transaction(async (tx) => {
+				const [orderData] = await tx
+					.update(orders)
+					.set({ status: "PROCESANDO_PAGO" })
+					.where(
+						and(
+							eq(orders.id, input.orderId),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+							eq(orders.status, "LISTA_PARA_COBRO"),
+						),
+					)
+					.returning();
+
+				if (!orderData) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"Orden no encontrada o no disponible para cobro (ya fue pagada o no está lista)",
+					});
+				}
+
+				if (!orderData.customer_id) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "El pedido no tiene cliente; no se puede dejar a crédito",
+					});
+				}
+
+				const items = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+
+				for (const item of items) {
+					if (item.product_id) {
+						const [product] = await tx
+							.select()
+							.from(products)
+							.where(eq(products.id, item.product_id))
+							.limit(1);
+						if (product) {
+							const currentStockKg = Number(product.stock_kg);
+							const itemQuantityKg = item.quantity_kg
+								? Number(item.quantity_kg)
+								: 0;
+							const newStockKg = currentStockKg - itemQuantityKg;
+							const nextPieces = item.quantity_pieces
+								? product.stock_pieces - item.quantity_pieces
+								: product.stock_pieces;
+							const nextWeighedPieces = Math.min(
+								product.weighed_pieces ?? 0,
+								nextPieces,
+							);
+							if (newStockKg < 0) {
+								throw new TRPCError({
+									code: "PRECONDITION_FAILED",
+									message: `Stock insuficiente de ${product.name}: se requieren ${itemQuantityKg.toFixed(3)} kg pero solo hay ${currentStockKg.toFixed(3)} kg disponibles`,
+								});
+							}
+							await tx
+								.update(products)
+								.set({
+									stock_pieces: nextPieces,
+									weighed_pieces: nextWeighedPieces,
+									stock_kg: newStockKg.toFixed(3),
+								})
+								.where(eq(products.id, item.product_id));
+
+							await tx.insert(inventoryTransactions).values({
+								product_id: item.product_id,
+								quantity_change_pieces: item.quantity_pieces
+									? -item.quantity_pieces
+									: null,
+								quantity_change_kg:
+									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
+								transaction_type: "VENTA",
+								reference_id: input.orderId,
+								notes: `Venta a crédito pedido #${input.orderId}`,
+							});
+						}
+					}
+				}
+
+				await tx
+					.update(orders)
+					.set({ status: "COMPLETADA" })
+					.where(eq(orders.id, input.orderId));
+
+				// Cargo a la cuenta del cliente (cobranza). total_amount está en centavos → pesos
+				await tx.insert(creditCharges).values({
+					customer_id: orderData.customer_id,
+					order_id: input.orderId,
+					amount: (Number(orderData.total_amount) / 100).toFixed(2),
+					concept: `Pedido #${input.orderId} (crédito)`,
+					source: "pedido",
 				});
 
 				return { success: true };

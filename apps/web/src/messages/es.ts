@@ -55,6 +55,7 @@ const messages = {
 		yield: "Rendimiento",
 		prices: "Precios",
 		coldInventory: "Inventario Frío",
+		collections: "Cobranza",
 		adminPanel: "Panel de administración",
 		openMenu: "Abrir menú",
 		myAccount: "Mi cuenta",
