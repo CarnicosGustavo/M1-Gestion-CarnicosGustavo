@@ -1,0 +1,14 @@
+-- FIX aplicado a Supabase (2026-05-30):
+-- El trigger sync_web_order_to_dashboard solo procesaba source='website',
+-- ignorando los pedidos de pedidos.carnicosgustavo.com (source='pedidos-app').
+-- Cambio: aceptar ambos orígenes.
+--
+--   ANTES:  IF NEW.source <> 'website' THEN RETURN NEW; END IF;
+--   AHORA:  IF NEW.source NOT IN ('website', 'pedidos-app') THEN RETURN NEW; END IF;
+--
+-- Migraciones aplicadas:
+--   - fix_trigger_accept_pedidos_app (CREATE OR REPLACE de la función)
+--   - backfill manual de los web_orders 'pedidos-app' que se habían saltado
+--
+-- Ver definición vigente con:
+--   SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname='sync_web_order_to_dashboard';

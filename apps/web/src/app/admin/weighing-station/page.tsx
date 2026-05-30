@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
@@ -216,6 +216,40 @@ export default function WeighingStationPage() {
 			return next < pendingItems.length ? next : i;
 		});
 		setActualWeight("");
+	};
+
+	// Cambia el recipiente con flechas ↑/↓ (cicla la lista), conservando el peso bruto
+	const cycleContainer = useCallback((dir: number) => {
+		setContainerId((cur) => {
+			const idx = CONTAINERS.findIndex((c) => c.id === cur);
+			const next = (idx + dir + CONTAINERS.length) % CONTAINERS.length;
+			return CONTAINERS[next].id;
+		});
+	}, []);
+
+	// Mantener el cursor SIEMPRE en el input de peso (al cambiar de artículo o tras registrar)
+	const weightInputRef = useRef<HTMLInputElement>(null);
+	useEffect(() => {
+		weightInputRef.current?.focus();
+	}, [currentItem?.id]);
+
+	// Atajos de teclado del input de peso: Enter registra, flechas navegan
+	const handleWeightKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+		if (e.key === "Enter") {
+			handleRegisterWeight();
+		} else if (e.key === "ArrowLeft") {
+			e.preventDefault();
+			handlePrevItem();
+		} else if (e.key === "ArrowRight") {
+			e.preventDefault();
+			handleNextItem();
+		} else if (e.key === "ArrowUp") {
+			e.preventDefault();
+			cycleContainer(-1);
+		} else if (e.key === "ArrowDown") {
+			e.preventDefault();
+			cycleContainer(1);
+		}
 	};
 
 	const batchProduct = useMemo(
@@ -478,6 +512,7 @@ export default function WeighingStationPage() {
 									</div>
 									<div className="relative">
 										<Input
+											ref={weightInputRef}
 											id="weight"
 											type="number"
 											step="0.001"
@@ -485,9 +520,7 @@ export default function WeighingStationPage() {
 											autoFocus
 											value={actualWeight}
 											onChange={(e) => setActualWeight(e.target.value)}
-											onKeyDown={(e) => {
-												if (e.key === "Enter") handleRegisterWeight();
-											}}
+											onKeyDown={handleWeightKeyDown}
 											onFocus={(e) => e.currentTarget.select()}
 											className="text-5xl h-24 text-center font-mono font-bold rounded-2xl border-2 focus-visible:ring-offset-2 pr-20"
 											placeholder="0.000"
