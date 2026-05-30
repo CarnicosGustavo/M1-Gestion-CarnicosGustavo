@@ -132,6 +132,76 @@ export const inventoryRouter = router({
 			});
 		}),
 
+	// Reset de clientes y pedidos (datos de prueba). Respalda a tablas con
+	// fecha/hora ANTES de borrar (el respaldo queda en la BD por tiempo indefinido).
+	resetCustomersAndOrders: adminProcedure
+		.input(z.object({ adminPassword: z.string().min(1) }))
+		.output(
+			z.object({
+				success: z.boolean(),
+				backupSuffix: z.string(),
+				deletedCustomers: z.number(),
+				deletedOrders: z.number(),
+			}),
+		)
+		.mutation(async ({ input }) => {
+			const expected =
+				process.env.ADMIN_RESET_PASSWORD?.trim() ??
+				process.env.SEED_TOKEN?.trim() ??
+				"";
+			if (!expected || input.adminPassword.trim() !== expected) {
+				throw new TRPCError({ code: "UNAUTHORIZED", message: "Contraseña inválida" });
+			}
+
+			// Sufijo de fecha/hora solo con dígitos (seguro para nombre de tabla)
+			const suffix = new Date()
+				.toISOString()
+				.replace(/[^0-9]/g, "")
+				.slice(0, 14);
+
+			return db.transaction(async (tx) => {
+				// 1. Respaldo a tablas con fecha (copia completa)
+				for (const t of [
+					"customers",
+					"orders",
+					"order_items",
+					"web_orders",
+					"credit_charges",
+					"credit_payments",
+					"customer_prices",
+					"transactions",
+				]) {
+					await tx.execute(
+						sql.raw(`CREATE TABLE IF NOT EXISTS bkp_${t}_${suffix} AS TABLE ${t}`),
+					);
+				}
+
+				const [{ count: nCust }] = (await tx.execute(
+					sql`SELECT COUNT(*)::int AS count FROM customers`,
+				)) as unknown as { count: number }[];
+				const [{ count: nOrd }] = (await tx.execute(
+					sql`SELECT COUNT(*)::int AS count FROM orders`,
+				)) as unknown as { count: number }[];
+
+				// 2. Borrar datos de prueba (respeta dependencias)
+				await tx.execute(sql`DELETE FROM transactions`);
+				await tx.execute(sql`DELETE FROM credit_payments`);
+				await tx.execute(sql`DELETE FROM credit_charges`);
+				await tx.execute(sql`DELETE FROM order_items`);
+				await tx.execute(sql`DELETE FROM orders`);
+				await tx.execute(sql`DELETE FROM web_orders`);
+				await tx.execute(sql`DELETE FROM customer_prices`);
+				await tx.execute(sql`DELETE FROM customers`);
+
+				return {
+					success: true,
+					backupSuffix: suffix,
+					deletedCustomers: Number(nCust) || 0,
+					deletedOrders: Number(nOrd) || 0,
+				};
+			});
+		}),
+
 	recordWeighingBatch: almacenProcedure
 		.input(
 			z.object({

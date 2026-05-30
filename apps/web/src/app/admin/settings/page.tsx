@@ -32,6 +32,31 @@ export default function SettingsPage() {
 	const [resetConfirm, setResetConfirm] = useState("");
 	const [resetOpen, setResetOpen] = useState(false);
 
+	// Reset de clientes y pedidos
+	const [cliPassword, setCliPassword] = useState("");
+	const [cliConfirm, setCliConfirm] = useState("");
+	const [cliOpen, setCliOpen] = useState(false);
+
+	const resetCustomersMutation = useMutation(
+		trpc.inventory.resetCustomersAndOrders.mutationOptions({
+			onSuccess: (data: any) => {
+				toast.success(
+					`Listo: ${data.deletedCustomers} clientes y ${data.deletedOrders} pedidos borrados. Respaldo: ${data.backupSuffix}`,
+				);
+				setCliPassword("");
+				setCliConfirm("");
+				setCliOpen(false);
+				queryClient.invalidateQueries({
+					queryKey: trpc.customers.list.queryKey(),
+				});
+				queryClient.invalidateQueries({
+					queryKey: trpc.orders.list.queryKey(),
+				});
+			},
+			onError: (e: any) => toast.error(e.message),
+		}),
+	);
+
 	const resetMutation = useMutation(
 		trpc.inventory.resetAllStock.mutationOptions({
 			onSuccess: (data) => {
@@ -145,6 +170,79 @@ export default function SettingsPage() {
 					</div>
 				</CardContent>
 			</Card>
+
+			<Card className="border-orange-200 bg-orange-50">
+				<CardHeader>
+					<CardTitle className="text-orange-900">Reset de Clientes y Pedidos</CardTitle>
+					<CardDescription className="text-orange-900/80">
+						Borra clientes, pedidos, cobranza y precios por cliente (datos de prueba).
+						Genera un respaldo en la base de datos (tablas con fecha) antes de borrar.
+						Requiere contraseña de administrador.
+					</CardDescription>
+				</CardHeader>
+				<CardContent className="space-y-4">
+					<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+						<div className="space-y-1">
+							<Label>Contraseña admin</Label>
+							<Input
+								type="password"
+								value={cliPassword}
+								onChange={(e) => setCliPassword(e.target.value)}
+								placeholder="••••••••"
+							/>
+						</div>
+						<div className="space-y-1">
+							<Label>Confirmación</Label>
+							<Input
+								value={cliConfirm}
+								onChange={(e) => setCliConfirm(e.target.value)}
+								placeholder='Escribe "RESET"'
+							/>
+						</div>
+					</div>
+					<div className="flex justify-end">
+						<Button
+							className="bg-orange-600 hover:bg-orange-700"
+							onClick={() => setCliOpen(true)}
+							disabled={
+								resetCustomersMutation.isPending ||
+								cliPassword.trim().length === 0 ||
+								cliConfirm.trim().toUpperCase() !== "RESET"
+							}
+						>
+							{resetCustomersMutation.isPending
+								? "Reseteando..."
+								: "Resetear clientes y pedidos"}
+						</Button>
+					</div>
+				</CardContent>
+			</Card>
+
+			<Dialog open={cliOpen} onOpenChange={setCliOpen}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Confirmar reset de clientes y pedidos</DialogTitle>
+						<DialogDescription>
+							Se respaldan los datos (tablas con fecha) y luego se borran clientes,
+							pedidos, cobranza y precios por cliente. El catálogo y recetas no se tocan.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Button variant="secondary" onClick={() => setCliOpen(false)}>
+							Cancelar
+						</Button>
+						<Button
+							className="bg-orange-600 hover:bg-orange-700"
+							onClick={() =>
+								resetCustomersMutation.mutate({ adminPassword: cliPassword })
+							}
+							disabled={resetCustomersMutation.isPending}
+						>
+							Confirmar reset
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 
 			<Dialog open={resetOpen} onOpenChange={setResetOpen}>
 				<DialogContent>
