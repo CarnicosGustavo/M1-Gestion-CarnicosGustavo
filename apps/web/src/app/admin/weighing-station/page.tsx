@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
@@ -79,6 +80,11 @@ export default function WeighingStationPage() {
 	// Contenedor / Tara
 	const [containerId, setContainerId] = useState<ContainerId>("ninguno");
 	const [customTare, setCustomTare] = useState("0.000");
+
+	// Pedido recién completado (para el botón flotante a cobro)
+	const [completedOrder, setCompletedOrder] = useState<{ id: number; name: string } | null>(null);
+	const pendingCompletionRef = useRef<{ id: number; name: string } | null>(null);
+	const completedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// Diálogo de pesaje por lote
 	const [batchOpen, setBatchOpen] = useState(false);
@@ -187,8 +193,14 @@ export default function WeighingStationPage() {
 			onSuccess: () => {
 				toast.success(t("weighed"));
 				setActualWeight("");
-				// Avanzar al siguiente artículo (el índice sigue igual; el item pesado
-				// desaparece de pendingItems, así el mismo índice apunta al siguiente)
+				// Si este era el último artículo por pesar, el pedido quedó listo
+				// para cobro: mostrar botón flotante a /admin/checkout por unos segundos.
+				if (pendingCompletionRef.current) {
+					setCompletedOrder(pendingCompletionRef.current);
+					pendingCompletionRef.current = null;
+					if (completedTimerRef.current) clearTimeout(completedTimerRef.current);
+					completedTimerRef.current = setTimeout(() => setCompletedOrder(null), 9000);
+				}
 				refetchOrders();
 			},
 			onError: (error) => {
@@ -221,11 +233,20 @@ export default function WeighingStationPage() {
 	// ---------------------------------------------------------------------------
 	const handleRegisterWeight = useCallback(() => {
 		if (!currentItem || !hasValidWeight) return;
+		// ¿Es el último artículo por pesar de este pedido?
+		if (pendingItems.length <= 1 && selectedOrder) {
+			pendingCompletionRef.current = {
+				id: selectedOrder.id,
+				name: selectedOrder.customer?.name ?? "Pedido",
+			};
+		} else {
+			pendingCompletionRef.current = null;
+		}
 		updateWeightMutation.mutate({
 			orderItemId: currentItem.id,
 			actualWeightKg: Math.round(netKg * 1000),
 		});
-	}, [currentItem, hasValidWeight, netKg, updateWeightMutation]);
+	}, [currentItem, hasValidWeight, netKg, updateWeightMutation, pendingItems.length, selectedOrder]);
 
 	// Limpiar peso bruto (TARE)
 	const handleTare = () => {
@@ -786,6 +807,22 @@ export default function WeighingStationPage() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			{/* Botón flotante: pedido recién pesado → ir a cobro */}
+			{completedOrder && (
+				<div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4">
+					<Link href={`/admin/checkout?order=${completedOrder.id}`}>
+						<Button
+							size="lg"
+							className="h-14 rounded-2xl bg-green-600 px-6 text-base font-bold shadow-xl hover:bg-green-700"
+							onClick={() => setCompletedOrder(null)}
+						>
+							<CheckCircleIcon className="mr-2 h-5 w-5" />
+							Cobrar pedido #{completedOrder.id} ({completedOrder.name})
+						</Button>
+					</Link>
+				</div>
+			)}
 		</div>
 	);
 }

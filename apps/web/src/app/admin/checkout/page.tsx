@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
@@ -46,6 +46,25 @@ export default function CheckoutPage() {
 		() => (ordersReady ?? []).find((o: any) => o.id === selectedOrderId) as any,
 		[ordersReady, selectedOrderId],
 	);
+
+	// Pre-selecciona el pedido si viene en la URL (?order=N), p. ej. desde el
+	// botón flotante de la estación de pesaje. Solo una vez.
+	const appliedUrlRef = useRef(false);
+	useEffect(() => {
+		if (appliedUrlRef.current || !ordersReady) return;
+		try {
+			const ord = parseInt(
+				new URLSearchParams(window.location.search).get("order") ?? "",
+				10,
+			);
+			if (Number.isFinite(ord) && (ordersReady as any[]).some((o) => o.id === ord)) {
+				setSelectedOrderId(ord);
+				appliedUrlRef.current = true;
+			}
+		} catch {
+			/* noop */
+		}
+	}, [ordersReady]);
 
 	// Precarga los precios al abrir un pedido: precio guardado del cliente o el del item
 	useEffect(() => {
