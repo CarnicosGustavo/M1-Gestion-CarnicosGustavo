@@ -28,7 +28,7 @@ import {
 	Trash2Icon,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
@@ -136,6 +136,67 @@ export default function POSPage() {
 		return map;
 	}, [priceListItemsQuery.data, selectedPriceListId]);
 
+	// Precios propios del cliente seleccionado (tienen prioridad sobre lista/base)
+	const customerPricesQuery = useQuery({
+		...trpc.customerPrices.getByCustomer.queryOptions({
+			customerId: selectedCustomer?.id ?? 0,
+		}),
+		enabled: !!selectedCustomer,
+	});
+
+	const customerPriceMap = useMemo(() => {
+		const map = new Map<number, { kg?: number; piece?: number }>();
+		for (const item of (customerPricesQuery.data ?? []) as any[]) {
+			if (!item.hasCustomPrice) continue;
+			const kg = item.pricePerKg != null ? Number(item.pricePerKg) : null;
+			const piece =
+				item.pricePerPiece != null ? Number(item.pricePerPiece) : null;
+			map.set(item.productId, {
+				kg: kg != null && Number.isFinite(kg) ? kg : undefined,
+				piece: piece != null && Number.isFinite(piece) ? piece : undefined,
+			});
+		}
+		return map;
+	}, [customerPricesQuery.data]);
+
+	// Resuelve el precio de un producto: cliente > lista > base
+	const resolvePrice = (productId: number, baseKg: number, basePiece: number) => {
+		const cust = customerPriceMap.get(productId);
+		const list = priceOverrides.get(productId);
+		return {
+			kg: cust?.kg ?? list?.kg ?? baseKg,
+			piece: cust?.piece ?? list?.piece ?? basePiece,
+		};
+	};
+
+	// Re-precia los productos en el carrito cuando cambian los precios del cliente o la lista
+	useEffect(() => {
+		setSelectedProducts((prev) => {
+			let changed = false;
+			const next = prev.map((p) => {
+				const price = resolvePrice(
+					p.id,
+					Number(p.price_per_kg) || 0,
+					Number(p.price_per_piece) || 0,
+				);
+				if (
+					price.kg !== p.unitPricePerKg ||
+					price.piece !== p.unitPricePerPiece
+				) {
+					changed = true;
+					return {
+						...p,
+						unitPricePerKg: price.kg,
+						unitPricePerPiece: price.piece,
+					};
+				}
+				return p;
+			});
+			return changed ? next : prev;
+		});
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [customerPriceMap, priceOverrides]);
+
 	const filteredProducts = useMemo(() => {
 		if (!productSearch.trim()) return products;
 		const q = productSearch.toLowerCase();
@@ -177,9 +238,9 @@ export default function POSPage() {
 				),
 			);
 		} else {
-			const override = priceOverrides.get(product.id);
 			const baseKg = Number(product.price_per_kg) || 0;
 			const basePiece = Number(product.price_per_piece) || 0;
+			const price = resolvePrice(product.id, baseKg, basePiece);
 			setSelectedProducts([
 				...selectedProducts,
 				{
@@ -195,8 +256,8 @@ export default function POSPage() {
 					category: product.category ?? "",
 					quantityPieces: 1,
 					quantityKg: null,
-					unitPricePerKg: override?.kg ?? baseKg,
-					unitPricePerPiece: override?.piece ?? basePiece,
+					unitPricePerKg: price.kg,
+					unitPricePerPiece: price.piece,
 				},
 			]);
 		}
@@ -204,7 +265,11 @@ export default function POSPage() {
 
 	const handleSelectCustomer = (customerId: number | string) => {
 		const customer = customers.find((c) => c.id === customerId);
-		if (customer) setSelectedCustomer(customer);
+		if (customer) {
+			setSelectedCustomer(customer);
+			// Re-precia los productos ya agregados con los precios de este cliente
+			// (el efecto real ocurre cuando llegan sus precios; ver useEffect abajo)
+		}
 	};
 
 	const handleSelectPaymentMethod = (paymentMethodId: number | string) => {

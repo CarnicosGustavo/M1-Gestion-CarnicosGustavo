@@ -42,6 +42,7 @@ const productSchema = z.object({
 	is_sellable_by_weight: z.boolean(),
 	default_sale_unit: z.string(),
 	price_per_piece: z.union([z.number(), z.string()]).nullable(),
+	avg_weight_per_piece_kg: z.union([z.number(), z.string()]).nullable().optional(),
 	created_at: z.date().nullable(),
 	updated_at: z.date().nullable(),
 });

@@ -70,6 +70,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
 	const { data: order, isLoading, refetch } = useQuery(trpc.orders.get.queryOptions({ id: orderId })) as { data: any; isLoading: boolean; refetch: any };
+	const { data: productsList } = useQuery(trpc.products.list.queryOptions()) as {
+		data: { id: number; avg_weight_per_piece_kg?: number | string | null }[] | undefined;
+	};
 	const t = useTranslations("orders");
 	const tc = useTranslations("common");
 	const locale = useLocale();
@@ -166,6 +169,31 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 	const { label: statusLabel, color: statusColor } = getStatusDisplay(order.status);
 	const canCharge = order.status === "LISTA_PARA_COBRO";
 
+	// Estimación de costo de items aún no pesados (piezas × peso promedio × precio/kg)
+	const avgWeightMap = new Map<number, number>();
+	for (const p of productsList ?? []) {
+		const w = p.avg_weight_per_piece_kg != null ? Number(p.avg_weight_per_piece_kg) : 0;
+		if (w > 0) avgWeightMap.set(p.id, w);
+	}
+	let estimatedExtra = 0; // centavos estimados de items sin pesar
+	let hasEstimate = false;
+	for (const item of order.orderItems ?? []) {
+		const sinPesar =
+			(!item.quantity_kg || Number(item.quantity_kg) === 0) &&
+			item.status !== "PENDIENTE_COMPRA" &&
+			item.quantity_pieces > 0;
+		if (sinPesar) {
+			const avg = avgWeightMap.get(item.product_id) ?? 0;
+			if (avg > 0) {
+				const estKg = item.quantity_pieces * avg;
+				// unit_price está en centavos por kg
+				estimatedExtra += estKg * Number(item.unit_price || 0);
+				hasEstimate = true;
+			}
+		}
+	}
+	const estimatedTotal = Number(order.total_amount || 0) + estimatedExtra;
+
 	return (
 		<div className="space-y-6 max-w-3xl">
 			{/* ── Cabecera ── */}
@@ -239,6 +267,17 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 								{formatCurrency(order.total_amount, locale)}
 							</dd>
 						</div>
+						{hasEstimate && (
+							<div>
+								<dt className="text-muted-foreground">Total estimado (sin pesar)</dt>
+								<dd className="text-lg font-bold text-blue-700">
+									~ {formatCurrency(Math.round(estimatedTotal), locale)}
+								</dd>
+								<p className="text-[11px] text-muted-foreground mt-0.5">
+									Calculado con peso promedio por pieza. El total real sale al pesar.
+								</p>
+							</div>
+						)}
 						<div>
 							<dt className="text-muted-foreground">{t("createdAt")}</dt>
 							<dd>
