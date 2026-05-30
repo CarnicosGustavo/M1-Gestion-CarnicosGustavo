@@ -267,6 +267,22 @@ export default function RecipesPage() {
 		return allProducts.slice().sort((a, b) => a.name.localeCompare(b.name));
 	}, [allProducts]);
 
+	// IDs de productos que participan en alguna receta (como padre o como hijo)
+	const productsWithRecipe = useMemo(() => {
+		const s = new Set<number>();
+		for (const r of mapRecipes) {
+			s.add(r.parent_product_id);
+			s.add(r.child_product_id);
+		}
+		return s;
+	}, [mapRecipes]);
+
+	// Productos que NO participan en ninguna receta (informativo)
+	const productsWithoutRecipe = useMemo(
+		() => productOptions.filter((p) => !productsWithRecipe.has(p.id)),
+		[productOptions, productsWithRecipe],
+	);
+
 	const mapTypes = useMemo(() => {
 		const types = new Set<string>();
 		for (const r of mapRecipes) types.add(r.transformation_type);
@@ -702,6 +718,28 @@ export default function RecipesPage() {
 				)}
 			</CardContent>
 
+			{productsWithoutRecipe.length > 0 && (
+				<CardContent className="pt-0">
+					<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+						<span className="font-bold">
+							{productsWithoutRecipe.length} producto(s) sin receta
+						</span>{" "}
+						(no salen de ningún despiece ni se despiezan). Es normal para piezas
+						finales; revisa si alguno debería tener receta:
+						<div className="mt-1 flex flex-wrap gap-1">
+							{productsWithoutRecipe.map((p) => (
+								<span
+									key={p.id}
+									className="rounded bg-amber-100 px-1.5 py-0.5 font-medium"
+								>
+									{p.name}
+								</span>
+							))}
+						</div>
+					</div>
+				</CardContent>
+			)}
+
 			<CardContent className="p-0">
 				{viewMode === "map" ? (
 					<div className="rounded-md border p-4">{renderMapTree}</div>
@@ -782,10 +820,15 @@ export default function RecipesPage() {
 											<SelectTrigger className="col-span-3">
 												<SelectValue placeholder="Selecciona padre" />
 											</SelectTrigger>
-											<SelectContent>
+											<SelectContent className="max-h-72 overflow-y-auto">
 												{productOptions.map((p: Product) => (
 													<SelectItem key={p.id} value={String(p.id)}>
 														{p.name}
+														{!productsWithRecipe.has(p.id) && (
+															<span className="ml-2 text-[10px] text-amber-600">
+																(sin receta)
+															</span>
+														)}
 													</SelectItem>
 												))}
 											</SelectContent>
@@ -810,10 +853,15 @@ export default function RecipesPage() {
 											<SelectTrigger className="col-span-3">
 												<SelectValue placeholder="Selecciona hijo" />
 											</SelectTrigger>
-											<SelectContent>
+											<SelectContent className="max-h-72 overflow-y-auto">
 												{productOptions.map((p: Product) => (
 													<SelectItem key={p.id} value={String(p.id)}>
 														{p.name}
+														{!productsWithRecipe.has(p.id) && (
+															<span className="ml-2 text-[10px] text-amber-600">
+																(sin receta)
+															</span>
+														)}
 													</SelectItem>
 												))}
 											</SelectContent>
