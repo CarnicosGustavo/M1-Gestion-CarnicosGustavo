@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   Card,
   CardHeader,
@@ -20,6 +21,8 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
+  EyeIcon,
+  EyeOffIcon,
 } from "lucide-react";
 import {
   Pie,
@@ -56,6 +59,21 @@ export default function Page() {
   );
   const t = useTranslations("dashboard");
   const locale = useLocale();
+
+  // Ocultar/mostrar montos (privacidad), recordado en el navegador
+  const [hideAmounts, setHideAmounts] = useState(false);
+  useEffect(() => {
+    setHideAmounts(localStorage.getItem("cg_hide_amounts") === "1");
+  }, []);
+  const toggleHide = () => {
+    setHideAmounts((v) => {
+      const next = !v;
+      localStorage.setItem("cg_hide_amounts", next ? "1" : "0");
+      return next;
+    });
+  };
+  const money = (val: number) =>
+    hideAmounts ? "$ • • • •" : formatCurrency(val, locale);
 
   if (isLoading || isFetching) {
     return (
@@ -113,6 +131,23 @@ export default function Page() {
 
   return (
     <div className="grid flex-1 items-start gap-6 min-w-0 overflow-hidden">
+      {/* Toggle ocultar montos */}
+      <div className="flex justify-end -mb-2">
+        <Button variant="outline" size="sm" onClick={toggleHide}>
+          {hideAmounts ? (
+            <>
+              <EyeIcon className="h-4 w-4 mr-2" />
+              Mostrar montos
+            </>
+          ) : (
+            <>
+              <EyeOffIcon className="h-4 w-4 mr-2" />
+              Ocultar montos
+            </>
+          )}
+        </Button>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Card>
@@ -124,7 +159,7 @@ export default function Page() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(data.totalRevenue, locale)}
+              {money(data.totalRevenue)}
             </div>
             <p className="text-xs text-muted-foreground">
               {t("completedIncome")}
@@ -140,7 +175,7 @@ export default function Page() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(data.totalExpenses, locale)}
+              {money(data.totalExpenses)}
             </div>
             <p className="text-xs text-muted-foreground">
               {t("completedExpenses")}
@@ -160,7 +195,7 @@ export default function Page() {
             <div
               className={`text-2xl font-bold ${profitIsPositive ? "text-emerald-600" : "text-red-600"}`}
             >
-              {formatCurrency(data.totalProfit, locale)}
+              {money(data.totalProfit)}
             </div>
             <p className="text-xs text-muted-foreground">
               {t("profitDescription")}
@@ -175,16 +210,18 @@ export default function Page() {
           title={t("revenueByCategory")}
           description={t("revenueBreakdown")}
           data={data.revenueByCategory}
+          hideAmounts={hideAmounts}
         />
 
         <CategoryPieChart
           title={t("expensesByCategory")}
           description={t("expensesBreakdown")}
           data={data.expensesByCategory}
+          hideAmounts={hideAmounts}
         />
 
         <ProfitMarginChart data={data.profitMargin} />
-        <CashFlowChart data={data.cashFlow} />
+        <CashFlowChart data={data.cashFlow} hideAmounts={hideAmounts} />
       </div>
     </div>
   );
@@ -195,10 +232,12 @@ function CategoryPieChart({
   title,
   description,
   data,
+  hideAmounts,
 }: {
   title: string;
   description: string;
   data: Record<string, number>;
+  hideAmounts?: boolean;
 }) {
   const t = useTranslations("dashboard");
   const tc = useTranslations("common");
@@ -251,7 +290,9 @@ function CategoryPieChart({
                 content={
                   <ChartTooltipContent
                     nameKey="category"
-                    formatter={(value) => formatCurrency(Number(value), locale)}
+                    formatter={(value) =>
+                      hideAmounts ? "• • • •" : formatCurrency(Number(value), locale)
+                    }
                   />
                 }
               />
@@ -278,7 +319,7 @@ function CategoryPieChart({
                             y={viewBox.cy}
                             className="fill-foreground text-xl font-bold"
                           >
-                            {formatCurrency(total, locale)}
+                            {hideAmounts ? "• • • •" : formatCurrency(total, locale)}
                           </tspan>
                           <tspan
                             x={viewBox.cx}
@@ -373,8 +414,10 @@ function ProfitMarginChart({
 
 function CashFlowChart({
   data,
+  hideAmounts,
 }: {
   data: { date: string; amount: number }[];
+  hideAmounts?: boolean;
 }) {
   const t = useTranslations("dashboard");
   const locale = useLocale();
@@ -413,14 +456,16 @@ function CashFlowChart({
               <YAxis
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(v) => formatCurrency(v, locale)}
+                tickFormatter={(v) => (hideAmounts ? "•••" : formatCurrency(v, locale))}
                 width={60}
               />
               <ChartTooltip
                 content={
                   <ChartTooltipContent
                     labelFormatter={(label) => formatShortDate(String(label), locale)}
-                    formatter={(value) => formatCurrency(Number(value), locale)}
+                    formatter={(value) =>
+                      hideAmounts ? "• • • •" : formatCurrency(Number(value), locale)
+                    }
                   />
                 }
               />
