@@ -83,7 +83,8 @@ export function TicketModal({ orderId, open, onClose }: TicketModalProps) {
    sin tamaño de papel forzado (usa el del equipo), todo en negro,
    monoespaciado y legible. */
 @page {
-  margin: 3mm;
+  /* Margen izquierdo mayor: la matriz de puntos cortaba el lado izquierdo */
+  margin: 4mm 4mm 4mm 9mm;
 }
 html, body {
   margin: 0;
@@ -96,7 +97,7 @@ body {
   font-family: 'Courier New', Courier, monospace;
   font-size: 12px;
   line-height: 1.5;
-  padding: 1mm;
+  padding: 0 2mm 2mm 4mm;
   width: auto;
   box-sizing: border-box;
   font-weight: bold;

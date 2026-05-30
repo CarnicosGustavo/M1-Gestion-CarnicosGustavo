@@ -141,6 +141,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 		}),
 	);
 
+	const convertCreditMutation = useMutation(
+		trpc.orders.convertToCredit.mutationOptions({
+			onSuccess: () => {
+				toast.success("Pedido pasado a crédito (cuenta por cobrar)");
+				refetch();
+				queryClient.invalidateQueries({ queryKey: invalidateKey });
+			},
+			onError: (err: any) =>
+				toast.error(err.message ?? "No se pudo pasar a crédito"),
+		}),
+	);
+
 	const openPay = () => {
 		setPayMethodId(paymentMethods?.[0]?.id?.toString() ?? "");
 		setPayType("contado");
@@ -219,6 +231,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 						>
 							<BanknoteIcon className="w-4 h-4 mr-2" />
 							Liquidar / Cobrar
+						</Button>
+					)}
+					{order.status === "COMPLETADA" && (
+						<Button
+							size="sm"
+							variant="outline"
+							className="border-orange-400 text-orange-700 hover:bg-orange-50"
+							disabled={convertCreditMutation.isPending}
+							onClick={() => convertCreditMutation.mutate({ orderId })}
+						>
+							<BanknoteIcon className="w-4 h-4 mr-2" />
+							Pasar a crédito
 						</Button>
 					)}
 					<Button variant="outline" size="sm" onClick={() => setTicketOpen(true)}>

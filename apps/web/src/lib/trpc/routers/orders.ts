@@ -1539,6 +1539,63 @@ export const ordersRouter = router({
 			});
 		}),
 
+	// Convierte un pedido ya cobrado (contado) a CRÉDITO: revierte el ingreso
+	// en efectivo y crea la cuenta por cobrar en Cobranza.
+	convertToCredit: protectedProcedure
+		.input(z.object({ orderId: z.number() }))
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ ctx, input }) => {
+			return db.transaction(async (tx) => {
+				const [order] = await tx
+					.select()
+					.from(orders)
+					.where(
+						and(
+							eq(orders.id, input.orderId),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
+					)
+					.limit(1);
+				if (!order) {
+					throw new TRPCError({ code: "NOT_FOUND", message: "Pedido no encontrado" });
+				}
+				if (order.status !== "COMPLETADA") {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Solo pedidos ya cobrados/completados pueden pasar a crédito",
+					});
+				}
+				if (!order.customer_id) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "El pedido no tiene cliente",
+					});
+				}
+				const [existing] = await tx
+					.select({ id: creditCharges.id })
+					.from(creditCharges)
+					.where(eq(creditCharges.order_id, input.orderId))
+					.limit(1);
+				if (existing) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Este pedido ya está en crédito",
+					});
+				}
+				// Revierte el ingreso en efectivo (elimina la transacción del pedido)
+				await tx.delete(transactions).where(eq(transactions.order_id, input.orderId));
+				// Crea la cuenta por cobrar
+				await tx.insert(creditCharges).values({
+					customer_id: order.customer_id,
+					order_id: input.orderId,
+					amount: (Number(order.total_amount) / 100).toFixed(2),
+					concept: `Pedido #${input.orderId} (pasó a crédito)`,
+					source: "pedido",
+				});
+				return { success: true };
+			});
+		}),
+
 	// Pedidos ya pesados, listos para cobro, con precio guardado del cliente
 	getReadyToCharge: protectedProcedure
 		.input(z.void())
