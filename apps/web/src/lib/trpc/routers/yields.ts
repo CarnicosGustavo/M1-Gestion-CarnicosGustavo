@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
-import { yieldSheets, yieldSheetItems } from "@/lib/db/schema";
+import { yieldSheets, yieldSheetItems, channelPurchases } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 
 const itemInput = z.object({
@@ -58,6 +58,23 @@ export const yieldsRouter = router({
 			}
 			return result;
 		}),
+
+	// Última compra de canales registrada (para auto-rellenar la hoja)
+	latestPurchase: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
+		const [p] = await db
+			.select()
+			.from(channelPurchases)
+			.where(eq(channelPurchases.user_uid, ctx.user.id))
+			.orderBy(desc(channelPurchases.id))
+			.limit(1);
+		if (!p) return null;
+		return {
+			numMedias: p.num_medias,
+			kgComprado: Number(p.total_kg),
+			supplier: (p.supplier as string | null) ?? null,
+			date: p.purchase_date,
+		};
+	}),
 
 	// Comparativa de rendimiento por proveedor (de todas las hojas)
 	byProvider: protectedProcedure.input(z.void()).query(async ({ ctx }) => {

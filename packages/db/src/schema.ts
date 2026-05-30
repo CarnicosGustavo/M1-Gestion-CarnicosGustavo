@@ -162,6 +162,20 @@ export const products = pgTable("products", {
 	updated_at: timestamp("updated_at").defaultNow(),
 });
 
+// --- COMPRAS DE CANALES (alimentan rendimiento) ---
+export const channelPurchases = pgTable("channel_purchases", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	supplier: varchar("supplier", { length: 100 }),
+	qty_americano: integer("qty_americano").notNull().default(0),
+	qty_nacional: integer("qty_nacional").notNull().default(0),
+	num_medias: integer("num_medias").notNull().default(0),
+	total_kg: numeric("total_kg", { precision: 12, scale: 3 }).notNull().default("0"),
+	price_per_kg: numeric("price_per_kg", { precision: 10, scale: 2 }),
+	purchase_date: date("purchase_date").defaultNow(),
+	user_uid: varchar("user_uid", { length: 255 }),
+	created_at: timestamp("created_at").defaultNow(),
+});
+
 // --- HOJAS DE RENDIMIENTO (despiece) ---
 export const yieldSheets = pgTable("yield_sheets", {
 	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

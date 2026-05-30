@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
@@ -43,6 +43,20 @@ export default function YieldPage() {
 	const { data: products = [] } = useQuery(trpc.products.list.queryOptions()) as { data: any[] };
 	const { data: sheets } = useQuery(trpc.yields.list.queryOptions());
 	const { data: providerStats } = useQuery(trpc.yields.byProvider.queryOptions());
+	const { data: latestPurchase } = useQuery(trpc.yields.latestPurchase.queryOptions()) as {
+		data: { numMedias: number; kgComprado: number; supplier: string | null } | null | undefined;
+	};
+
+	// Auto-rellena la cabecera con la última compra de canales (una sola vez)
+	const filledRef = useRef(false);
+	useEffect(() => {
+		if (filledRef.current || !latestPurchase) return;
+		filledRef.current = true;
+		if (!numCanales) setNumCanales(String(latestPurchase.numMedias ?? ""));
+		if (!kgComprado) setKgComprado(String(latestPurchase.kgComprado ?? ""));
+		if (!supplier && latestPurchase.supplier) setSupplier(latestPurchase.supplier);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [latestPurchase]);
 
 	// Mapa nombre (mayúsculas) → peso promedio por pieza
 	const avgByName = useMemo(() => {
@@ -171,12 +185,18 @@ export default function YieldPage() {
 			<Card>
 				<CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-6">
 					<div className="space-y-1">
-						<Label>No. de canales</Label>
+						<Label>No. de medias canal</Label>
 						<Input type="number" value={numCanales} onChange={(e) => setNumCanales(e.target.value)} placeholder="Ej. 10" />
+						{latestPurchase && (
+							<p className="text-[10px] text-blue-600">Auto: última compra ({latestPurchase.numMedias})</p>
+						)}
 					</div>
 					<div className="space-y-1">
 						<Label>Kg comprado (total)</Label>
 						<Input type="number" value={kgComprado} onChange={(e) => setKgComprado(e.target.value)} placeholder="Ej. 1150" />
+						{latestPurchase && (
+							<p className="text-[10px] text-blue-600">Auto: última compra ({Number(latestPurchase.kgComprado).toFixed(0)} kg)</p>
+						)}
 					</div>
 					<div className="space-y-1">
 						<Label>Proveedor</Label>
@@ -222,7 +242,6 @@ export default function YieldPage() {
 									<TableHead className="text-center">Peso est.</TableHead>
 									<TableHead className="text-center">Peso real</TableHead>
 									<TableHead className="text-center">Dif.</TableHead>
-									<TableHead className="text-center">Pesado</TableHead>
 									<TableHead className="w-[5%]" />
 								</TableRow>
 							</TableHeader>
@@ -269,14 +288,6 @@ export default function YieldPage() {
 												)}
 											>
 												{real > 0 ? `${dif >= 0 ? "+" : ""}${dif.toFixed(2)}` : "—"}
-											</TableCell>
-											<TableCell className="text-center">
-												<input
-													type="checkbox"
-													checked={r.weighed}
-													onChange={(e) => updateRow(idx, { weighed: e.target.checked })}
-													className="h-5 w-5 accent-green-600"
-												/>
 											</TableCell>
 											<TableCell className="text-center">
 												<button type="button" onClick={() => removeRow(idx)} className="text-muted-foreground hover:text-red-500">

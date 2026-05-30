@@ -531,7 +531,7 @@ export default function RecipesPage() {
 		},
 		{
 			key: "rendimiento",
-			header: "% Rend.",
+			header: "% peso est.",
 			sortable: true,
 			accessorFn: (r) => Number(r.yield_weight_ratio) * 100,
 			render: (r) => {
@@ -1050,7 +1050,7 @@ export default function RecipesPage() {
 								{(field) => (
 									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label className="sm:text-right text-blue-600 font-semibold">
-											Rendimiento (%)
+											% peso est.
 										</Label>
 										<div className="col-span-3 flex items-center gap-2">
 											<Input
@@ -1066,7 +1066,7 @@ export default function RecipesPage() {
 											<span className="text-muted-foreground text-sm">%</span>
 										</div>
 										<div className="col-start-2 col-span-3 text-[10px] text-muted-foreground">
-											Porcentaje del peso del canal que representa esta pieza.
+											% del peso del padre que representa esta pieza (composición, no rendimiento de valor).
 										</div>
 									</div>
 								)}

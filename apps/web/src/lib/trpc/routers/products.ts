@@ -7,6 +7,7 @@ import {
 	inventoryTransactions,
 	products,
 	productTransformations,
+	channelPurchases,
 } from "@/lib/db/schema";
 import {
 	adminProcedure,
@@ -1487,6 +1488,18 @@ export const productsRouter = router({
 				if (canalUs) await apply(canalUs, mediasAmericano);
 				if (canalMxLomo) await apply(canalMxLomo, mediasNacionalLomo);
 				if (canalMxEsp) await apply(canalMxEsp, mediasNacionalEspilomo);
+
+				// Registro de la compra (alimenta el módulo de Rendimiento)
+				await tx.insert(channelPurchases).values({
+					supplier: input.supplier,
+					qty_americano: input.qtyAmericano,
+					qty_nacional: input.qtyNacional,
+					num_medias: quantityPieces,
+					total_kg: input.totalWeightKg.toFixed(3),
+					price_per_kg:
+						input.pricePerKg != null ? input.pricePerKg.toFixed(2) : null,
+					user_uid: uid,
+				});
 
 				return {
 					success: true,
