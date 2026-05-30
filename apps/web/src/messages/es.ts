@@ -267,9 +267,9 @@ const messages = {
 		registerWeight: "Registrar peso",
 		actualWeight: "Peso real (kg)",
 		nextItem: "Siguiente artículo",
-		orderRequiresWeighing: "Este pedido requiere pesaje en báscula.",
+		orderRequiresWeighing: "Crear y enviar a báscula",
 		weighingPendingItems:
-			"Faltan productos por pesar en la estación de báscula.",
+			"Hay productos por kilo: se pesarán en báscula y el precio se fija al cobrar. Puedes continuar.",
 		disassembly: "Despiece",
 		disassemblyDescription: "Procesa el despiece de productos padres.",
 		parentProduct: "Producto padre",

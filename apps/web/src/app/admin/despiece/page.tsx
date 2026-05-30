@@ -223,8 +223,30 @@ export default function DespiecePage() {
 								</div>
 							</div>
 							<div className="space-y-1">
-								<Label>Proveedor (opcional)</Label>
-								<Input value={supplier} onChange={(e) => setSupplier(e.target.value)} />
+								<Label>Proveedor</Label>
+								<div className="flex gap-2">
+									{["La Barca", "Valle"].map((prov) => (
+										<button
+											key={prov}
+											type="button"
+											onClick={() => setSupplier(prov)}
+											className={cn(
+												"flex-1 rounded-lg border px-3 py-2 text-sm font-bold transition-colors",
+												supplier === prov
+													? "border-primary bg-primary/10 text-primary"
+													: "border-border hover:bg-muted",
+											)}
+										>
+											{prov}
+										</button>
+									))}
+								</div>
+								<Input
+									value={supplier}
+									onChange={(e) => setSupplier(e.target.value)}
+									placeholder="O escribe otro proveedor"
+									className="mt-2"
+								/>
 							</div>
 							<Button
 								className="w-full"

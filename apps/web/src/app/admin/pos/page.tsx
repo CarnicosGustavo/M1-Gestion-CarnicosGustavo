@@ -343,11 +343,9 @@ export default function POSPage() {
 		return sum;
 	}, 0);
 
-	const canCreate =
-		selectedProducts.length > 0 &&
-		selectedCustomer &&
-		(paymentMethod ||
-			selectedProducts.some((p) => p.is_sellable_by_weight && !p.quantityKg));
+	// El pago se decide en la Cola de Cobro, no al crear el pedido.
+	// Basta con tener productos y cliente; el pedido fluye a pesaje/cobro.
+	const canCreate = selectedProducts.length > 0 && !!selectedCustomer;
 
 	const handleCreateOrder = () => {
 		if (!canCreate) return;
@@ -436,8 +434,11 @@ export default function POSPage() {
 				<CardContent className="flex flex-col gap-3 sm:flex-row sm:gap-4">
 					<div className="flex-1">
 						<Combobox
-							items={customers}
-							placeholder={t("selectCustomer")}
+							items={customers.map((c: any) => ({
+								id: c.id,
+								name: `${c.name ?? "Cliente"}${c.phone ? ` · ${c.phone}` : ""}`,
+							}))}
+							placeholder="Buscar cliente por nombre o teléfono"
 							onSelect={handleSelectCustomer}
 						/>
 					</div>
