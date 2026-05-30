@@ -28,6 +28,7 @@ import {
 	TagIcon,
 	SnowflakeIcon,
 	HandCoinsIcon,
+	BanknoteIcon,
 	ScissorsIcon,
 	SettingsIcon,
 	ShoppingBagIcon,
@@ -60,7 +61,8 @@ interface NavItem {
 		| "yield"
 		| "prices"
 		| "coldInventory"
-		| "collections";
+		| "collections"
+		| "checkout";
 	icon: LucideIcon;
 }
 
@@ -76,6 +78,7 @@ const navItems: NavItem[] = [
 		icon: ScaleIcon,
 	},
 	{ href: "/admin/yield", labelKey: "yield", icon: ClipboardListIcon },
+	{ href: "/admin/checkout", labelKey: "checkout", icon: BanknoteIcon },
 	{ href: "/admin/cold-inventory", labelKey: "coldInventory", icon: SnowflakeIcon },
 	{ href: "/admin/customers", labelKey: "customers", icon: UsersIcon },
 	{ href: "/admin/prices", labelKey: "prices", icon: TagIcon },

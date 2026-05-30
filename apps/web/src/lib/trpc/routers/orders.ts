@@ -11,6 +11,7 @@ import {
 	inventoryTransactions,
 	purchaseOrders,
 	creditCharges,
+	customerPrices,
 } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -1541,6 +1542,214 @@ export const ordersRouter = router({
 				});
 
 				return { success: true };
+			});
+		}),
+
+	// Pedidos ya pesados, listos para cobro, con precio guardado del cliente
+	getReadyToCharge: protectedProcedure
+		.input(z.void())
+		.query(async ({ ctx }) => {
+			const ords = await db
+				.select({
+					id: orders.id,
+					customerId: orders.customer_id,
+					customerName: customers.name,
+					totalAmount: orders.total_amount,
+					createdAt: orders.created_at,
+				})
+				.from(orders)
+				.leftJoin(customers, eq(customers.id, orders.customer_id))
+				.where(
+					and(
+						inArray(orders.user_uid, [ctx.user.id, "system"]),
+						eq(orders.status, "LISTA_PARA_COBRO"),
+					),
+				)
+				.orderBy(orders.id);
+
+			const result = [];
+			for (const o of ords) {
+				const items = await db
+					.select({
+						id: orderItems.id,
+						productId: orderItems.product_id,
+						productName: orderItems.product_name,
+						quantityKg: orderItems.quantity_kg,
+						quantityPieces: orderItems.quantity_pieces,
+						unitPrice: orderItems.unit_price,
+						savedPriceKg: customerPrices.price_per_kg,
+					})
+					.from(orderItems)
+					.leftJoin(
+						customerPrices,
+						and(
+							eq(customerPrices.product_id, orderItems.product_id),
+							eq(customerPrices.customer_id, o.customerId ?? 0),
+						),
+					)
+					.where(eq(orderItems.order_id, o.id));
+				result.push({ ...o, items });
+			}
+			return result;
+		}),
+
+	// Aplica precios por kg, guarda en lista del cliente, descuenta inventario y cobra
+	priceAndCharge: protectedProcedure
+		.input(
+			z.object({
+				orderId: z.number(),
+				paymentType: z.enum(["contado", "credito"]),
+				paymentMethodId: z.number().optional(),
+				items: z.array(
+					z.object({
+						orderItemId: z.number(),
+						productId: z.number().nullable(),
+						pricePerKg: z.number().min(0),
+					}),
+				),
+			}),
+		)
+		.output(z.object({ success: z.boolean(), total: z.number() }))
+		.mutation(async ({ ctx, input }) => {
+			return db.transaction(async (tx) => {
+				const [orderData] = await tx
+					.update(orders)
+					.set({ status: "PROCESANDO_PAGO" })
+					.where(
+						and(
+							eq(orders.id, input.orderId),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+							eq(orders.status, "LISTA_PARA_COBRO"),
+						),
+					)
+					.returning();
+				if (!orderData) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Pedido no disponible para cobro (ya cobrado o no está listo)",
+					});
+				}
+
+				// 1. Precio por item + guardar en lista del cliente
+				let totalCents = 0;
+				for (const it of input.items) {
+					const [oi] = await tx
+						.select()
+						.from(orderItems)
+						.where(eq(orderItems.id, it.orderItemId))
+						.limit(1);
+					if (!oi) continue;
+					const kg = Number(oi.quantity_kg) || 0;
+					const unitPriceCents = Math.round(it.pricePerKg * 100);
+					const subtotalCents = Math.round(kg * it.pricePerKg * 100);
+					totalCents += subtotalCents;
+					await tx
+						.update(orderItems)
+						.set({ unit_price: unitPriceCents, subtotal: subtotalCents })
+						.where(eq(orderItems.id, it.orderItemId));
+
+					if (it.productId && orderData.customer_id) {
+						await tx
+							.insert(customerPrices)
+							.values({
+								customer_id: orderData.customer_id,
+								product_id: it.productId,
+								price_per_kg: it.pricePerKg.toFixed(2),
+							})
+							.onConflictDoUpdate({
+								target: [customerPrices.customer_id, customerPrices.product_id],
+								set: {
+									price_per_kg: it.pricePerKg.toFixed(2),
+									updated_at: new Date(),
+								},
+							});
+					}
+				}
+
+				await tx
+					.update(orders)
+					.set({ total_amount: totalCents })
+					.where(eq(orders.id, input.orderId));
+
+				// 2. Descontar inventario
+				const allItems = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				for (const item of allItems) {
+					if (item.product_id) {
+						const [product] = await tx
+							.select()
+							.from(products)
+							.where(eq(products.id, item.product_id))
+							.limit(1);
+						if (product) {
+							const itemQuantityKg = item.quantity_kg ? Number(item.quantity_kg) : 0;
+							const newStockKg = Number(product.stock_kg) - itemQuantityKg;
+							const nextPieces = item.quantity_pieces
+								? product.stock_pieces - item.quantity_pieces
+								: product.stock_pieces;
+							const nextWeighedPieces = Math.min(product.weighed_pieces ?? 0, nextPieces);
+							if (newStockKg < 0) {
+								throw new TRPCError({
+									code: "PRECONDITION_FAILED",
+									message: `Stock insuficiente de ${product.name}`,
+								});
+							}
+							await tx
+								.update(products)
+								.set({
+									stock_pieces: nextPieces,
+									weighed_pieces: nextWeighedPieces,
+									stock_kg: newStockKg.toFixed(3),
+								})
+								.where(eq(products.id, item.product_id));
+							await tx.insert(inventoryTransactions).values({
+								product_id: item.product_id,
+								quantity_change_pieces: item.quantity_pieces ? -item.quantity_pieces : null,
+								quantity_change_kg: itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
+								transaction_type: "VENTA",
+								reference_id: input.orderId,
+								notes: `Venta pedido #${input.orderId}`,
+							});
+						}
+					}
+				}
+
+				// 3. Completar + pago
+				await tx
+					.update(orders)
+					.set({ status: "COMPLETADA" })
+					.where(eq(orders.id, input.orderId));
+
+				if (input.paymentType === "credito") {
+					if (!orderData.customer_id) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: "El pedido no tiene cliente; no se puede dejar a crédito",
+						});
+					}
+					await tx.insert(creditCharges).values({
+						customer_id: orderData.customer_id,
+						order_id: input.orderId,
+						amount: (totalCents / 100).toFixed(2),
+						concept: `Pedido #${input.orderId} (crédito)`,
+						source: "pedido",
+					});
+				} else if (input.paymentMethodId) {
+					await tx.insert(transactions).values({
+						order_id: input.orderId,
+						payment_method_id: input.paymentMethodId,
+						amount: totalCents,
+						user_uid: ctx.user.id,
+						status: "completed",
+						category: "selling",
+						type: "income",
+						description: `Cobro pedido #${input.orderId}`,
+					});
+				}
+
+				return { success: true, total: totalCents };
 			});
 		}),
 

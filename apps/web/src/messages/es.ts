@@ -53,6 +53,7 @@ const messages = {
 		disassembly: "Despiece",
 		weighingStation: "Báscula",
 		yield: "Rendimiento",
+		checkout: "Cobro",
 		prices: "Precios",
 		coldInventory: "Inventario Frío",
 		collections: "Cobranza",
