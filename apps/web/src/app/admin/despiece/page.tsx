@@ -336,7 +336,7 @@ export default function DespiecePage() {
 												className={cn(
 													"rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors",
 													parentId === String(p.id)
-														? "border-primary bg-primary/10 text-primary"
+														? "border-primary bg-primary text-primary-foreground shadow"
 														: hasStock
 															? "border-border hover:bg-muted"
 															: "border-border/50 bg-muted/30 text-muted-foreground",
@@ -364,7 +364,7 @@ export default function DespiecePage() {
 												className={cn(
 													"rounded-lg border px-3 py-1.5 text-sm font-bold transition-colors",
 													ttype === tt
-														? "border-primary bg-primary/10 text-primary"
+														? "border-primary bg-primary text-primary-foreground shadow"
 														: "border-border hover:bg-muted",
 												)}
 											>
