@@ -69,6 +69,31 @@ export default function POSPage() {
 	const { data: priceLists = [], isLoading: loadingPriceLists } = useQuery(
 		trpc.inventory.priceListsList.queryOptions(),
 	);
+	const { data: availability = [] } = useQuery(
+		trpc.products.availabilityMap.queryOptions(),
+	) as { data: { productId: number; stockPieces: number; stockKg: number; derivable: boolean }[] };
+
+	const availMap = useMemo(() => {
+		const m = new Map<number, { stockPieces: number; stockKg: number; derivable: boolean }>();
+		for (const a of availability) m.set(a.productId, a);
+		return m;
+	}, [availability]);
+
+	// Clasifica cada producto del pedido: en stock / vía despiece / faltante
+	const classify = (p: {
+		id: number;
+		quantityKg: number | null;
+		quantityPieces: number;
+		stock_kg: number | string;
+		stock_pieces: number;
+	}): "stock" | "despiece" | "faltante" => {
+		const direct =
+			p.quantityKg !== null
+				? p.quantityKg <= Number(p.stock_kg)
+				: p.quantityPieces <= p.stock_pieces;
+		if (direct) return "stock";
+		return availMap.get(p.id)?.derivable ? "despiece" : "faltante";
+	};
 	const t = useTranslations("pos");
 	const tc = useTranslations("common");
 	const tOrders = useTranslations("orders");
@@ -352,31 +377,21 @@ export default function POSPage() {
 		const customerId = selectedCustomer?.id;
 		if (!customerId) return;
 
-		// CAMBIO: En lugar de rechazar, clasificar productos por stock disponible
-		const productsWithStock = [];
-		const productsPendingPurchase = [];
+		// Clasifica: en stock / vía despiece / faltante
+		const faltantes = selectedProducts.filter((p) => classify(p) === "faltante");
+		const viaDespiece = selectedProducts.filter((p) => classify(p) === "despiece");
 
-		for (const p of selectedProducts) {
-			const hasEnoughStock = p.quantityKg !== null
-				? p.quantityKg <= Number(p.stock_kg)
-				: p.quantityPieces <= p.stock_pieces;
-
-			if (hasEnoughStock) {
-				productsWithStock.push(p);
-			} else {
-				productsPendingPurchase.push(p);
-			}
+		if (viaDespiece.length > 0) {
+			toast.info(
+				`${viaDespiece.length} pieza(s) se generarán por despiece: ${viaDespiece.map((p) => p.name).join(", ")}`,
+			);
 		}
-
-		// Si hay productos sin stock, advertir al usuario
-		if (productsPendingPurchase.length > 0) {
-			const pendingNames = productsPendingPurchase.map(p => p.name).join(", ");
+		if (faltantes.length > 0) {
 			toast.warning(
-				`${productsPendingPurchase.length} producto(s) sin stock serán marcados como pendiente de compra: ${pendingNames}`
+				`⚠️ Falta(n) ${faltantes.length} pieza(s) (conseguir en otro centro): ${faltantes.map((p) => p.name).join(", ")}`,
 			);
 		}
 
-		// Crear orden con TODOS los productos (incluir ambas listas)
 		createOrderMutation.mutate({
 			customerId,
 			paymentMethodId: paymentMethod?.id,
@@ -387,8 +402,9 @@ export default function POSPage() {
 				unitPrice: p.quantityKg
 					? Math.round((p.unitPricePerKg || 0) * 100)
 					: Math.round((p.unitPricePerPiece || 0) * 100),
-				// NUEVO: Indicar si este producto está pendiente de compra
-				requiresPurchase: productsPendingPurchase.some(pp => pp.id === p.id),
+				// Solo los FALTANTES reales son pendiente de compra; los derivables
+				// se generan por despiece de sus piezas padre.
+				requiresPurchase: classify(p) === "faltante",
 			})),
 		});
 	};
@@ -635,6 +651,20 @@ export default function POSPage() {
 							) && (
 								<span className="font-medium text-orange-600 text-xs">
 									{t("weighingPendingItems")}
+								</span>
+							)}
+							{selectedProducts.some((p) => classify(p) === "despiece") && (
+								<span className="text-xs font-medium text-blue-600">
+									🔪 Hay piezas que se generan por despiece (hay stock del padre).
+								</span>
+							)}
+							{selectedProducts.some((p) => classify(p) === "faltante") && (
+								<span className="text-xs font-medium text-red-600">
+									⚠️ Piezas faltantes (ni en stock ni derivables):{" "}
+									{selectedProducts
+										.filter((p) => classify(p) === "faltante")
+										.map((p) => p.name)
+										.join(", ")}
 								</span>
 							)}
 						</div>

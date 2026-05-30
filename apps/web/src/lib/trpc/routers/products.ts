@@ -1137,6 +1137,49 @@ export const productsRouter = router({
 			});
 		}),
 
+	// Mapa de disponibilidad: por producto, stock directo y si es derivable de
+	// una pieza padre con stock (vía despiece).
+	availabilityMap: protectedProcedure
+		.input(z.void())
+		.query(async ({ ctx }) => {
+			const uid = ctx.user.id;
+			const prods = await db
+				.select({
+					id: products.id,
+					stock_pieces: products.stock_pieces,
+					stock_kg: products.stock_kg,
+				})
+				.from(products)
+				.where(eq(products.user_uid, uid));
+
+			const trans = await db
+				.select({
+					child: productTransformations.child_product_id,
+					parent: productTransformations.parent_product_id,
+				})
+				.from(productTransformations)
+				.where(eq(productTransformations.is_active, true));
+
+			// Padres con stock (piezas o kg)
+			const inStock = new Set(
+				prods
+					.filter((p) => p.stock_pieces > 0 || Number(p.stock_kg) > 0)
+					.map((p) => p.id),
+			);
+			// Hijos derivables (su padre tiene stock)
+			const derivable = new Set<number>();
+			for (const t of trans) {
+				if (inStock.has(t.parent)) derivable.add(t.child);
+			}
+
+			return prods.map((p) => ({
+				productId: p.id,
+				stockPieces: p.stock_pieces,
+				stockKg: Number(p.stock_kg),
+				derivable: derivable.has(p.id),
+			}));
+		}),
+
 	getTransformations: protectedProcedure
 		.meta({
 			openapi: {
