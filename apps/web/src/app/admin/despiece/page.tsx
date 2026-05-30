@@ -6,13 +6,6 @@ import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@finopenpos/ui/components/select";
-import {
 	ShoppingCartIcon,
 	ScissorsIcon,
 	GitBranchIcon,
@@ -43,6 +36,25 @@ export default function DespiecePage() {
 		() => products.filter((p) => p.is_parent_product),
 		[products],
 	);
+
+	// Mapa de stock + peso promedio por pieza (para estimar kg)
+	const prodMap = useMemo(() => {
+		const m = new Map<number, { stockPieces: number; avgWeight: number; name: string }>();
+		for (const p of products) {
+			m.set(p.id, {
+				stockPieces: p.stock_pieces ?? 0,
+				avgWeight:
+					p.avg_weight_per_piece_kg != null ? Number(p.avg_weight_per_piece_kg) : 0,
+				name: p.name,
+			});
+		}
+		return m;
+	}, [products]);
+
+	const estKg = (productId: number, pieces: number) => {
+		const w = prodMap.get(productId)?.avgWeight ?? 0;
+		return w > 0 ? w * pieces : 0;
+	};
 
 	// ───────────────────────── TAB 1: COMPRAR ─────────────────────────
 	const [qtyAmericano, setQtyAmericano] = useState("");
@@ -308,43 +320,58 @@ export default function DespiecePage() {
 							</CardDescription>
 						</CardHeader>
 						<CardContent className="space-y-4">
-							<div className="space-y-1">
+							<div className="space-y-2">
 								<Label>Producto a despiezar</Label>
-								<Select
-									value={parentId}
-									onValueChange={(v) => {
-										setParentId(v);
-										setTtype("");
-									}}
-								>
-									<SelectTrigger>
-										<SelectValue placeholder="Selecciona un padre" />
-									</SelectTrigger>
-									<SelectContent>
-										{parents.map((p) => (
-											<SelectItem key={p.id} value={String(p.id)}>
-												{p.name} ({p.stock_pieces} pz)
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+								<div className="grid grid-cols-2 gap-2">
+									{parents.map((p) => {
+										const hasStock = (p.stock_pieces ?? 0) > 0;
+										return (
+											<button
+												key={p.id}
+												type="button"
+												onClick={() => {
+													setParentId(String(p.id));
+													setTtype("");
+												}}
+												className={cn(
+													"rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors",
+													parentId === String(p.id)
+														? "border-primary bg-primary/10 text-primary"
+														: hasStock
+															? "border-border hover:bg-muted"
+															: "border-border/50 bg-muted/30 text-muted-foreground",
+												)}
+											>
+												<div className="truncate">{p.name}</div>
+												<div className="text-[11px] font-normal text-muted-foreground">
+													{p.stock_pieces ?? 0} pz en stock
+												</div>
+											</button>
+										);
+									})}
+								</div>
 							</div>
 
-							{parentId && (
-								<div className="space-y-1">
+							{parentId && (ttypesQuery.data ?? []).length > 0 && (
+								<div className="space-y-2">
 									<Label>Tipo de despiece</Label>
-									<Select value={ttype} onValueChange={setTtype}>
-										<SelectTrigger>
-											<SelectValue placeholder="Selecciona tipo" />
-										</SelectTrigger>
-										<SelectContent>
-											{(ttypesQuery.data ?? []).map((tt: string) => (
-												<SelectItem key={tt} value={tt}>
-													{tt}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+									<div className="flex flex-wrap gap-2">
+										{(ttypesQuery.data ?? []).map((tt: string) => (
+											<button
+												key={tt}
+												type="button"
+												onClick={() => setTtype(tt)}
+												className={cn(
+													"rounded-lg border px-3 py-1.5 text-sm font-bold transition-colors",
+													ttype === tt
+														? "border-primary bg-primary/10 text-primary"
+														: "border-border hover:bg-muted",
+												)}
+											>
+												{tt}
+											</button>
+										))}
+									</div>
 								</div>
 							)}
 
@@ -396,19 +423,31 @@ export default function DespiecePage() {
 									{(treeQuery.data ?? []).map((tr: any) => {
 										const qty = parseInt(qtyProcess) || 1;
 										const pieces = Number(tr.yield_quantity_pieces) * qty;
-										const ratioPct = (Number(tr.yield_weight_ratio) * 100).toFixed(0);
+										const childId = tr.child_product_id;
+										const kg = estKg(childId, pieces);
+										const stock = prodMap.get(childId)?.stockPieces ?? 0;
 										return (
 											<div
 												key={tr.id}
 												className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
 											>
 												<ArrowRightIcon className="w-4 h-4 text-primary shrink-0" />
-												<span className="font-medium flex-1">
-													{tr.childProduct?.name ?? `#${tr.child_product_id}`}
-												</span>
-												<span className="text-muted-foreground">
-													{pieces % 1 === 0 ? pieces : pieces.toFixed(1)} pz · {ratioPct}% peso
-												</span>
+												<div className="flex-1 min-w-0">
+													<div className="font-medium truncate">
+														{tr.childProduct?.name ?? `#${childId}`}
+													</div>
+													<div className="text-[11px] text-muted-foreground">
+														Stock actual: {stock} pz
+													</div>
+												</div>
+												<div className="text-right">
+													<div className="font-semibold">
+														{pieces % 1 === 0 ? pieces : pieces.toFixed(1)} pz
+													</div>
+													<div className="text-[11px] text-blue-600">
+														{kg > 0 ? `~${kg.toFixed(2)} kg est.` : "—"}
+													</div>
+												</div>
 											</div>
 										);
 									})}
