@@ -18,6 +18,7 @@ import {
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import { Badge } from "@finopenpos/ui/components/badge";
+import { cn } from "@finopenpos/ui/lib/utils";
 import {
 	Select,
 	SelectContent,
@@ -263,6 +264,27 @@ export default function RecipesPage() {
 		setIsDialogOpen(true);
 	};
 
+	// Abre el diálogo de nueva receta con padre + hijo prellenados (drag & drop)
+	const openCreateChild = (
+		parentId: number,
+		transformationType: string | undefined,
+		child: { id: number; name: string },
+	) => {
+		setEditingId(null);
+		form.reset();
+		form.setFieldValue("parentProductId", parentId);
+		form.setFieldValue("childProductId", child.id);
+		form.setFieldValue("childName", child.name);
+		if (transformationType)
+			form.setFieldValue("transformationType", transformationType);
+		setShowAdvanced(true);
+		setIsDialogOpen(true);
+	};
+
+	// Producto arrastrado (chip huérfano) y padre resaltado al arrastrar
+	const [draggedChild, setDraggedChild] = useState<{ id: number; name: string } | null>(null);
+	const [dropParentId, setDropParentId] = useState<number | null>(null);
+
 	const productOptions = useMemo(() => {
 		return allProducts.slice().sort((a, b) => a.name.localeCompare(b.name));
 	}, [allProducts]);
@@ -422,6 +444,33 @@ export default function RecipesPage() {
 			header: "Padre",
 			sortable: true,
 			accessorFn: (r) => r.parentProduct.name,
+			render: (r) => (
+				<div
+					onDragOver={(e) => {
+						if (draggedChild) {
+							e.preventDefault();
+							setDropParentId(r.parent_product_id);
+						}
+					}}
+					onDragLeave={() => setDropParentId(null)}
+					onDrop={(e) => {
+						e.preventDefault();
+						if (draggedChild && draggedChild.id !== r.parent_product_id) {
+							openCreateChild(r.parent_product_id, r.transformation_type, draggedChild);
+						}
+						setDraggedChild(null);
+						setDropParentId(null);
+					}}
+					className={cn(
+						"-mx-2 -my-1 rounded px-2 py-1 transition-colors",
+						draggedChild && "ring-1 ring-dashed ring-amber-300",
+						dropParentId === r.parent_product_id && "bg-amber-100 ring-amber-500",
+					)}
+					title={draggedChild ? `Soltar para hacer ${draggedChild.name} hijo de ${r.parentProduct.name}` : undefined}
+				>
+					{r.parentProduct.name}
+				</div>
+			),
 		},
 		{
 			key: "child",
@@ -725,12 +774,20 @@ export default function RecipesPage() {
 							{productsWithoutRecipe.length} producto(s) sin receta
 						</span>{" "}
 						(no salen de ningún despiece ni se despiezan). Es normal para piezas
-						finales; revisa si alguno debería tener receta:
+						finales. <strong>Arrastra un producto sobre un padre</strong> de la tabla
+						para crearle su receta:
 						<div className="mt-1 flex flex-wrap gap-1">
 							{productsWithoutRecipe.map((p) => (
 								<span
 									key={p.id}
-									className="rounded bg-amber-100 px-1.5 py-0.5 font-medium"
+									draggable
+									onDragStart={() => setDraggedChild({ id: p.id, name: p.name })}
+									onDragEnd={() => {
+										setDraggedChild(null);
+										setDropParentId(null);
+									}}
+									className="cursor-grab rounded bg-amber-100 px-1.5 py-0.5 font-medium hover:bg-amber-200 active:cursor-grabbing"
+									title="Arrástrame sobre un padre de la tabla"
 								>
 									{p.name}
 								</span>
