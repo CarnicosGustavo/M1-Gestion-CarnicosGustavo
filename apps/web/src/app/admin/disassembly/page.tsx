@@ -658,7 +658,8 @@ export default function DisassemblyPage() {
 					}
 					return next;
 				});
-				setPurchaseWholePigs(0);
+				setPurchaseWholePigsAmericano(0);
+				setPurchaseWholePigsNacional(0);
 				setPurchaseTotalWeightKg(0);
 				setPurchaseSupplier("");
 				setPurchaseNotes("");
