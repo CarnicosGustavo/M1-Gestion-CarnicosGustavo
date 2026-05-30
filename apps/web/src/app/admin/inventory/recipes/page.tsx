@@ -299,10 +299,31 @@ export default function RecipesPage() {
 		return s;
 	}, [mapRecipes]);
 
-	// Productos que NO participan en ninguna receta (informativo)
+	// Productos que NO participan en ninguna receta y NO están clasificados como
+	// compra de proveedor ni duplicado (informativo)
 	const productsWithoutRecipe = useMemo(
-		() => productOptions.filter((p) => !productsWithRecipe.has(p.id)),
+		() =>
+			productOptions.filter(
+				(p) =>
+					!productsWithRecipe.has(p.id) &&
+					p.category !== "Compra" &&
+					p.category !== "Duplicado",
+			),
 		[productOptions, productsWithRecipe],
+	);
+
+	const classifyOrphanMut = useMutation(
+		trpc.products.classifyOrphan.mutationOptions({
+			onSuccess: (_d: any, vars: any) => {
+				toast.success(
+					vars.action === "purchased"
+						? "Marcado como compra de proveedor"
+						: "Marcado como duplicado",
+				);
+				queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error"),
+		}),
 	);
 
 	const mapTypes = useMemo(() => {
@@ -792,6 +813,46 @@ export default function RecipesPage() {
 									{p.name}
 								</span>
 							))}
+						</div>
+
+						{/* Zonas de drop alternativas */}
+						<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+							<div
+								onDragOver={(e) => draggedChild && e.preventDefault()}
+								onDrop={(e) => {
+									e.preventDefault();
+									if (draggedChild)
+										classifyOrphanMut.mutate({ productId: draggedChild.id, action: "purchased" });
+									setDraggedChild(null);
+								}}
+								className={cn(
+									"rounded-lg border-2 border-dashed p-3 text-center text-xs font-semibold transition-colors",
+									draggedChild
+										? "border-green-400 bg-green-50 text-green-800"
+										: "border-border text-muted-foreground",
+								)}
+							>
+								📦 Producto de proveedor (compra)
+								<div className="font-normal">Manteca, lomo ahumado, chicharrón…</div>
+							</div>
+							<div
+								onDragOver={(e) => draggedChild && e.preventDefault()}
+								onDrop={(e) => {
+									e.preventDefault();
+									if (draggedChild)
+										classifyOrphanMut.mutate({ productId: draggedChild.id, action: "duplicate" });
+									setDraggedChild(null);
+								}}
+								className={cn(
+									"rounded-lg border-2 border-dashed p-3 text-center text-xs font-semibold transition-colors",
+									draggedChild
+										? "border-red-400 bg-red-50 text-red-800"
+										: "border-border text-muted-foreground",
+								)}
+							>
+								🗑️ Repetido / duplicado
+								<div className="font-normal">Ej. Máscara vs Máscara Completa</div>
+							</div>
 						</div>
 					</div>
 				</CardContent>

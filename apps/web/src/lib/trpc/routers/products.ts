@@ -321,6 +321,27 @@ export const productsRouter = router({
 			return updated;
 		}),
 
+	// Clasifica un producto huérfano: viene de proveedor (compra) o es duplicado.
+	// Asigna una categoría que lo excluye de la alerta "sin receta".
+	classifyOrphan: adminProcedure
+		.input(
+			z.object({
+				productId: z.number(),
+				action: z.enum(["purchased", "duplicate"]),
+			}),
+		)
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ ctx, input }) => {
+			const category = input.action === "purchased" ? "Compra" : "Duplicado";
+			await db
+				.update(products)
+				.set({ category, updated_at: new Date() })
+				.where(
+					and(eq(products.id, input.productId), eq(products.user_uid, ctx.user.id)),
+				);
+			return { success: true };
+		}),
+
 	delete: adminProcedure
 		.meta({
 			openapi: {
