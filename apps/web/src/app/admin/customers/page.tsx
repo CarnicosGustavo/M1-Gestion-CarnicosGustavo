@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod/v4";
 import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
@@ -42,7 +43,20 @@ export default function CustomersPage() {
   ];
 
   const tableColumns: Column<Customer>[] = [
-    { key: "name", header: tc("name"), sortable: true, className: "font-medium" },
+    {
+      key: "name",
+      header: tc("name"),
+      sortable: true,
+      className: "font-medium",
+      render: (row) => (
+        <Link
+          href={`/admin/customers/${row.id}`}
+          className="text-primary hover:underline font-medium"
+        >
+          {row.name ?? `Cliente #${row.id}`}
+        </Link>
+      ),
+    },
     { key: "email", header: tc("email"), sortable: true },
     { key: "phone", header: tc("phone"), hideOnMobile: true },
     {

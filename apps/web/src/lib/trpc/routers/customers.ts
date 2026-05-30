@@ -1,8 +1,14 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
-import { customers } from "@/lib/db/schema";
-import { eq, and, or } from "drizzle-orm";
+import {
+	customers,
+	orders,
+	creditCharges,
+	creditPayments,
+	customerPrices,
+} from "@/lib/db/schema";
+import { eq, and, or, desc, sql } from "drizzle-orm";
 
 const customerSchema = z.object({
   id: z.number(),
@@ -78,5 +84,73 @@ export const customersRouter = router({
         .delete(customers)
         .where(and(eq(customers.id, input.id), eq(customers.user_uid, ctx.user.id)));
       return { success: true };
+    }),
+
+  // Ficha completa del cliente: datos + pedidos + saldo + nº de precios propios
+  getDetail: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const [customer] = await db
+        .select()
+        .from(customers)
+        .where(eq(customers.id, input.id))
+        .limit(1);
+      if (!customer) return null;
+
+      const ords = await db
+        .select({
+          id: orders.id,
+          status: orders.status,
+          total_amount: orders.total_amount,
+          created_at: orders.created_at,
+        })
+        .from(orders)
+        .where(eq(orders.customer_id, input.id))
+        .orderBy(desc(orders.id))
+        .limit(100);
+
+      const ordersList = ords.map((o) => ({
+        id: o.id,
+        status: o.status as string,
+        totalAmount: Number(o.total_amount) || 0,
+        createdAt: o.created_at,
+      }));
+
+      const isPaid = (s: string) => s === "COMPLETADA" || s === "completed";
+      const totalSpent = ordersList
+        .filter((o) => isPaid(o.status))
+        .reduce((sum, o) => sum + o.totalAmount, 0);
+
+      const [{ charges }] = await db
+        .select({ charges: sql<number>`COALESCE(SUM(${creditCharges.amount}),0)` })
+        .from(creditCharges)
+        .where(eq(creditCharges.customer_id, input.id));
+      const [{ payments }] = await db
+        .select({ payments: sql<number>`COALESCE(SUM(${creditPayments.amount}),0)` })
+        .from(creditPayments)
+        .where(eq(creditPayments.customer_id, input.id));
+      const balance = Number(charges) - Number(payments);
+
+      const [{ priceCount }] = await db
+        .select({ priceCount: sql<number>`COUNT(*)` })
+        .from(customerPrices)
+        .where(eq(customerPrices.customer_id, input.id));
+
+      return {
+        customer: {
+          id: customer.id,
+          name: customer.name as string | null,
+          email: customer.email as string | null,
+          phone: customer.phone as string | null,
+          whatsappPhone: (customer as any).whatsapp_phone as string | null,
+          address: (customer as any).address as string | null,
+          status: customer.status as string | null,
+        },
+        orders: ordersList,
+        totalOrders: ordersList.length,
+        totalSpent,
+        balance,
+        customPriceCount: Number(priceCount),
+      };
     }),
 });
