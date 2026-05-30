@@ -17,6 +17,7 @@ const sheetInput = z.object({
 	sheetDate: z.string().optional(),
 	numCanales: z.number().int().min(0).default(0),
 	kgComprado: z.number().min(0).default(0),
+	supplier: z.string().optional(),
 	notes: z.string().optional(),
 	items: z.array(itemInput),
 });
@@ -46,6 +47,7 @@ export const yieldsRouter = router({
 					sheetDate: s.sheet_date,
 					numCanales: s.num_canales,
 					kgComprado: Number(s.kg_comprado),
+					supplier: (s as any).supplier as string | null,
 					totalKg,
 					totalPiezas,
 					rendimiento:
@@ -56,6 +58,36 @@ export const yieldsRouter = router({
 			}
 			return result;
 		}),
+
+	// Comparativa de rendimiento por proveedor (de todas las hojas)
+	byProvider: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
+		const sheets = await db
+			.select()
+			.from(yieldSheets)
+			.where(eq(yieldSheets.user_uid, ctx.user.id));
+
+		const agg = new Map<string, { kgComprado: number; kgReal: number; canales: number; hojas: number }>();
+		for (const s of sheets) {
+			const prov = ((s as any).supplier as string | null)?.trim() || "Sin proveedor";
+			const items = await db
+				.select({ kg: yieldSheetItems.kg_total })
+				.from(yieldSheetItems)
+				.where(eq(yieldSheetItems.sheet_id, s.id));
+			const kgReal = items.reduce((a, i) => a + Number(i.kg), 0);
+			const cur = agg.get(prov) ?? { kgComprado: 0, kgReal: 0, canales: 0, hojas: 0 };
+			cur.kgComprado += Number(s.kg_comprado);
+			cur.kgReal += kgReal;
+			cur.canales += s.num_canales;
+			cur.hojas += 1;
+			agg.set(prov, cur);
+		}
+
+		return [...agg.entries()].map(([supplier, v]) => ({
+			supplier,
+			...v,
+			rendimiento: v.kgComprado > 0 ? (v.kgReal / v.kgComprado) * 100 : 0,
+		}));
+	}),
 
 	// Detalle de una hoja con sus renglones
 	get: protectedProcedure
@@ -86,6 +118,7 @@ export const yieldsRouter = router({
 						sheet_date: input.sheetDate ?? undefined,
 						num_canales: input.numCanales,
 						kg_comprado: input.kgComprado.toFixed(3),
+						supplier: input.supplier,
 						notes: input.notes,
 						user_uid: ctx.user.id,
 					})
@@ -119,6 +152,7 @@ export const yieldsRouter = router({
 						sheet_date: input.sheetDate ?? undefined,
 						num_canales: input.numCanales,
 						kg_comprado: input.kgComprado.toFixed(3),
+						supplier: input.supplier,
 						notes: input.notes,
 						updated_at: new Date(),
 					})

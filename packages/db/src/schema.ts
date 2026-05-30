@@ -170,6 +170,7 @@ export const yieldSheets = pgTable("yield_sheets", {
 	kg_comprado: numeric("kg_comprado", { precision: 12, scale: 3 })
 		.notNull()
 		.default("0.000"),
+	supplier: varchar("supplier", { length: 100 }),
 	notes: text("notes"),
 	user_uid: varchar("user_uid", { length: 255 }),
 	created_at: timestamp("created_at").defaultNow(),
