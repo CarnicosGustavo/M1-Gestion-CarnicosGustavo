@@ -71,7 +71,7 @@ const navItems: NavItem[] = [
 	{ href: "/admin/cashier", labelKey: "cashier", icon: DollarSignIcon },
 	{ href: "/admin/products", labelKey: "products", icon: PackageIcon },
 	{ href: "/admin/inventory/recipes", labelKey: "recipes", icon: BookOpenIcon },
-	{ href: "/admin/disassembly", labelKey: "disassembly", icon: ScissorsIcon },
+	{ href: "/admin/despiece", labelKey: "disassembly", icon: ScissorsIcon },
 	{
 		href: "/admin/weighing-station",
 		labelKey: "weighingStation",
