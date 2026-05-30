@@ -94,7 +94,42 @@ export default function WeighingStationPage() {
 		data: orders = [],
 		isLoading: isLoadingOrders,
 		refetch: refetchOrders,
-	} = useQuery(trpc.orders.getPendingWeighingOrders.queryOptions());
+	} = useQuery({
+		...trpc.orders.getPendingWeighingOrders.queryOptions(),
+		// Actualiza la lista sola para detectar pedidos nuevos
+		refetchInterval: 8000,
+	});
+
+	// Detección de pedidos nuevos → alerta verde parpadeante por 3s
+	const [newOrderIds, setNewOrderIds] = useState<Set<number>>(new Set());
+	const prevOrderIdsRef = useRef<Set<number> | null>(null);
+	useEffect(() => {
+		const currentIds = new Set(orders.map((o) => o.id));
+		const prev = prevOrderIdsRef.current;
+		if (prev) {
+			const fresh = [...currentIds].filter((id) => !prev.has(id));
+			if (fresh.length > 0) {
+				setNewOrderIds((s) => {
+					const next = new Set(s);
+					fresh.forEach((id) => next.add(id));
+					return next;
+				});
+				const first = orders.find((o) => o.id === fresh[0]);
+				toast.success(
+					`Nuevo pedido #${fresh[0]}${first?.customer?.name ? ` – ${first.customer.name}` : ""}`,
+				);
+				// Quitar el parpadeo después de 3 segundos
+				setTimeout(() => {
+					setNewOrderIds((s) => {
+						const next = new Set(s);
+						fresh.forEach((id) => next.delete(id));
+						return next;
+					});
+				}, 3000);
+			}
+		}
+		prevOrderIdsRef.current = currentIds;
+	}, [orders]);
 
 	const { data: products = [] } = useQuery(trpc.products.list.queryOptions());
 
@@ -328,6 +363,8 @@ export default function WeighingStationPage() {
 										className={cn(
 											"w-full text-left p-4 hover:bg-accent transition-colors flex items-center justify-between group",
 											selectedOrderId === order.id && "bg-accent",
+											newOrderIds.has(order.id) &&
+												"animate-pulse bg-green-100 ring-2 ring-inset ring-green-400",
 										)}
 									>
 										<div className="space-y-1">
