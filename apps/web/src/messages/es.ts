@@ -52,6 +52,7 @@ const messages = {
 		invoices: "Facturas",
 		disassembly: "Despiece",
 		weighingStation: "Báscula",
+		yield: "Rendimiento",
 		adminPanel: "Panel de administración",
 		openMenu: "Abrir menú",
 		myAccount: "Mi cuenta",

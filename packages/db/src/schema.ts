@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 import {
 	boolean,
 	customType,
+	date,
 	integer,
 	jsonb,
 	numeric,
@@ -147,8 +148,42 @@ export const products = pgTable("products", {
 		.notNull()
 		.default("KG"),
 	price_per_piece: numeric("price_per_piece", { precision: 10, scale: 2 }),
+	// Peso promedio por pieza (kg) para estimar peso/costo antes de pesar
+	avg_weight_per_piece_kg: numeric("avg_weight_per_piece_kg", {
+		precision: 10,
+		scale: 3,
+	}),
 	created_at: timestamp("created_at").defaultNow(),
 	updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// --- HOJAS DE RENDIMIENTO (despiece) ---
+export const yieldSheets = pgTable("yield_sheets", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	sheet_date: date("sheet_date").defaultNow(),
+	num_canales: integer("num_canales").notNull().default(0),
+	kg_comprado: numeric("kg_comprado", { precision: 12, scale: 3 })
+		.notNull()
+		.default("0.000"),
+	notes: text("notes"),
+	user_uid: varchar("user_uid", { length: 255 }),
+	created_at: timestamp("created_at").defaultNow(),
+	updated_at: timestamp("updated_at").defaultNow(),
+});
+
+export const yieldSheetItems = pgTable("yield_sheet_items", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	sheet_id: integer("sheet_id")
+		.notNull()
+		.references(() => yieldSheets.id, { onDelete: "cascade" }),
+	product_id: integer("product_id").references(() => products.id),
+	product_name: varchar("product_name", { length: 255 }).notNull(),
+	pieces: integer("pieces").notNull().default(0),
+	kg_total: numeric("kg_total", { precision: 12, scale: 3 })
+		.notNull()
+		.default("0.000"),
+	weighed: boolean("weighed").notNull().default(false),
+	sort_order: integer("sort_order").notNull().default(0),
 });
 
 export const priceLists = pgTable("price_lists", {
