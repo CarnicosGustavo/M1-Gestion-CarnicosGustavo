@@ -138,6 +138,11 @@ export const products = pgTable("products", {
 	stock_kg: numeric("stock_kg", { precision: 10, scale: 3 })
 		.notNull()
 		.default("0.000"),
+	// Inventario Frío (congelado) - no vendible hasta transferir a fresco
+	stock_kg_frozen: numeric("stock_kg_frozen", { precision: 10, scale: 3 })
+		.notNull()
+		.default("0.000"),
+	stock_pieces_frozen: integer("stock_pieces_frozen").notNull().default(0),
 	is_parent_product: boolean("is_parent_product").notNull().default(false),
 	parent_product_id: integer("parent_product_id").references((): AnyPgColumn => products.id),
 	is_sellable_by_unit: boolean("is_sellable_by_unit").notNull().default(true),

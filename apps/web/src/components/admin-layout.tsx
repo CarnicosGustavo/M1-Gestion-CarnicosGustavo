@@ -26,6 +26,7 @@ import {
 	ScaleIcon,
 	ClipboardListIcon,
 	TagIcon,
+	SnowflakeIcon,
 	ScissorsIcon,
 	SettingsIcon,
 	ShoppingBagIcon,
@@ -56,7 +57,8 @@ interface NavItem {
 		| "disassembly"
 		| "weighingStation"
 		| "yield"
-		| "prices";
+		| "prices"
+		| "coldInventory";
 	icon: LucideIcon;
 }
 
@@ -72,6 +74,7 @@ const navItems: NavItem[] = [
 		icon: ScaleIcon,
 	},
 	{ href: "/admin/yield", labelKey: "yield", icon: ClipboardListIcon },
+	{ href: "/admin/cold-inventory", labelKey: "coldInventory", icon: SnowflakeIcon },
 	{ href: "/admin/customers", labelKey: "customers", icon: UsersIcon },
 	{ href: "/admin/prices", labelKey: "prices", icon: TagIcon },
 	{ href: "/admin/orders", labelKey: "orders", icon: ShoppingBagIcon },

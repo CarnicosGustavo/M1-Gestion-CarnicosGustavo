@@ -54,6 +54,7 @@ const messages = {
 		weighingStation: "Báscula",
 		yield: "Rendimiento",
 		prices: "Precios",
+		coldInventory: "Inventario Frío",
 		adminPanel: "Panel de administración",
 		openMenu: "Abrir menú",
 		myAccount: "Mi cuenta",
