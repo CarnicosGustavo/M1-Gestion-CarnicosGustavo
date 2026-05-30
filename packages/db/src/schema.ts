@@ -186,6 +186,16 @@ export const yieldSheetItems = pgTable("yield_sheet_items", {
 	sort_order: integer("sort_order").notNull().default(0),
 });
 
+// Precios por cliente (override por producto)
+export const customerPrices = pgTable("customer_prices", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	customer_id: integer("customer_id").notNull(),
+	product_id: integer("product_id").notNull(),
+	price_per_kg: numeric("price_per_kg", { precision: 10, scale: 2 }),
+	price_per_piece: numeric("price_per_piece", { precision: 10, scale: 2 }),
+	updated_at: timestamp("updated_at").defaultNow(),
+});
+
 export const priceLists = pgTable("price_lists", {
 	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
 	user_uid: varchar("user_uid", { length: 255 }).notNull(),

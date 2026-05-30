@@ -53,6 +53,7 @@ const messages = {
 		disassembly: "Despiece",
 		weighingStation: "Báscula",
 		yield: "Rendimiento",
+		prices: "Precios",
 		adminPanel: "Panel de administración",
 		openMenu: "Abrir menú",
 		myAccount: "Mi cuenta",
