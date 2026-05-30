@@ -18,6 +18,7 @@ import { cn } from "@finopenpos/ui/lib/utils";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { TicketModal } from "@/components/ticket-modal";
 
 const money = (n: number) =>
 	n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -30,6 +31,7 @@ export default function CheckoutPage() {
 	const [prices, setPrices] = useState<Record<number, string>>({});
 	const [payType, setPayType] = useState<"contado" | "credito">("contado");
 	const [methodId, setMethodId] = useState<string>("");
+	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
 
 	const readyKey = trpc.orders.getReadyToCharge.queryOptions().queryKey;
 	const { data: ordersReady } = useQuery({
@@ -64,8 +66,10 @@ export default function CheckoutPage() {
 
 	const chargeMut = useMutation(
 		trpc.orders.priceAndCharge.mutationOptions({
-			onSuccess: () => {
+			onSuccess: (_data: any, variables: any) => {
 				toast.success("Pedido cobrado y precios actualizados");
+				// Abre el ticket inmediatamente (imprimir / enviar por WhatsApp)
+				setTicketOrderId(variables.orderId);
 				setSelectedOrderId(null);
 				queryClient.invalidateQueries({ queryKey: readyKey });
 			},
@@ -268,6 +272,15 @@ export default function CheckoutPage() {
 					)}
 				</Card>
 			</div>
+
+			{/* Ticket: se abre automáticamente al cobrar (imprimir / WhatsApp) */}
+			{ticketOrderId && (
+				<TicketModal
+					orderId={ticketOrderId}
+					open={!!ticketOrderId}
+					onClose={() => setTicketOrderId(null)}
+				/>
+			)}
 		</div>
 	);
 }

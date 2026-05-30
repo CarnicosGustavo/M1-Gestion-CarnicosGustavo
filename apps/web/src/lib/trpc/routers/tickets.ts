@@ -12,6 +12,7 @@ export const ticketsRouter = router({
       ticketNumber: z.string(),
       orderNumber: z.number(),
       customerName: z.string().nullable(),
+      customerPhone: z.string().nullable(),
       date: z.date(),
       items: z.array(z.object({
         productName: z.string(),
@@ -42,6 +43,10 @@ export const ticketsRouter = router({
         ticketNumber: `TKT-${String(order.id).padStart(6, "0")}`,
         orderNumber: order.id,
         customerName: order.customer?.name ?? null,
+        customerPhone:
+          (order.customer?.whatsapp_phone as string | null) ??
+          (order.customer?.phone as string | null) ??
+          null,
         date: order.created_at ?? new Date(),
         items: order.orderItems.map((item) => ({
           productName: item.product_name,

@@ -31,6 +31,39 @@ export function TicketModal({ orderId, open, onClose }: TicketModalProps) {
 		enabled: open,
 	});
 
+	// Arma un ticket en texto y lo abre en WhatsApp hacia el teléfono del cliente
+	const handleWhatsApp = () => {
+		if (!ticket) return;
+		const money = (cents: number) =>
+			(cents / 100).toLocaleString("es-MX", {
+				style: "currency",
+				currency: "MXN",
+			});
+		const lines: string[] = [];
+		lines.push("*CARNICOS GUSTAVO*");
+		lines.push(`Ticket ${ticket.ticketNumber} · Pedido #${ticket.orderNumber}`);
+		lines.push(`Cliente: ${ticket.customerName ?? "Consumidor Final"}`);
+		lines.push("------------------------------");
+		for (const it of ticket.items) {
+			const kg = it.quantityKg && parseFloat(it.quantityKg) > 0
+				? `${parseFloat(it.quantityKg).toFixed(3)} kg`
+				: `${it.quantityPieces ?? 1} pz`;
+			const sub = parseFloat(it.subtotal) || 0;
+			lines.push(`${it.productName} — ${kg} — ${money(sub)}`);
+		}
+		lines.push("------------------------------");
+		lines.push(`*TOTAL: ${money(parseFloat(ticket.totalAmount) || 0)}*`);
+		if (ticket.notes) lines.push(`Notas: ${ticket.notes}`);
+		lines.push("¡Gracias por su preferencia!");
+
+		const phone = (ticket.customerPhone ?? "").replace(/[^\d]/g, "");
+		const text = encodeURIComponent(lines.join("\n"));
+		const url = phone
+			? `https://wa.me/${phone}?text=${text}`
+			: `https://wa.me/?text=${text}`;
+		window.open(url, "_blank", "noopener,noreferrer");
+	};
+
 	// Imprime abriendo una ventana nueva con SOLO el ticket (sin URL/headers)
 	const handlePrint = () => {
 		if (!ticketRef.current) return;
@@ -158,10 +191,7 @@ body {
 									</span>
 									<span className="price">
 										{subtotal > 0
-											? formatCurrency(
-													Math.round(subtotal * 100),
-													locale,
-												)
+											? formatCurrency(Math.round(subtotal), locale)
 											: "—"}
 									</span>
 								</div>
@@ -172,7 +202,7 @@ body {
 											<>
 												{" "}@{" "}
 												{formatCurrency(
-													Math.round(parseFloat(item.unitPrice) * 100),
+													Math.round(parseFloat(item.unitPrice)),
 													locale,
 												)}
 												/kg
@@ -188,10 +218,7 @@ body {
 				<div className="ticket-total">
 					<span>TOTAL</span>
 					<span>
-						{formatCurrency(
-							Math.round(parseFloat(ticket.totalAmount) * 100),
-							locale,
-						)}
+						{formatCurrency(Math.round(parseFloat(ticket.totalAmount)), locale)}
 					</span>
 				</div>
 
@@ -249,9 +276,17 @@ body {
 					</p>
 				)}
 
-				<div className="flex justify-end gap-2 pt-2">
+				<div className="flex flex-wrap justify-end gap-2 pt-2">
 					<Button variant="secondary" onClick={onClose}>
 						Cerrar
+					</Button>
+					<Button
+						variant="outline"
+						className="border-[#25D366] text-[#1da851] hover:bg-[#25D366]/10"
+						onClick={handleWhatsApp}
+						disabled={!ticket}
+					>
+						WhatsApp
 					</Button>
 					<Button onClick={handlePrint} disabled={!ticket}>
 						<PrinterIcon className="w-4 h-4 mr-2" />
