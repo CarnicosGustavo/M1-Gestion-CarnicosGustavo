@@ -79,42 +79,45 @@ export function TicketModal({ orderId, open, onClose }: TicketModalProps) {
 <meta charset="utf-8">
 <title>Ticket #${ticket?.ticketNumber ?? ""}</title>
 <style>
+/* Formato para impresora de matriz de puntos (Canon clásica):
+   sin tamaño de papel forzado (usa el del equipo), todo en negro,
+   monoespaciado y legible. */
 @page {
-  margin: 0;
-  size: 80mm auto;
+  margin: 8mm;
 }
 html, body {
   margin: 0;
   padding: 0;
-  background: white;
-  color: black;
+  background: #fff;
+  color: #000;
 }
+* { color: #000 !important; }
 body {
   font-family: 'Courier New', Courier, monospace;
-  font-size: 11px;
-  line-height: 1.4;
-  padding: 6mm;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 2mm;
   width: 80mm;
   box-sizing: border-box;
+  font-weight: bold;
 }
 .ticket-header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px; }
-.ticket-header h1 { font-size: 14px; letter-spacing: 2px; margin: 0; }
-.ticket-header p { font-size: 10px; color: #555; margin: 2px 0 0; }
+.ticket-header h1 { font-size: 16px; letter-spacing: 1px; margin: 0; font-weight: bold; }
+.ticket-header p { font-size: 11px; margin: 2px 0 0; }
 .ticket-info { margin-bottom: 6px; }
 .ticket-row { display: flex; justify-content: space-between; gap: 4px; }
-.ticket-row .label { color: #555; }
 .ticket-row .value { font-weight: bold; }
 .ticket-items { border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 6px 0; margin: 6px 0; }
-.ticket-items-header { display: flex; justify-content: space-between; font-size: 9px; color: #555; margin-bottom: 4px; }
+.ticket-items-header { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; font-weight: bold; }
 .item-line { display: flex; justify-content: space-between; gap: 4px; margin-bottom: 2px; }
 .item-line .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item-line .price { font-weight: 600; white-space: nowrap; }
-.item-detail { font-size: 9px; color: #555; padding-left: 8px; margin-bottom: 2px; }
-.ticket-total { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; padding-top: 4px; }
-.ticket-status { display: flex; justify-content: space-between; font-size: 9px; color: #555; }
-.ticket-notes { border-top: 1px dashed #000; padding-top: 6px; margin-top: 6px; font-size: 9px; color: #555; }
-.ticket-notes strong { font-weight: 600; }
-.ticket-footer { text-align: center; font-size: 9px; color: #555; margin-top: 8px; padding-top: 6px; border-top: 1px dashed #000; }
+.item-line .price { font-weight: bold; white-space: nowrap; }
+.item-detail { font-size: 11px; padding-left: 8px; margin-bottom: 2px; }
+.ticket-total { display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; padding-top: 4px; }
+.ticket-status { display: flex; justify-content: space-between; font-size: 11px; }
+.ticket-notes { border-top: 1px dashed #000; padding-top: 6px; margin-top: 6px; font-size: 11px; }
+.ticket-notes strong { font-weight: bold; }
+.ticket-footer { text-align: center; font-size: 11px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed #000; }
 </style>
 </head>
 <body>${html}</body>
