@@ -614,15 +614,11 @@ export const inventoryRouter = router({
 					if (childRow.parent_product_id === null)
 						updateData.parent_product_id = input.parentProductId;
 
+					// El admin gestiona el catálogo global: no se filtra por user_uid.
 					await tx
 						.update(products)
 						.set(updateData)
-						.where(
-							and(
-								eq(products.id, input.childProductId),
-								eq(products.user_uid, uid),
-							),
-						);
+						.where(eq(products.id, input.childProductId));
 				}
 
 				if (input.id) {

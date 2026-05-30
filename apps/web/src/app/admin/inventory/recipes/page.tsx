@@ -728,6 +728,15 @@ export default function RecipesPage() {
 							{isEditing ? "Editar receta" : "Nueva receta"}
 						</DialogTitle>
 					</DialogHeader>
+					<div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-900 leading-relaxed">
+						Una <strong>receta</strong> dice qué pieza (hijo) sale al despiezar un
+						producto (padre) y en qué proporción.
+						<br />• <strong>Piezas</strong>: cuántas salen de 1 padre (ej. 2 piernas por canal).
+						<br />• <strong>Rendimiento %</strong>: qué parte del peso del padre es esta pieza.
+						La suma de todas las piezas de un padre debería acercarse a 100%.
+						<br />• <strong>Estilo</strong>: AMERICANO / NACIONAL_LOMO / NACIONAL_ESPILOMO
+						(despiece del canal) · BASE (despiece de una pieza, ej. PIERNA→JAMÓN).
+					</div>
 					<form
 						onSubmit={(e) => {
 							e.preventDefault();
@@ -856,12 +865,16 @@ export default function RecipesPage() {
 										<div className="col-span-3">
 											<Input
 												type="number"
+												step="0.5"
 												value={String(field.state.value)}
 												onChange={(e) =>
 													field.handleChange(Number(e.target.value))
 												}
 												onBlur={field.handleBlur}
 											/>
+											<div className="mt-1 text-[10px] text-muted-foreground">
+												Cuántas de esta pieza salen de 1 padre (ej. 2 piernas por canal).
+											</div>
 										</div>
 									</div>
 								)}

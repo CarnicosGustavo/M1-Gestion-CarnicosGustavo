@@ -168,11 +168,21 @@ export const productsRouter = router({
 					),
 				);
 
-			return rows.map((p) => ({
-				...p,
-				parent_product_ids:
-					p.parent_product_id === null ? [] : [p.parent_product_id],
-			}));
+			// El leftJoin a product_transformations duplica filas cuando un producto
+			// es hijo en varias recetas (ej. CABEZA hija de 3 canales). Deduplicamos
+			// por id, conservando la primera fila.
+			const seen = new Set<number>();
+			const unique: Array<(typeof rows)[number] & { parent_product_ids: number[] }> = [];
+			for (const p of rows) {
+				if (seen.has(p.id)) continue;
+				seen.add(p.id);
+				unique.push({
+					...p,
+					parent_product_ids:
+						p.parent_product_id === null ? [] : [p.parent_product_id],
+				});
+			}
+			return unique;
 		}),
 
 	create: adminProcedure
