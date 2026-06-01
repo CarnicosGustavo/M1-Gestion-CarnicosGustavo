@@ -6,13 +6,19 @@ import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
-import { PlusIcon, TrashIcon, SaveIcon } from "lucide-react";
+import { PlusIcon, TrashIcon, SaveIcon, SparklesIcon } from "lucide-react";
 import { cn } from "@finopenpos/ui/lib/utils";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-type Row = { productName: string; pieces: string; kg: string; weighed: boolean };
+type Row = {
+	productName: string;
+	pieces: string;
+	kg: string;
+	weighed: boolean;
+	estKg?: string; // estimado explícito (cascada de despiece); si no, se calcula por avg
+};
 
 const DEFAULT_CONCEPTS = [
 	"C/LOMO", "CABEZA", "CACHETE", "CODILLO", "CORBATA", "CUERO", "DESGRASE",
@@ -39,10 +45,15 @@ export default function YieldPage() {
 	const [supplier, setSupplier] = useState("");
 	const [notes, setNotes] = useState("");
 	const [rows, setRows] = useState<Row[]>(blankRows());
+	// Cantidad de canales por tipo para la proyección (productId → string)
+	const [canalQty, setCanalQty] = useState<Record<number, string>>({});
 
 	const { data: products = [] } = useQuery(trpc.products.list.queryOptions()) as { data: any[] };
 	const { data: sheets } = useQuery(trpc.yields.list.queryOptions());
 	const { data: providerStats } = useQuery(trpc.yields.byProvider.queryOptions());
+	const { data: canales = [] } = useQuery(trpc.yields.canales.queryOptions()) as {
+		data: { id: number; name: string; avgWeight: number }[];
+	};
 	const { data: latestPurchase } = useQuery(trpc.yields.latestPurchase.queryOptions()) as {
 		data: { numMedias: number; kgComprado: number; supplier: string | null } | null | undefined;
 	};
@@ -71,6 +82,69 @@ export default function YieldPage() {
 	const estKgFor = (name: string, pieces: number) =>
 		(avgByName.get(name.trim().toUpperCase()) ?? 0) * pieces;
 
+	// Estimado de un renglón: usa el override de cascada si existe, si no avg×piezas
+	const rowEst = (r: Row, pz: number) =>
+		r.estKg != null && r.estKg !== ""
+			? parseFloat(r.estKg) || 0
+			: estKgFor(r.productName, pz);
+
+	// Proyecta las piezas del despiece a partir de los canales seleccionados
+	const [projecting, setProjecting] = useState(false);
+	async function projectFromDespiece() {
+		const seleccion = canales
+			.map((c) => ({
+				canalProductId: c.id,
+				numCanales: parseInt(canalQty[c.id] ?? "") || 0,
+			}))
+			.filter((c) => c.numCanales > 0);
+		if (seleccion.length === 0) {
+			toast.error("Indica cuántos canales de cada tipo se despiezaron");
+			return;
+		}
+		setProjecting(true);
+		try {
+			const res = (await queryClient.fetchQuery(
+				trpc.yields.projectFromCanales.queryOptions({ canales: seleccion }),
+			)) as {
+				leaves: { productName: string; pieces: number; kgEstimado: number }[];
+				totalKgEstimado: number;
+			};
+			if (!res.leaves.length) {
+				toast.error("No hay recetas activas para esos canales");
+				return;
+			}
+			setRows(
+				res.leaves
+					.slice()
+					.sort((a, b) => a.productName.localeCompare(b.productName))
+					.map((l) => ({
+						productName: l.productName,
+						pieces: String(l.pieces),
+						kg: "",
+						weighed: false,
+						estKg: String(l.kgEstimado),
+					})),
+			);
+			// Rellena cabecera: total de canales y kg estimado comprado
+			const totalCanales = seleccion.reduce((a, c) => a + c.numCanales, 0);
+			setNumCanales(String(totalCanales));
+			if (!kgComprado) {
+				const kgTotal = seleccion.reduce((a, c) => {
+					const w = canales.find((x) => x.id === c.canalProductId)?.avgWeight ?? 60;
+					return a + c.numCanales * w;
+				}, 0);
+				setKgComprado(String(Math.round(kgTotal)));
+			}
+			toast.success(
+				`Proyectadas ${res.leaves.length} piezas · ${res.totalKgEstimado.toFixed(1)} kg estimados`,
+			);
+		} catch (e: any) {
+			toast.error(e?.message ?? "Error al proyectar");
+		} finally {
+			setProjecting(false);
+		}
+	}
+
 	const createMutation = useMutation(
 		trpc.yields.create.mutationOptions({
 			onSuccess: () => {
@@ -92,7 +166,7 @@ export default function YieldPage() {
 		for (const r of rows) {
 			const pz = parseInt(r.pieces) || 0;
 			piezas += pz;
-			estimado += estKgFor(r.productName, pz);
+			estimado += rowEst(r, pz);
 			real += parseFloat(r.kg) || 0;
 		}
 		const comprado = parseFloat(kgComprado) || 0;
@@ -107,7 +181,22 @@ export default function YieldPage() {
 	}, [rows, kgComprado, avgByName]);
 
 	function updateRow(idx: number, patch: Partial<Row>) {
-		setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+		setRows((prev) =>
+			prev.map((r, i) => {
+				if (i !== idx) return r;
+				const next = { ...r, ...patch };
+				// Si cambia el nombre, el estimado de cascada deja de ser válido
+				if (patch.productName !== undefined) next.estKg = undefined;
+				// Si cambian las piezas, reescala el estimado de cascada proporcionalmente
+				if (patch.pieces !== undefined && r.estKg) {
+					const oldPz = parseInt(r.pieces) || 0;
+					const newPz = parseInt(patch.pieces) || 0;
+					next.estKg =
+						oldPz > 0 ? String((parseFloat(r.estKg) / oldPz) * newPz) : r.estKg;
+				}
+				return next;
+			}),
+		);
 	}
 	function addRow() {
 		setRows((prev) => [...prev, { productName: "", pieces: "", kg: "", weighed: false }]);
@@ -181,6 +270,54 @@ export default function YieldPage() {
 				</Card>
 			)}
 
+			{/* Proyección desde despiece */}
+			{canales.length > 0 && (
+				<Card className="border-blue-200 bg-blue-50/40">
+					<CardHeader className="pb-2">
+						<CardTitle className="flex items-center gap-2 text-base">
+							<SparklesIcon className="h-4 w-4 text-blue-600" />
+							Proyectar piezas desde el despiece
+						</CardTitle>
+						<p className="text-xs text-muted-foreground">
+							Indica cuántos canales de cada tipo se despiezaron. Se calculan
+							automáticamente las piezas resultantes y su peso estimado (incluye
+							el 2º nivel de despiece).
+						</p>
+					</CardHeader>
+					<CardContent>
+						<div className="flex flex-wrap items-end gap-3">
+							{canales.map((c) => (
+								<div key={c.id} className="space-y-1">
+									<Label className="text-xs">{c.name}</Label>
+									<Input
+										type="number"
+										min={0}
+										value={canalQty[c.id] ?? ""}
+										onChange={(e) =>
+											setCanalQty((prev) => ({ ...prev, [c.id]: e.target.value }))
+										}
+										placeholder="0"
+										className="h-9 w-28"
+									/>
+								</div>
+							))}
+							<Button
+								onClick={projectFromDespiece}
+								disabled={projecting}
+								className="bg-blue-600 hover:bg-blue-700"
+							>
+								<SparklesIcon className="mr-2 h-4 w-4" />
+								{projecting ? "Proyectando…" : "Proyectar piezas"}
+							</Button>
+						</div>
+						<p className="mt-2 text-[11px] text-muted-foreground">
+							Para nacional: cada cerdo se despieza en su lado lomo y su lado
+							espinazo (espilomo), captúralos por separado.
+						</p>
+					</CardContent>
+				</Card>
+			)}
+
 			{/* Cabecera */}
 			<Card>
 				<CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-6">
@@ -248,7 +385,7 @@ export default function YieldPage() {
 							<TableBody>
 								{rows.map((r, idx) => {
 									const pz = parseInt(r.pieces) || 0;
-									const est = estKgFor(r.productName, pz);
+									const est = rowEst(r, pz);
 									const real = parseFloat(r.kg) || 0;
 									const dif = real - est;
 									return (

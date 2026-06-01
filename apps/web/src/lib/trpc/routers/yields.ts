@@ -1,8 +1,14 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
-import { yieldSheets, yieldSheetItems, channelPurchases } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import {
+	yieldSheets,
+	yieldSheetItems,
+	channelPurchases,
+	products,
+	productTransformations,
+} from "@/lib/db/schema";
+import { eq, desc, and, ilike } from "drizzle-orm";
 
 const itemInput = z.object({
 	productId: z.number().nullable().optional(),
@@ -75,6 +81,178 @@ export const yieldsRouter = router({
 			date: p.purchase_date,
 		};
 	}),
+
+	// Lista de canales (raíz del despiece) para elegir qué proyectar
+	canales: protectedProcedure.input(z.void()).query(async () => {
+		const rows = await db
+			.select({
+				id: products.id,
+				name: products.name,
+				avgWeight: products.avg_weight_per_piece_kg,
+			})
+			.from(products)
+			.where(
+				and(
+					eq(products.is_parent_product, true),
+					ilike(products.name, "CANAL%"),
+				),
+			)
+			.orderBy(products.name);
+		return rows.map((r) => ({
+			id: r.id,
+			name: r.name,
+			avgWeight: Number(r.avgWeight ?? 60),
+		}));
+	}),
+
+	// Proyecta las piezas resultado del despiece de N canales.
+	// Cascada recursiva por yield_weight_ratio: 1er nivel (canal → padres)
+	// y 2º nivel (BASE: padre → piezas finales). Devuelve árbol + hojas.
+	projectFromCanales: protectedProcedure
+		.input(
+			z.object({
+				canales: z
+					.array(
+						z.object({
+							canalProductId: z.number(),
+							numCanales: z.number().min(0),
+						}),
+					)
+					.min(1),
+			}),
+		)
+		.query(async ({ input }) => {
+			// Todas las transformaciones activas + catálogo de productos
+			const txns = await db
+				.select({
+					parentId: productTransformations.parent_product_id,
+					childId: productTransformations.child_product_id,
+					pieces: productTransformations.yield_quantity_pieces,
+					ratio: productTransformations.yield_weight_ratio,
+				})
+				.from(productTransformations)
+				.where(eq(productTransformations.is_active, true));
+
+			const prods = await db
+				.select({
+					id: products.id,
+					name: products.name,
+					avg: products.avg_weight_per_piece_kg,
+				})
+				.from(products);
+			const prodMap = new Map(prods.map((p) => [p.id, p]));
+
+			const byParent = new Map<number, typeof txns>();
+			for (const t of txns) {
+				const arr = byParent.get(t.parentId) ?? [];
+				arr.push(t);
+				byParent.set(t.parentId, arr);
+			}
+
+			type Node = {
+				productId: number;
+				productName: string;
+				pieces: number;
+				kgEstimado: number;
+				level: number;
+				isLeaf: boolean;
+			};
+			const acc = new Map<number, Node>();
+
+			const add = (
+				id: number,
+				name: string,
+				pieces: number,
+				kg: number,
+				level: number,
+				isLeaf: boolean,
+			) => {
+				const cur = acc.get(id);
+				if (cur) {
+					cur.pieces += pieces;
+					cur.kgEstimado += kg;
+					cur.isLeaf = cur.isLeaf && isLeaf;
+					cur.level = Math.min(cur.level, level);
+				} else {
+					acc.set(id, {
+						productId: id,
+						productName: name,
+						pieces,
+						kgEstimado: kg,
+						level,
+						isLeaf,
+					});
+				}
+			};
+
+			const recurse = (
+				parentId: number,
+				parentKg: number,
+				parentPieces: number,
+				level: number,
+				path: Set<number>,
+			) => {
+				const children = byParent.get(parentId);
+				if (!children || children.length === 0) return;
+				for (const c of children) {
+					if (path.has(c.childId)) continue; // evita ciclos
+					const childPieces = parentPieces * Number(c.pieces);
+					const childKg = parentKg * Number(c.ratio);
+					const grand = byParent.get(c.childId);
+					const isLeaf = !grand || grand.length === 0;
+					const name = prodMap.get(c.childId)?.name ?? `#${c.childId}`;
+					add(c.childId, name, childPieces, childKg, level, isLeaf);
+					if (!isLeaf) {
+						recurse(
+							c.childId,
+							childKg,
+							childPieces,
+							level + 1,
+							new Set([...path, c.childId]),
+						);
+					}
+				}
+			};
+
+			for (const canal of input.canales) {
+				if (canal.numCanales <= 0) continue;
+				const canalProd = prodMap.get(canal.canalProductId);
+				const canalWeight = Number(canalProd?.avg ?? 60);
+				const totalKg = canal.numCanales * canalWeight;
+				recurse(
+					canal.canalProductId,
+					totalKg,
+					canal.numCanales,
+					1,
+					new Set([canal.canalProductId]),
+				);
+			}
+
+			const round3 = (n: number) => Number(n.toFixed(3));
+			const nodes = [...acc.values()]
+				.sort(
+					(a, b) =>
+						a.level - b.level || a.productName.localeCompare(b.productName),
+				)
+				.map((n) => ({
+					...n,
+					pieces: Math.round(n.pieces),
+					kgEstimado: round3(n.kgEstimado),
+				}));
+			// Hojas = piezas finales (lo que realmente se pesa/vende)
+			const leaves = nodes
+				.filter((n) => n.isLeaf)
+				.map((n) => ({
+					productId: n.productId,
+					productName: n.productName,
+					pieces: n.pieces,
+					kgEstimado: n.kgEstimado,
+				}));
+			const totalKgEstimado = round3(
+				leaves.reduce((a, n) => a + n.kgEstimado, 0),
+			);
+			return { nodes, leaves, totalKgEstimado };
+		}),
 
 	// Comparativa de rendimiento por proveedor (de todas las hojas)
 	byProvider: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
