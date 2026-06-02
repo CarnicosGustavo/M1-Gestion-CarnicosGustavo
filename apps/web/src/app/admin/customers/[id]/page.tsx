@@ -13,11 +13,15 @@ import {
 	ReceiptTextIcon,
 	TagIcon,
 	HandCoinsIcon,
+	PrinterIcon,
+	FileTextIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { TicketModal } from "@/components/ticket-modal";
+import { DebtVoucherModal } from "@/components/debt-voucher-modal";
+import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
 
 const money = (cents: number) =>
 	(cents / 100).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -43,10 +47,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 	const customerId = parseInt(id);
 	const trpc = useTRPC();
 	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
+	const [voucherOpen, setVoucherOpen] = useState(false);
+	const [receiptPaymentId, setReceiptPaymentId] = useState<number | null>(null);
 
 	const { data, isLoading } = useQuery(
 		trpc.customers.getDetail.queryOptions({ id: customerId }),
 	) as { data: any; isLoading: boolean };
+
+	const { data: statement } = useQuery(
+		trpc.collections.getStatement.queryOptions({ customerId }),
+	) as { data: any };
 
 	if (isLoading) {
 		return (
@@ -209,12 +219,117 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 				</CardContent>
 			</Card>
 
+			{/* Movimientos de cobranza (cargos y abonos) */}
+			<Card>
+				<CardHeader className="flex flex-row items-center justify-between">
+					<CardTitle>Movimientos de cobranza</CardTitle>
+					{statement && statement.ledger.length > 0 && (
+						<Button
+							variant="outline"
+							size="sm"
+							className="border-amber-400 text-amber-700 hover:bg-amber-50"
+							onClick={() => setVoucherOpen(true)}
+						>
+							<FileTextIcon className="w-4 h-4 mr-2" />
+							Vale de adeudo
+						</Button>
+					)}
+				</CardHeader>
+				<CardContent>
+					{!statement || statement.ledger.length === 0 ? (
+						<div className="text-sm text-muted-foreground py-6 text-center">
+							Sin movimientos de cobranza.
+						</div>
+					) : (
+						<div className="overflow-x-auto">
+							<Table>
+								<TableHeader>
+									<TableRow className="bg-muted/50">
+										<TableHead>Fecha</TableHead>
+										<TableHead>Concepto</TableHead>
+										<TableHead className="text-right">Cargo</TableHead>
+										<TableHead className="text-right">Abono</TableHead>
+										<TableHead className="text-center">Re-imprimir</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{statement.ledger.map((l: any, i: number) => (
+										<TableRow key={i}>
+											<TableCell>{l.fecha ?? "—"}</TableCell>
+											<TableCell>{l.concepto}</TableCell>
+											<TableCell className="text-right">
+												{l.cargo > 0
+													? l.cargo.toLocaleString("es-MX", {
+															style: "currency",
+															currency: "MXN",
+														})
+													: ""}
+											</TableCell>
+											<TableCell className="text-right text-green-700">
+												{l.abono > 0
+													? l.abono.toLocaleString("es-MX", {
+															style: "currency",
+															currency: "MXN",
+														})
+													: ""}
+											</TableCell>
+											<TableCell className="text-center">
+												{l.tipo === "abono" ? (
+													<Button
+														variant="ghost"
+														size="sm"
+														title="Re-imprimir recibo de abono"
+														onClick={() => setReceiptPaymentId(l.id)}
+													>
+														<PrinterIcon className="w-4 h-4" />
+													</Button>
+												) : (
+													<Button
+														variant="ghost"
+														size="sm"
+														title="Imprimir vale de adeudo"
+														onClick={() => setVoucherOpen(true)}
+													>
+														<FileTextIcon className="w-4 h-4" />
+													</Button>
+												)}
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</div>
+					)}
+				</CardContent>
+			</Card>
+
 			{/* Ticket reimprimible */}
 			{ticketOrderId && (
 				<TicketModal
 					orderId={ticketOrderId}
 					open={!!ticketOrderId}
 					onClose={() => setTicketOrderId(null)}
+				/>
+			)}
+
+			{/* Vale de adeudo (2 copias) */}
+			{voucherOpen && (
+				<DebtVoucherModal
+					customerId={customerId}
+					customerName={c.name ?? null}
+					open={voucherOpen}
+					onClose={() => setVoucherOpen(false)}
+				/>
+			)}
+
+			{/* Recibo de abono (2 copias) */}
+			{receiptPaymentId && (
+				<PaymentReceiptModal
+					customerId={customerId}
+					customerName={c.name ?? null}
+					paymentId={receiptPaymentId}
+					open={!!receiptPaymentId}
+					onClose={() => setReceiptPaymentId(null)}
 				/>
 			)}
 		</div>

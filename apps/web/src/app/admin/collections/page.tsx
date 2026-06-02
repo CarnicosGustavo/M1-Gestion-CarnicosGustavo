@@ -26,6 +26,7 @@ import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { DebtVoucherModal } from "@/components/debt-voucher-modal";
+import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
 
 const fmt = (n: number) =>
 	n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -38,6 +39,7 @@ export default function CollectionsPage() {
 	const [payOpen, setPayOpen] = useState<{ customerId: number; name: string } | null>(null);
 	const [stmtOpen, setStmtOpen] = useState<{ customerId: number; name: string } | null>(null);
 	const [voucherFor, setVoucherFor] = useState<{ customerId: number; name: string | null } | null>(null);
+	const [receiptFor, setReceiptFor] = useState<{ customerId: number; name: string | null; paymentId: number } | null>(null);
 
 	// Form: cargo / ticket viejo
 	const [chCustomer, setChCustomer] = useState("");
@@ -87,12 +89,26 @@ export default function CollectionsPage() {
 
 	const payMut = useMutation(
 		trpc.collections.addPayment.mutationOptions({
-			onSuccess: () => {
+			onSuccess: (data: any) => {
+				const cust = payOpen;
 				toast.success("Abono registrado");
 				setPayOpen(null);
 				setPayAmount("");
 				setPayMethod("");
 				invalidate();
+				// Abre el recibo de abono para imprimir y entregar al cliente
+				if (cust && data?.id) {
+					queryClient.invalidateQueries({
+						queryKey: trpc.collections.getStatement.queryOptions({
+							customerId: cust.customerId,
+						}).queryKey,
+					});
+					setReceiptFor({
+						customerId: cust.customerId,
+						name: cust.name,
+						paymentId: data.id,
+					});
+				}
 			},
 			onError: (e: any) => toast.error(e.message ?? "Error"),
 		}),
@@ -340,6 +356,7 @@ export default function CollectionsPage() {
 											<TableHead>Concepto</TableHead>
 											<TableHead className="text-right">Cargo</TableHead>
 											<TableHead className="text-right">Abono</TableHead>
+											<TableHead className="text-center">Re-imprimir</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
@@ -352,6 +369,40 @@ export default function CollectionsPage() {
 												</TableCell>
 												<TableCell className="text-right text-green-700">
 													{l.abono > 0 ? fmt(l.abono) : ""}
+												</TableCell>
+												<TableCell className="text-center">
+													{l.tipo === "abono" ? (
+														<Button
+															variant="ghost"
+															size="sm"
+															title="Re-imprimir recibo de abono"
+															onClick={() =>
+																stmtOpen &&
+																setReceiptFor({
+																	customerId: stmtOpen.customerId,
+																	name: stmtOpen.name,
+																	paymentId: l.id,
+																})
+															}
+														>
+															<PrinterIcon className="w-4 h-4" />
+														</Button>
+													) : (
+														<Button
+															variant="ghost"
+															size="sm"
+															title="Imprimir vale de adeudo"
+															onClick={() =>
+																stmtOpen &&
+																setVoucherFor({
+																	customerId: stmtOpen.customerId,
+																	name: stmtOpen.name,
+																})
+															}
+														>
+															<FileTextIcon className="w-4 h-4" />
+														</Button>
+													)}
 												</TableCell>
 											</TableRow>
 										))}
@@ -402,6 +453,17 @@ export default function CollectionsPage() {
 					customerName={voucherFor.name}
 					open={!!voucherFor}
 					onClose={() => setVoucherFor(null)}
+				/>
+			)}
+
+			{/* Recibo de abono (2 copias: cliente + negocio) */}
+			{receiptFor && (
+				<PaymentReceiptModal
+					customerId={receiptFor.customerId}
+					customerName={receiptFor.name}
+					paymentId={receiptFor.paymentId}
+					open={!!receiptFor}
+					onClose={() => setReceiptFor(null)}
 				/>
 			)}
 		</div>
