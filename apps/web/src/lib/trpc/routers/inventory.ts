@@ -552,7 +552,10 @@ export const inventoryRouter = router({
 			// No filtramos por UID del admin para permitir gestionar el catálogo global.
 			return db.transaction(async (tx) => {
 				const [parentRow] = await tx
-					.select({ id: products.id })
+					.select({
+						id: products.id,
+						is_parent_product: products.is_parent_product,
+					})
 					.from(products)
 					.where(eq(products.id, input.parentProductId))
 					.limit(1);
@@ -603,6 +606,16 @@ export const inventoryRouter = router({
 						code: "BAD_REQUEST",
 						message: "Ya existe una receta con este padre/hijo y estilo",
 					});
+				}
+
+				// Si el producto padre aún no está marcado como despiezable, marcarlo.
+				// Necesario para que el árbol de recetas y el despiece reconozcan el
+				// 2º nivel (ej. al arrastrar una sub-pieza sobre un hijo de la tabla).
+				if (!parentRow.is_parent_product) {
+					await tx
+						.update(products)
+						.set({ is_parent_product: true, updated_at: new Date() })
+						.where(eq(products.id, input.parentProductId));
 				}
 
 				if (input.childName || childRow.parent_product_id === null) {

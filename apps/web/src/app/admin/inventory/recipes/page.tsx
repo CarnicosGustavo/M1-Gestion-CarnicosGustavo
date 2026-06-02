@@ -281,9 +281,17 @@ export default function RecipesPage() {
 		setIsDialogOpen(true);
 	};
 
-	// Producto arrastrado (chip huérfano) y padre resaltado al arrastrar
+	// Producto arrastrado (chip huérfano) y celda resaltada al arrastrar
 	const [draggedChild, setDraggedChild] = useState<{ id: number; name: string } | null>(null);
 	const [dropParentId, setDropParentId] = useState<number | null>(null);
+	// Hijo resaltado: soltar aquí crea un despiece de 2º nivel (esa pieza es el padre)
+	const [dropOntoChildId, setDropOntoChildId] = useState<number | null>(null);
+
+	const clearDrag = useCallback(() => {
+		setDraggedChild(null);
+		setDropParentId(null);
+		setDropOntoChildId(null);
+	}, []);
 
 	const productOptions = useMemo(() => {
 		return allProducts.slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -479,8 +487,7 @@ export default function RecipesPage() {
 						if (draggedChild && draggedChild.id !== r.parent_product_id) {
 							openCreateChild(r.parent_product_id, r.transformation_type, draggedChild);
 						}
-						setDraggedChild(null);
-						setDropParentId(null);
+						clearDrag();
 					}}
 					className={cn(
 						"-mx-2 -my-1 rounded px-2 py-1 transition-colors",
@@ -503,7 +510,37 @@ export default function RecipesPage() {
 				const key = `${r.parent_product_id}:${r.child_product_id}:${r.transformation_type}`;
 				const dup = duplicateCounts.get(key) ?? 0;
 				return (
-					<div className="flex items-center gap-2">
+					<div
+						onDragOver={(e) => {
+							if (draggedChild && draggedChild.id !== r.child_product_id) {
+								e.preventDefault();
+								setDropOntoChildId(r.child_product_id);
+							}
+						}}
+						onDragLeave={() => setDropOntoChildId(null)}
+						onDrop={(e) => {
+							e.preventDefault();
+							if (draggedChild && draggedChild.id !== r.child_product_id) {
+								// Soltar sobre el hijo = despiece de 2º nivel:
+								// esta pieza (el hijo de la fila) pasa a ser el PADRE
+								// y el arrastrado su sub-pieza (receta BASE).
+								openCreateChild(r.child_product_id, "BASE", draggedChild);
+							}
+							clearDrag();
+						}}
+						className={cn(
+							"-mx-2 -my-1 flex items-center gap-2 rounded px-2 py-1 transition-colors",
+							draggedChild &&
+								draggedChild.id !== r.child_product_id &&
+								"ring-1 ring-dashed ring-sky-300",
+							dropOntoChildId === r.child_product_id && "bg-sky-100 ring-sky-500",
+						)}
+						title={
+							draggedChild
+								? `Soltar para que ${draggedChild.name} salga del despiece de ${r.childProduct.name} (2º nivel, BASE)`
+								: undefined
+						}
+					>
 						<span className="truncate">{r.childProduct.name}</span>
 						{dup > 1 ? (
 							<Badge
@@ -795,20 +832,19 @@ export default function RecipesPage() {
 							{productsWithoutRecipe.length} producto(s) sin receta
 						</span>{" "}
 						(no salen de ningún despiece ni se despiezan). Es normal para piezas
-						finales. <strong>Arrastra un producto sobre un padre</strong> de la tabla
-						para crearle su receta:
+						finales. Arrastra un producto sobre la tabla:{" "}
+						<strong>sobre un PADRE</strong> → será hijo de ese padre (mismo estilo);{" "}
+						<strong>sobre un HIJO</strong> → saldrá del despiece de esa pieza (2º
+						nivel, receta BASE).
 						<div className="mt-1 flex flex-wrap gap-1">
 							{productsWithoutRecipe.map((p) => (
 								<span
 									key={p.id}
 									draggable
 									onDragStart={() => setDraggedChild({ id: p.id, name: p.name })}
-									onDragEnd={() => {
-										setDraggedChild(null);
-										setDropParentId(null);
-									}}
+									onDragEnd={clearDrag}
 									className="cursor-grab rounded bg-amber-100 px-1.5 py-0.5 font-medium hover:bg-amber-200 active:cursor-grabbing"
-									title="Arrástrame sobre un padre de la tabla"
+									title="Arrástrame sobre un PADRE (será su hijo) o sobre un HIJO (saldrá de su despiece, 2º nivel)"
 								>
 									{p.name}
 								</span>
@@ -823,7 +859,7 @@ export default function RecipesPage() {
 									e.preventDefault();
 									if (draggedChild)
 										classifyOrphanMut.mutate({ productId: draggedChild.id, action: "purchased" });
-									setDraggedChild(null);
+									clearDrag();
 								}}
 								className={cn(
 									"rounded-lg border-2 border-dashed p-3 text-center text-xs font-semibold transition-colors",
@@ -841,7 +877,7 @@ export default function RecipesPage() {
 									e.preventDefault();
 									if (draggedChild)
 										classifyOrphanMut.mutate({ productId: draggedChild.id, action: "duplicate" });
-									setDraggedChild(null);
+									clearDrag();
 								}}
 								className={cn(
 									"rounded-lg border-2 border-dashed p-3 text-center text-xs font-semibold transition-colors",
