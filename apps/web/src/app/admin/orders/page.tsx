@@ -42,7 +42,8 @@ import { useRouter } from "next/navigation";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useTRPC } from "@/lib/trpc/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useCrudMutation } from "@/hooks/use-crud-mutation";
 import {
 	DataTable,
@@ -209,6 +210,56 @@ export default function OrdersPage() {
 
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [draftCustomer, setDraftCustomer] = useState<CustomerRow | null>(null);
+	// Alta rápida de cliente desde el pedido
+	const [newCustOpen, setNewCustOpen] = useState(false);
+	const [ncName, setNcName] = useState("");
+	const [ncContact, setNcContact] = useState("");
+	const [ncWhats, setNcWhats] = useState("");
+	const [ncAddress, setNcAddress] = useState("");
+	const [ncNotes, setNcNotes] = useState("");
+	const queryClient = useQueryClient();
+
+	const createCustomerMutation = useMutation(
+		trpc.customers.create.mutationOptions({
+			onSuccess: (data: any) => {
+				toast.success("Cliente creado");
+				queryClient.invalidateQueries({
+					queryKey: trpc.customers.list.queryOptions().queryKey,
+				});
+				// Selecciona el cliente recién creado en el pedido
+				setDraftCustomer(data);
+				setNewCustOpen(false);
+				setNcName("");
+				setNcContact("");
+				setNcWhats("");
+				setNcAddress("");
+				setNcNotes("");
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error al crear cliente"),
+		}),
+	);
+
+	const saveNewCustomer = () => {
+		if (!ncName.trim()) {
+			toast.error("Captura el nombre del negocio");
+			return;
+		}
+		const digits = ncWhats.replace(/[^\d]/g, "");
+		const slug = ncName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+		const email = digits
+			? `${digits}@cedis.local`
+			: `${slug || "cliente"}@cedis.local`;
+		createCustomerMutation.mutate({
+			name: ncName.trim(),
+			contact_name: ncContact.trim() || undefined,
+			email,
+			whatsapp_phone: digits || undefined,
+			phone: digits || undefined,
+			address: ncAddress.trim() || undefined,
+			notes: ncNotes.trim() || undefined,
+			status: "active",
+		});
+	};
 	const [draftPayment, setDraftPayment] = useState<PaymentMethodRow | null>(
 		null,
 	);
@@ -697,7 +748,16 @@ export default function OrdersPage() {
 					<div className="grid gap-4">
 						<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
 							<div className="sm:col-span-1">
-								<Label>Cliente</Label>
+								<div className="flex items-center justify-between">
+									<Label>Cliente</Label>
+									<button
+										type="button"
+										onClick={() => setNewCustOpen(true)}
+										className="text-xs font-semibold text-primary hover:underline"
+									>
+										+ Nuevo cliente
+									</button>
+								</div>
 								<Combobox
 									items={customers.map((c) => ({ id: c.id, name: c.name }))}
 									placeholder="Selecciona cliente"
@@ -930,6 +990,68 @@ export default function OrdersPage() {
 							</div>
 						</div>
 					</div>
+				</DialogContent>
+			</Dialog>
+
+			{/* Alta rápida de cliente desde el pedido */}
+			<Dialog open={newCustOpen} onOpenChange={setNewCustOpen}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Nuevo cliente</DialogTitle>
+					</DialogHeader>
+					<div className="grid gap-3 py-2">
+						<div className="space-y-1">
+							<Label>Nombre del negocio *</Label>
+							<Input
+								value={ncName}
+								onChange={(e) => setNcName(e.target.value)}
+								placeholder="Ej. Carnicería Balderas"
+							/>
+						</div>
+						<div className="space-y-1">
+							<Label>Responsable</Label>
+							<Input
+								value={ncContact}
+								onChange={(e) => setNcContact(e.target.value)}
+								placeholder="Nombre de contacto"
+							/>
+						</div>
+						<div className="space-y-1">
+							<Label>WhatsApp</Label>
+							<Input
+								value={ncWhats}
+								onChange={(e) => setNcWhats(e.target.value)}
+								placeholder="Tel. de WhatsApp (identificador principal)"
+							/>
+						</div>
+						<div className="space-y-1">
+							<Label>Dirección</Label>
+							<Input
+								value={ncAddress}
+								onChange={(e) => setNcAddress(e.target.value)}
+								placeholder="Zona / dirección de entrega"
+							/>
+						</div>
+						<div className="space-y-1">
+							<Label>Notas</Label>
+							<Input
+								value={ncNotes}
+								onChange={(e) => setNcNotes(e.target.value)}
+								placeholder="Opcional"
+							/>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="secondary" onClick={() => setNewCustOpen(false)}>
+							Cancelar
+						</Button>
+						<Button
+							disabled={createCustomerMutation.isPending}
+							onClick={saveNewCustomer}
+						>
+							{createCustomerMutation.isPending ? "Creando…" : "Crear y usar"}
+						</Button>
+					</DialogFooter>
 				</DialogContent>
 			</Dialog>
 		</Card>

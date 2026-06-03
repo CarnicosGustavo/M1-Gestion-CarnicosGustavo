@@ -1159,18 +1159,19 @@ export const ordersRouter = router({
 						} else if (item.quantityPieces) {
 							subtotal = item.quantityPieces * item.unitPrice;
 						}
-					} else if (
-						product.is_sellable_by_weight &&
-						(!quantityKg || quantityKg === 0)
-					) {
+					} else if (product.is_sellable_by_weight) {
+						// Producto por peso: SIEMPRE va a la estación de pesaje. El peso
+						// real se mide en la báscula y de ahí sale el cálculo. La cantidad
+						// capturada (kg solicitados) queda como referencia y se reemplaza
+						// con el peso real al pesar.
 						itemStatus = "PENDIENTE_PESAJE";
 						requiresWeighing = true;
-						quantityKg = null;
+						quantityKg = quantityKg
+							? ((quantityKg / 1000).toFixed(3) as any)
+							: null;
 						subtotal = 0;
-					} else if (quantityKg) {
-						subtotal = Math.round((quantityKg * item.unitPrice) / 1000);
-						quantityKg = (quantityKg / 1000).toFixed(3) as any;
 					} else if (item.quantityPieces) {
+						// Producto que NO se pesa (venta por pieza): queda listo
 						subtotal = item.quantityPieces * item.unitPrice;
 					}
 
