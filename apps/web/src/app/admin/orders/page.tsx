@@ -43,7 +43,6 @@ import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialo
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { useCrudMutation } from "@/hooks/use-crud-mutation";
 import {
 	DataTable,
