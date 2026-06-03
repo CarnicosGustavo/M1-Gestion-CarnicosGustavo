@@ -21,7 +21,15 @@ import {
 	SelectValue,
 } from "@finopenpos/ui/components/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
-import { PlusIcon, BanknoteIcon, FileTextIcon, PrinterIcon } from "lucide-react";
+import {
+	PlusIcon,
+	BanknoteIcon,
+	FileTextIcon,
+	PrinterIcon,
+	MessageCircleIcon,
+	PencilIcon,
+	Trash2Icon,
+} from "lucide-react";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -40,6 +48,11 @@ export default function CollectionsPage() {
 	const [stmtOpen, setStmtOpen] = useState<{ customerId: number; name: string } | null>(null);
 	const [voucherFor, setVoucherFor] = useState<{ customerId: number; name: string | null } | null>(null);
 	const [receiptFor, setReceiptFor] = useState<{ customerId: number; name: string | null; paymentId: number } | null>(null);
+	// Edición de un movimiento (cargo o abono)
+	const [editMov, setEditMov] = useState<
+		| { kind: "cargo" | "abono"; id: number; amount: string; concept: string; date: string }
+		| null
+	>(null);
 
 	// Form: cargo / ticket viejo
 	const [chCustomer, setChCustomer] = useState("");
@@ -66,6 +79,112 @@ export default function CollectionsPage() {
 
 	const invalidate = () =>
 		queryClient.invalidateQueries({ queryKey: accountsKey });
+
+	// Invalida el estado de cuenta del cliente abierto (tras editar/eliminar)
+	const invalidateStmt = () => {
+		invalidate();
+		if (stmtOpen) {
+			queryClient.invalidateQueries({
+				queryKey: trpc.collections.getStatement.queryOptions({
+					customerId: stmtOpen.customerId,
+				}).queryKey,
+			});
+		}
+	};
+
+	// Envía recordatorio de pago por WhatsApp con el saldo pendiente
+	const sendReminder = (a: any) => {
+		const phone = String(a.phone ?? "").replace(/[^\d]/g, "");
+		const text =
+			`Hola ${a.name ?? ""}, le saluda *Cárnicos Gustavo*. ` +
+			`Le recordamos que tiene un saldo pendiente de *${fmt(a.balance)}*. ` +
+			`Agradecemos mucho su pago. ¡Gracias por su preferencia!`;
+		const url = phone
+			? `https://wa.me/52${phone.replace(/^52/, "")}?text=${encodeURIComponent(text)}`
+			: `https://wa.me/?text=${encodeURIComponent(text)}`;
+		if (!phone) toast.info("El cliente no tiene teléfono; elige el contacto en WhatsApp");
+		window.open(url, "_blank", "noopener,noreferrer");
+	};
+
+	const updateChargeMut = useMutation(
+		trpc.collections.updateCharge.mutationOptions({
+			onSuccess: () => {
+				toast.success("Cargo actualizado");
+				setEditMov(null);
+				invalidateStmt();
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error"),
+		}),
+	);
+	const updatePaymentMut = useMutation(
+		trpc.collections.updatePayment.mutationOptions({
+			onSuccess: () => {
+				toast.success("Abono actualizado");
+				setEditMov(null);
+				invalidateStmt();
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error"),
+		}),
+	);
+	const deleteChargeMut = useMutation(
+		trpc.collections.deleteCharge.mutationOptions({
+			onSuccess: () => {
+				toast.success("Cargo eliminado");
+				invalidateStmt();
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error"),
+		}),
+	);
+	const deletePaymentMut = useMutation(
+		trpc.collections.deletePayment.mutationOptions({
+			onSuccess: () => {
+				toast.success("Abono eliminado");
+				invalidateStmt();
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error"),
+		}),
+	);
+
+	const deleteMovement = (l: any) => {
+		const tipo = l.tipo === "abono" ? "abono" : "cargo";
+		if (!window.confirm(`¿Eliminar este ${tipo} de ${fmt(l.cargo || l.abono)}? Esta acción no se puede deshacer.`)) return;
+		if (l.tipo === "abono") deletePaymentMut.mutate({ id: l.id });
+		else deleteChargeMut.mutate({ id: l.id });
+	};
+
+	const openEditMovement = (l: any) => {
+		setEditMov({
+			kind: l.tipo === "abono" ? "abono" : "cargo",
+			id: l.id,
+			amount: String(l.cargo || l.abono || ""),
+			concept: l.tipo === "abono" ? "" : (l.concepto ?? ""),
+			date: l.fecha ? String(l.fecha).slice(0, 10) : "",
+		});
+	};
+
+	const saveEditMovement = () => {
+		if (!editMov) return;
+		const amount = parseFloat(editMov.amount) || 0;
+		if (amount <= 0) {
+			toast.error("El monto debe ser mayor a 0");
+			return;
+		}
+		if (editMov.kind === "cargo") {
+			updateChargeMut.mutate({
+				id: editMov.id,
+				amount,
+				concept: editMov.concept || undefined,
+				chargeDate: editMov.date || undefined,
+			});
+		} else {
+			updatePaymentMut.mutate({
+				id: editMov.id,
+				amount,
+				method: editMov.concept || undefined,
+				paymentDate: editMov.date || undefined,
+			});
+		}
+	};
 
 	const chargeMut = useMutation(
 		trpc.collections.addCharge.mutationOptions({
@@ -234,6 +353,16 @@ export default function CollectionsPage() {
 														<PrinterIcon className="w-4 h-4 mr-1" />
 														Vale
 													</Button>
+													<Button
+														variant="outline"
+														size="sm"
+														className="border-[#25D366] text-[#1da851] hover:bg-[#25D366]/10"
+														title="Enviar recordatorio de pago por WhatsApp"
+														onClick={() => sendReminder(a)}
+													>
+														<MessageCircleIcon className="w-4 h-4 mr-1" />
+														Recordar
+													</Button>
 												</div>
 											</TableCell>
 										</TableRow>
@@ -356,7 +485,7 @@ export default function CollectionsPage() {
 											<TableHead>Concepto</TableHead>
 											<TableHead className="text-right">Cargo</TableHead>
 											<TableHead className="text-right">Abono</TableHead>
-											<TableHead className="text-center">Re-imprimir</TableHead>
+											<TableHead className="text-center">Acciones</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
@@ -370,39 +499,58 @@ export default function CollectionsPage() {
 												<TableCell className="text-right text-green-700">
 													{l.abono > 0 ? fmt(l.abono) : ""}
 												</TableCell>
-												<TableCell className="text-center">
-													{l.tipo === "abono" ? (
+												<TableCell>
+													<div className="flex items-center justify-center gap-1">
+														{l.tipo === "abono" ? (
+															<Button
+																variant="ghost"
+																size="sm"
+																title="Re-imprimir recibo de abono"
+																onClick={() =>
+																	stmtOpen &&
+																	setReceiptFor({
+																		customerId: stmtOpen.customerId,
+																		name: stmtOpen.name,
+																		paymentId: l.id,
+																	})
+																}
+															>
+																<PrinterIcon className="w-4 h-4" />
+															</Button>
+														) : (
+															<Button
+																variant="ghost"
+																size="sm"
+																title="Imprimir vale de adeudo"
+																onClick={() =>
+																	stmtOpen &&
+																	setVoucherFor({
+																		customerId: stmtOpen.customerId,
+																		name: stmtOpen.name,
+																	})
+																}
+															>
+																<FileTextIcon className="w-4 h-4" />
+															</Button>
+														)}
 														<Button
 															variant="ghost"
 															size="sm"
-															title="Re-imprimir recibo de abono"
-															onClick={() =>
-																stmtOpen &&
-																setReceiptFor({
-																	customerId: stmtOpen.customerId,
-																	name: stmtOpen.name,
-																	paymentId: l.id,
-																})
-															}
+															title="Corregir movimiento"
+															onClick={() => openEditMovement(l)}
 														>
-															<PrinterIcon className="w-4 h-4" />
+															<PencilIcon className="w-4 h-4" />
 														</Button>
-													) : (
 														<Button
 															variant="ghost"
 															size="sm"
-															title="Imprimir vale de adeudo"
-															onClick={() =>
-																stmtOpen &&
-																setVoucherFor({
-																	customerId: stmtOpen.customerId,
-																	name: stmtOpen.name,
-																})
-															}
+															className="text-red-600 hover:text-red-700"
+															title="Eliminar movimiento"
+															onClick={() => deleteMovement(l)}
 														>
-															<FileTextIcon className="w-4 h-4" />
+															<Trash2Icon className="w-4 h-4" />
 														</Button>
-													)}
+													</div>
 												</TableCell>
 											</TableRow>
 										))}
@@ -466,6 +614,71 @@ export default function CollectionsPage() {
 					onClose={() => setReceiptFor(null)}
 				/>
 			)}
+
+			{/* Dialog: corregir movimiento (cargo / abono) */}
+			<Dialog open={!!editMov} onOpenChange={(o) => !o && setEditMov(null)}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>
+							Corregir {editMov?.kind === "abono" ? "abono" : "cargo"}
+						</DialogTitle>
+					</DialogHeader>
+					{editMov && (
+						<div className="grid gap-4 py-2">
+							<div className="space-y-1">
+								<Label>Monto</Label>
+								<Input
+									type="number"
+									value={editMov.amount}
+									onChange={(e) =>
+										setEditMov({ ...editMov, amount: e.target.value })
+									}
+									placeholder="0.00"
+								/>
+							</div>
+							<div className="space-y-1">
+								<Label>
+									{editMov.kind === "abono" ? "Método (opcional)" : "Concepto"}
+								</Label>
+								<Input
+									value={editMov.concept}
+									onChange={(e) =>
+										setEditMov({ ...editMov, concept: e.target.value })
+									}
+									placeholder={
+										editMov.kind === "abono"
+											? "Efectivo, transferencia…"
+											: "Ej. Nota 1234"
+									}
+								/>
+							</div>
+							<div className="space-y-1">
+								<Label>Fecha</Label>
+								<Input
+									type="date"
+									value={editMov.date}
+									onChange={(e) =>
+										setEditMov({ ...editMov, date: e.target.value })
+									}
+								/>
+							</div>
+						</div>
+					)}
+					<DialogFooter>
+						<Button variant="secondary" onClick={() => setEditMov(null)}>
+							Cancelar
+						</Button>
+						<Button
+							disabled={
+								updateChargeMut.isPending || updatePaymentMut.isPending
+							}
+							onClick={saveEditMovement}
+						>
+							Guardar cambios
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

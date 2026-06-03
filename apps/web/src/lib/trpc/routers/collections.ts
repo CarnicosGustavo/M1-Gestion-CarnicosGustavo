@@ -156,6 +156,68 @@ export const collectionsRouter = router({
 			return { id: row.id };
 		}),
 
+	// Corregir un cargo mal capturado
+	updateCharge: protectedProcedure
+		.input(
+			z.object({
+				id: z.number(),
+				amount: z.number().positive(),
+				concept: z.string().optional(),
+				chargeDate: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ input }) => {
+			await db
+				.update(creditCharges)
+				.set({
+					amount: input.amount.toFixed(2),
+					concept: input.concept,
+					charge_date: input.chargeDate ?? undefined,
+				})
+				.where(eq(creditCharges.id, input.id));
+			return { success: true };
+		}),
+
+	// Eliminar / anular un cargo
+	deleteCharge: protectedProcedure
+		.input(z.object({ id: z.number() }))
+		.mutation(async ({ input }) => {
+			await db.delete(creditCharges).where(eq(creditCharges.id, input.id));
+			return { success: true };
+		}),
+
+	// Corregir un abono mal capturado
+	updatePayment: protectedProcedure
+		.input(
+			z.object({
+				id: z.number(),
+				amount: z.number().positive(),
+				method: z.string().optional(),
+				paymentDate: z.string().optional(),
+				notes: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ input }) => {
+			await db
+				.update(creditPayments)
+				.set({
+					amount: input.amount.toFixed(2),
+					method: input.method,
+					payment_date: input.paymentDate ?? undefined,
+					notes: input.notes,
+				})
+				.where(eq(creditPayments.id, input.id));
+			return { success: true };
+		}),
+
+	// Eliminar / anular un abono
+	deletePayment: protectedProcedure
+		.input(z.object({ id: z.number() }))
+		.mutation(async ({ input }) => {
+			await db.delete(creditPayments).where(eq(creditPayments.id, input.id));
+			return { success: true };
+		}),
+
 	// Configurar límite de crédito y plazo del cliente
 	setAccount: protectedProcedure
 		.input(
