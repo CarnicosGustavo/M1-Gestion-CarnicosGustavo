@@ -26,8 +26,18 @@ type Customer = RouterOutputs["customers"]["list"][number];
 export default function CustomersPage() {
   const trpc = useTRPC();
   const { data: customers = [], isLoading, error } = useQuery(trpc.customers.list.queryOptions());
+  const { data: accounts = [] } = useQuery(trpc.collections.listAccounts.queryOptions()) as {
+    data: { customerId: number; balance: number }[];
+  };
   const t = useTranslations("customers");
   const tc = useTranslations("common");
+
+  // Mapa cliente → saldo por cobrar (para mostrarlo en la lista)
+  const balanceByCustomer = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const a of accounts) m.set(a.customerId, a.balance);
+    return m;
+  }, [accounts]);
 
   const customerFormSchema = z.object({
     name: z.string().min(1, t("nameRequired")),
@@ -57,12 +67,28 @@ export default function CustomersPage() {
         </Link>
       ),
     },
-    { key: "email", header: tc("email"), sortable: true },
     { key: "phone", header: tc("phone"), hideOnMobile: true },
+    {
+      key: "balance",
+      header: "Saldo",
+      sortable: true,
+      accessorFn: (row) => balanceByCustomer.get(row.id) ?? 0,
+      render: (row) => {
+        const bal = balanceByCustomer.get(row.id) ?? 0;
+        if (bal <= 0.001)
+          return <span className="text-muted-foreground">—</span>;
+        return (
+          <span className="font-semibold text-red-600">
+            {bal.toLocaleString("es-MX", { style: "currency", currency: "MXN" })}
+          </span>
+        );
+      },
+    },
     {
       key: "status",
       header: tc("status"),
       sortable: true,
+      hideOnMobile: true,
       render: (row) => (
         <span className={row.status === "active" ? "text-green-600" : "text-muted-foreground"}>
           {row.status === "active" ? tc("active") : tc("inactive")}
