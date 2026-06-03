@@ -9,7 +9,6 @@ import {
 	products,
 	productTransformations,
 	inventoryTransactions,
-	purchaseOrders,
 	creditCharges,
 	customerPrices,
 } from "@/lib/db/schema";
@@ -1123,7 +1122,6 @@ export const ordersRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			return db.transaction(async (tx) => {
 				let requiresWeighing = false;
-				let hasPendingPurchase = false;
 				const processedItems = [];
 
 				for (const item of input.items) {
@@ -1148,18 +1146,10 @@ export const ordersRouter = router({
 					let quantityKg = item.quantityKg;
 					let subtotal = 0;
 
-					// NUEVO: Si requiresPurchase, marcar como PENDIENTE_COMPRA
-					if (item.requiresPurchase) {
-						itemStatus = "PENDIENTE_COMPRA";
-						hasPendingPurchase = true;
-						// El subtotal se calcula pero no se incluye en el total hasta que se compre
-						if (quantityKg) {
-							subtotal = Math.round((quantityKg * item.unitPrice) / 1000);
-							quantityKg = (quantityKg / 1000).toFixed(3) as any;
-						} else if (item.quantityPieces) {
-							subtotal = item.quantityPieces * item.unitPrice;
-						}
-					} else if (product.is_sellable_by_weight) {
+					// No se bloquea por stock: el pedido se acepta aunque el producto no
+					// exista todavía en inventario. El stock puede quedar negativo y se
+					// compensa al despiezar las canales. (Se ignora requiresPurchase.)
+					if (product.is_sellable_by_weight) {
 						// Producto por peso: SIEMPRE va a la estación de pesaje. El peso
 						// real se mide en la báscula y de ahí sale el cálculo. La cantidad
 						// capturada (kg solicitados) queda como referencia y se reemplaza
@@ -1187,15 +1177,13 @@ export const ordersRouter = router({
 					});
 				}
 
-				// Calcular total: solo incluir items que NO están PENDIENTE_COMPRA
-				const totalAmount = processedItems
-					.filter((i) => i.status !== "PENDIENTE_COMPRA")
-					.reduce((sum, i) => sum + Number(i.subtotal), 0);
+				const totalAmount = processedItems.reduce(
+					(sum, i) => sum + Number(i.subtotal),
+					0,
+				);
 				const orderStatus = requiresWeighing
 					? "PENDIENTE_PESAJE"
-					: hasPendingPurchase
-						? "PARCIAL_DISPONIBLE"
-						: "LISTA_PARA_COBRO";
+					: "LISTA_PARA_COBRO";
 
 				const [orderData] = await tx
 					.insert(orders)
@@ -1218,20 +1206,7 @@ export const ordersRouter = router({
 					})),
 				);
 
-				// NUEVO: Si hay items PENDIENTE_COMPRA, crear entrada en purchaseOrders
-				const purchaseItems = processedItems.filter(
-					(i) => i.status === "PENDIENTE_COMPRA",
-				);
-				if (purchaseItems.length > 0) {
-					await tx.insert(purchaseOrders).values({
-						order_id: orderData.id,
-						status: "PENDIENTE",
-						notes: `${purchaseItems.length} productos sin stock en pedido #${orderData.id}`,
-						created_by: ctx.user.id,
-					});
-				}
-
-				if (!requiresWeighing && !hasPendingPurchase && input.paymentMethodId) {
+				if (!requiresWeighing && input.paymentMethodId) {
 					await tx.insert(transactions).values({
 						order_id: orderData.id,
 						payment_method_id: input.paymentMethodId,

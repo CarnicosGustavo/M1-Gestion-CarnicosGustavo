@@ -475,28 +475,9 @@ export default function OrdersPage() {
 		if (!draftCustomer) return;
 		if (!draftItems.length) return;
 
-		const pendingPurchase: number[] = [];
-		for (const p of draftItems) {
-			const stockKg = Number(p.stock_kg);
-			const pieces = p.quantityPieces ?? 0;
-			const hasEnoughStock = p.is_sellable_by_weight
-				? p.quantityKg !== null && p.quantityKg > 0
-					? p.quantityKg <= stockKg
-					: pieces <= p.stock_pieces
-				: pieces <= p.stock_pieces;
-			if (!hasEnoughStock) pendingPurchase.push(p.id);
-		}
-
-		if (pendingPurchase.length) {
-			const names = draftItems
-				.filter((x) => pendingPurchase.includes(x.id))
-				.map((x) => x.name)
-				.join(", ");
-			toast.warning(
-				`${pendingPurchase.length} producto(s) sin stock serán marcados como pendiente de compra: ${names}`,
-			);
-		}
-
+		// No se bloquea por stock: el pedido se acepta aunque no haya inventario.
+		// Los productos por peso van a la estación de pesaje; el stock puede quedar
+		// negativo y se compensa al despiezar las canales.
 		createMutation.mutate({
 			customerId: draftCustomer.id,
 			paymentMethodId: draftPayment?.id,
@@ -514,7 +495,6 @@ export default function OrdersPage() {
 				unitPrice: p.is_sellable_by_weight
 					? Math.round((p.unitPricePerKg || 0) * 100)
 					: Math.round((p.unitPricePerPiece || 0) * 100),
-				requiresPurchase: pendingPurchase.includes(p.id),
 			})),
 		});
 	};
