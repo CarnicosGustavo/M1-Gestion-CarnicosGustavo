@@ -33,8 +33,8 @@ import {
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { DebtVoucherModal } from "@/components/debt-voucher-modal";
 import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
+import { TicketModal } from "@/components/ticket-modal";
 
 const fmt = (n: number) =>
 	n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -46,8 +46,8 @@ export default function CollectionsPage() {
 	const [chargeOpen, setChargeOpen] = useState(false);
 	const [payOpen, setPayOpen] = useState<{ customerId: number; name: string } | null>(null);
 	const [stmtOpen, setStmtOpen] = useState<{ customerId: number; name: string } | null>(null);
-	const [voucherFor, setVoucherFor] = useState<{ customerId: number; name: string | null } | null>(null);
 	const [receiptFor, setReceiptFor] = useState<{ customerId: number; name: string | null; paymentId: number } | null>(null);
+	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
 	// Edición de un movimiento (cargo o abono)
 	const [editMov, setEditMov] = useState<
 		| { kind: "cargo" | "abono"; id: number; amount: string; concept: string; date: string }
@@ -189,9 +189,6 @@ export default function CollectionsPage() {
 	const chargeMut = useMutation(
 		trpc.collections.addCharge.mutationOptions({
 			onSuccess: () => {
-				const custId = parseInt(chCustomer);
-				const custName =
-					(customers ?? []).find((c) => c.id === custId)?.name ?? null;
 				toast.success("Cargo registrado");
 				setChargeOpen(false);
 				setChCustomer("");
@@ -199,8 +196,6 @@ export default function CollectionsPage() {
 				setChConcept("");
 				setChDate("");
 				invalidate();
-				// Abre el vale para imprimir y que el cliente lo firme
-				if (custId) setVoucherFor({ customerId: custId, name: custName });
 			},
 			onError: (e: any) => toast.error(e.message ?? "Error"),
 		}),
@@ -341,17 +336,6 @@ export default function CollectionsPage() {
 													>
 														<FileTextIcon className="w-4 h-4 mr-1" />
 														Estado
-													</Button>
-													<Button
-														variant="outline"
-														size="sm"
-														className="border-amber-400 text-amber-700 hover:bg-amber-50"
-														onClick={() =>
-															setVoucherFor({ customerId: a.customerId, name: a.name })
-														}
-													>
-														<PrinterIcon className="w-4 h-4 mr-1" />
-														Vale
 													</Button>
 													<Button
 														variant="outline"
@@ -517,22 +501,16 @@ export default function CollectionsPage() {
 															>
 																<PrinterIcon className="w-4 h-4" />
 															</Button>
-														) : (
+														) : l.orderId ? (
 															<Button
 																variant="ghost"
 																size="sm"
-																title="Imprimir vale de adeudo"
-																onClick={() =>
-																	stmtOpen &&
-																	setVoucherFor({
-																		customerId: stmtOpen.customerId,
-																		name: stmtOpen.name,
-																	})
-																}
+																title="Recibo de compra (ticket)"
+																onClick={() => setTicketOrderId(l.orderId)}
 															>
-																<FileTextIcon className="w-4 h-4" />
+																<PrinterIcon className="w-4 h-4" />
 															</Button>
-														)}
+														) : null}
 														<Button
 															variant="ghost"
 															size="sm"
@@ -571,22 +549,6 @@ export default function CollectionsPage() {
 									<p className="font-bold text-red-600">{fmt(statement.data.balance)}</p>
 								</div>
 							</div>
-							<div className="flex justify-end border-t pt-3">
-								<Button
-									variant="outline"
-									className="border-amber-400 text-amber-700 hover:bg-amber-50"
-									onClick={() =>
-										stmtOpen &&
-										setVoucherFor({
-											customerId: stmtOpen.customerId,
-											name: stmtOpen.name,
-										})
-									}
-								>
-									<PrinterIcon className="w-4 h-4 mr-2" />
-									Imprimir vale firmado
-								</Button>
-							</div>
 						</div>
 					) : (
 						<p className="text-sm text-muted-foreground py-4">Cargando…</p>
@@ -594,17 +556,16 @@ export default function CollectionsPage() {
 				</DialogContent>
 			</Dialog>
 
-			{/* Vale de adeudo (2 copias: cliente + negocio) */}
-			{voucherFor && (
-				<DebtVoucherModal
-					customerId={voucherFor.customerId}
-					customerName={voucherFor.name}
-					open={!!voucherFor}
-					onClose={() => setVoucherFor(null)}
+			{/* Recibo de compra (ticket) re-imprimible desde un cargo de pedido */}
+			{ticketOrderId && (
+				<TicketModal
+					orderId={ticketOrderId}
+					open={!!ticketOrderId}
+					onClose={() => setTicketOrderId(null)}
 				/>
 			)}
 
-			{/* Recibo de abono (2 copias: cliente + negocio) */}
+			{/* Recibo de abono */}
 			{receiptFor && (
 				<PaymentReceiptModal
 					customerId={receiptFor.customerId}

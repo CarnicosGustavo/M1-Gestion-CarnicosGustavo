@@ -14,13 +14,11 @@ import {
 	TagIcon,
 	HandCoinsIcon,
 	PrinterIcon,
-	FileTextIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { TicketModal } from "@/components/ticket-modal";
-import { DebtVoucherModal } from "@/components/debt-voucher-modal";
 import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
 
 const money = (cents: number) =>
@@ -47,7 +45,6 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 	const customerId = parseInt(id);
 	const trpc = useTRPC();
 	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
-	const [voucherOpen, setVoucherOpen] = useState(false);
 	const [receiptPaymentId, setReceiptPaymentId] = useState<number | null>(null);
 
 	const { data, isLoading } = useQuery(
@@ -223,17 +220,6 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 			<Card>
 				<CardHeader className="flex flex-row items-center justify-between">
 					<CardTitle>Movimientos de cobranza</CardTitle>
-					{statement && statement.ledger.length > 0 && (
-						<Button
-							variant="outline"
-							size="sm"
-							className="border-amber-400 text-amber-700 hover:bg-amber-50"
-							onClick={() => setVoucherOpen(true)}
-						>
-							<FileTextIcon className="w-4 h-4 mr-2" />
-							Vale de adeudo
-						</Button>
-					)}
 				</CardHeader>
 				<CardContent>
 					{!statement || statement.ledger.length === 0 ? (
@@ -249,7 +235,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 										<TableHead>Concepto</TableHead>
 										<TableHead className="text-right">Cargo</TableHead>
 										<TableHead className="text-right">Abono</TableHead>
-										<TableHead className="text-center">Re-imprimir</TableHead>
+										<TableHead className="text-center">Recibo</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
@@ -283,16 +269,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 													>
 														<PrinterIcon className="w-4 h-4" />
 													</Button>
-												) : (
+												) : l.orderId ? (
 													<Button
 														variant="ghost"
 														size="sm"
-														title="Imprimir vale de adeudo"
-														onClick={() => setVoucherOpen(true)}
+														title="Recibo de compra (ticket)"
+														onClick={() => setTicketOrderId(l.orderId)}
 													>
-														<FileTextIcon className="w-4 h-4" />
+														<PrinterIcon className="w-4 h-4" />
 													</Button>
-												)}
+												) : null}
 											</TableCell>
 										</TableRow>
 									))}
@@ -312,17 +298,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 				/>
 			)}
 
-			{/* Vale de adeudo (2 copias) */}
-			{voucherOpen && (
-				<DebtVoucherModal
-					customerId={customerId}
-					customerName={c.name ?? null}
-					open={voucherOpen}
-					onClose={() => setVoucherOpen(false)}
-				/>
-			)}
-
-			{/* Recibo de abono (2 copias) */}
+			{/* Recibo de abono */}
 			{receiptPaymentId && (
 				<PaymentReceiptModal
 					customerId={customerId}

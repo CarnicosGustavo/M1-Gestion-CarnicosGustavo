@@ -82,6 +82,8 @@ export const collectionsRouter = router({
 					concepto: c.concept ?? (c.source === "pedido" ? `Pedido #${c.order_id}` : "Cargo"),
 					cargo: Number(c.amount),
 					abono: 0,
+					orderId: c.order_id ?? null,
+					source: c.source,
 				})),
 				...payments.map((p) => ({
 					tipo: "abono" as const,
@@ -90,6 +92,8 @@ export const collectionsRouter = router({
 					concepto: p.method ? `Abono (${p.method})` : "Abono",
 					cargo: 0,
 					abono: Number(p.amount),
+					orderId: null as number | null,
+					source: "abono",
 				})),
 			].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
 

@@ -1,7 +1,13 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
-import { orders, orderItems, customers, products } from "@/lib/db/schema";
+import {
+	orders,
+	orderItems,
+	customers,
+	products,
+	creditCharges,
+} from "@/lib/db/schema";
 import { eq, and, or } from "drizzle-orm";
 
 export const ticketsRouter = router({
@@ -12,6 +18,7 @@ export const ticketsRouter = router({
       ticketNumber: z.string(),
       orderNumber: z.number(),
       customerName: z.string().nullable(),
+      customerCode: z.string(),
       customerPhone: z.string().nullable(),
       date: z.date(),
       items: z.array(z.object({
@@ -22,7 +29,10 @@ export const ticketsRouter = router({
         unitPrice: z.string(),
         subtotal: z.string(),
       })),
+      totalKg: z.number(),
       totalAmount: z.string(),
+      amountPaid: z.number(),
+      amountDue: z.number(),
       status: z.string(),
       notes: z.string().nullable(),
     }))
@@ -39,10 +49,35 @@ export const ticketsRouter = router({
         throw new Error(`Pedido ${input.orderId} no encontrado`);
       }
 
+      const totalCents = Number(order.total_amount) || 0;
+      const totalPesos = totalCents / 100;
+
+      // ¿El pedido se cobró a crédito? Si tiene un cargo en cuenta por cobrar,
+      // está por cobrar; si no, se considera pagado de contado.
+      const charge = order.customer_id
+        ? await db.query.creditCharges.findFirst({
+            where: eq(creditCharges.order_id, order.id),
+          })
+        : null;
+
+      let amountDue = 0;
+      let amountPaid = totalPesos;
+      if (charge) {
+        // Hay deuda: descuenta abonos del cliente aplicados a este cargo
+        amountDue = totalPesos;
+        amountPaid = 0;
+      }
+
+      const totalKg = order.orderItems.reduce(
+        (s, it) => s + (Number(it.quantity_kg) || 0),
+        0,
+      );
+
       return {
-        ticketNumber: `TKT-${String(order.id).padStart(6, "0")}`,
+        ticketNumber: String(order.id).padStart(6, "0"),
         orderNumber: order.id,
         customerName: order.customer?.name ?? null,
+        customerCode: String(order.customer_id ?? 0).padStart(6, "0"),
         customerPhone:
           (order.customer?.whatsapp_phone as string | null) ??
           (order.customer?.phone as string | null) ??
@@ -56,7 +91,10 @@ export const ticketsRouter = router({
           unitPrice: String(item.unit_price),
           subtotal: String(item.subtotal),
         })),
+        totalKg,
         totalAmount: String(order.total_amount),
+        amountPaid,
+        amountDue,
         status: order.status,
         notes: order.notes,
       };

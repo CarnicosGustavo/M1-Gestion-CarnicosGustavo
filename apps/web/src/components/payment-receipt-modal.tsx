@@ -75,7 +75,11 @@ export function PaymentReceiptModal({
 		if (!receiptRef.current) return;
 		const printWin = window.open("", "_blank", "width=360,height=760");
 		if (!printWin) return;
-		const oneCopy = receiptRef.current.innerHTML;
+		// 1 copia: la impresora de punto entrega original + copia (autocopiante)
+		const oneCopy = receiptRef.current.innerHTML.replace(
+			"__COPY_LABEL__",
+			"Original: cliente  ·  Copia: archivo",
+		);
 		const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -106,14 +110,9 @@ body {
 .r-sign { margin-top: 16px; font-size: 11px; }
 .r-sign .line { border-top: 1px solid #000; margin-top: 22px; padding-top: 2px; text-align: center; }
 .r-copy { text-align: center; font-size: 11px; margin-top: 8px; padding-top: 4px; border-top: 1px dashed #000; }
-.cut { text-align: center; font-size: 10px; margin: 10px 0; letter-spacing: 2px; }
 </style>
 </head>
-<body>
-${oneCopy.replace("__COPY_LABEL__", "COPIA CLIENTE")}
-<div class="cut">— — — — — ✂ — — — — —</div>
-${oneCopy.replace("__COPY_LABEL__", "COPIA NEGOCIO / ARCHIVO")}
-</body>
+<body>${oneCopy}</body>
 </html>`;
 		printWin.document.write(html);
 		printWin.document.close();
@@ -233,8 +232,8 @@ ${oneCopy.replace("__COPY_LABEL__", "COPIA NEGOCIO / ARCHIVO")}
 				)}
 
 				<p className="text-[11px] text-muted-foreground">
-					Se imprimen 2 copias: una para el cliente y otra para archivo del
-					negocio.
+					Se imprime 1 vez; la impresora de punto entrega original (cliente) y
+					copia (archivo).
 				</p>
 
 				<div className="flex justify-end gap-2 pt-2">
