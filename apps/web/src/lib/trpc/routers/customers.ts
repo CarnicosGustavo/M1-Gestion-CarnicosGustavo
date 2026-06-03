@@ -8,13 +8,16 @@ import {
 	creditPayments,
 	customerPrices,
 } from "@/lib/db/schema";
-import { eq, and, or, desc, sql } from "drizzle-orm";
+import { eq, and, or, desc, sql, inArray } from "drizzle-orm";
 
 const customerSchema = z.object({
   id: z.number(),
   name: z.string().nullable(),
   email: z.string().nullable(),
   phone: z.string().nullable(),
+  whatsapp_phone: z.string().nullable(),
+  address: z.string().nullable(),
+  notes: z.string().nullable(),
   status: z.string().nullable(),
   user_uid: z.string().nullable(),
   created_at: z.date().nullable(),
@@ -41,6 +44,9 @@ export const customersRouter = router({
         name: z.string().min(1),
         email: z.string().email(),
         phone: z.string().optional(),
+        whatsapp_phone: z.string().optional(),
+        address: z.string().optional(),
+        notes: z.string().optional(),
         status: z.enum(["active", "inactive"]).optional(),
       })
     )
@@ -61,16 +67,25 @@ export const customersRouter = router({
         name: z.string().min(1).optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
+        whatsapp_phone: z.string().optional(),
+        address: z.string().optional(),
+        notes: z.string().optional(),
         status: z.enum(["active", "inactive"]).optional(),
       })
     )
     .output(customerSchema)
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
+      // Permite editar tambien clientes creados desde la web (user_uid='system')
       const [updated] = await db
         .update(customers)
-        .set({ ...data, user_uid: ctx.user.id })
-        .where(and(eq(customers.id, id), eq(customers.user_uid, ctx.user.id)))
+        .set(data)
+        .where(
+          and(
+            eq(customers.id, id),
+            inArray(customers.user_uid, [ctx.user.id, "system"]),
+          ),
+        )
         .returning();
       return updated;
     }),

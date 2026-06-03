@@ -7,6 +7,7 @@ import {
 	customers,
 	products,
 	creditCharges,
+	transactions,
 } from "@/lib/db/schema";
 import { eq, and, or } from "drizzle-orm";
 
@@ -52,20 +53,29 @@ export const ticketsRouter = router({
       const totalCents = Number(order.total_amount) || 0;
       const totalPesos = totalCents / 100;
 
-      // ¿El pedido se cobró a crédito? Si tiene un cargo en cuenta por cobrar,
-      // está por cobrar; si no, se considera pagado de contado.
+      // Estado de cobro del pedido:
+      //  - Si hay una transacción de venta (contado): PAGADO = total.
+      //  - Si hay un cargo en cuenta por cobrar (crédito): POR COBRAR = total.
+      //  - Si no hay ninguno (aún no se cobra): POR COBRAR = total.
+      const [txn] = await db
+        .select({ id: transactions.id })
+        .from(transactions)
+        .where(and(eq(transactions.order_id, order.id), eq(transactions.type, "income")))
+        .limit(1);
       const charge = order.customer_id
         ? await db.query.creditCharges.findFirst({
             where: eq(creditCharges.order_id, order.id),
           })
         : null;
 
-      let amountDue = 0;
-      let amountPaid = totalPesos;
-      if (charge) {
-        // Hay deuda: descuenta abonos del cliente aplicados a este cargo
-        amountDue = totalPesos;
+      let amountPaid = 0;
+      let amountDue = totalPesos;
+      if (txn) {
+        amountPaid = totalPesos;
+        amountDue = 0;
+      } else if (charge) {
         amountPaid = 0;
+        amountDue = totalPesos;
       }
 
       const totalKg = order.orderItems.reduce(

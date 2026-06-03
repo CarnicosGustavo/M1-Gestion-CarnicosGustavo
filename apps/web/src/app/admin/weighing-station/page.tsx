@@ -18,6 +18,7 @@ import {
 	PackageIcon,
 	ChevronLeftIcon,
 	ChevronRight,
+	PencilIcon,
 } from "lucide-react";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
@@ -476,19 +477,27 @@ export default function WeighingStationPage() {
 						<>
 							{/* Encabezado de orden */}
 							<CardHeader className="border-b py-3 px-6">
-								<div className="flex items-center justify-between">
+								<div className="flex items-center justify-between gap-3">
 									<div className="space-y-0.5">
 										<CardTitle className="text-lg">
 											{orderTitle(selectedOrder)}
 										</CardTitle>
 										<CardDescription>Pedido #{selectedOrder.id}</CardDescription>
 									</div>
-									<div className="text-right">
-										<div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-											{tc("total")}
-										</div>
-										<div className="text-xl font-bold">
-											{formatCurrency(selectedOrder.total_amount, locale)}
+									<div className="flex items-center gap-3">
+										<Link href={`/admin/orders/${selectedOrder.id}`}>
+											<Button variant="outline" size="sm">
+												<PencilIcon className="mr-2 h-4 w-4" />
+												Editar pedido
+											</Button>
+										</Link>
+										<div className="text-right">
+											<div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+												{tc("total")}
+											</div>
+											<div className="text-xl font-bold">
+												{formatCurrency(selectedOrder.total_amount, locale)}
+											</div>
 										</div>
 									</div>
 								</div>

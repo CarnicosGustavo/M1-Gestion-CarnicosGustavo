@@ -43,6 +43,9 @@ export default function CustomersPage() {
     name: z.string().min(1, t("nameRequired")),
     email: z.string().email(t("invalidEmail")),
     phone: z.string(),
+    whatsapp_phone: z.string(),
+    address: z.string(),
+    notes: z.string(),
     status: z.enum(["active", "inactive"]),
   });
 
@@ -138,7 +141,15 @@ export default function CustomersPage() {
   });
 
   const form = useForm({
-    defaultValues: { name: "", email: "", phone: "", status: "active" as "active" | "inactive" },
+    defaultValues: {
+      name: "",
+      email: "",
+      phone: "",
+      whatsapp_phone: "",
+      address: "",
+      notes: "",
+      status: "active" as "active" | "inactive",
+    },
     validators: {
       onSubmit: ({ value }) => {
         const res = customerFormSchema.safeParse(value);
@@ -151,6 +162,9 @@ export default function CustomersPage() {
         name: value.name,
         email: value.email,
         phone: value.phone || undefined,
+        whatsapp_phone: value.whatsapp_phone || undefined,
+        address: value.address || undefined,
+        notes: value.notes || undefined,
         status: value.status,
       };
       if (isEditing) {
@@ -178,9 +192,12 @@ export default function CustomersPage() {
   const openEdit = (c: Customer) => {
     setEditingId(c.id);
     form.reset();
-    form.setFieldValue("name", c.name);
-    form.setFieldValue("email", c.email);
+    form.setFieldValue("name", c.name ?? "");
+    form.setFieldValue("email", c.email ?? "");
     form.setFieldValue("phone", c.phone ?? "");
+    form.setFieldValue("whatsapp_phone", (c as any).whatsapp_phone ?? "");
+    form.setFieldValue("address", (c as any).address ?? "");
+    form.setFieldValue("notes", (c as any).notes ?? "");
     form.setFieldValue("status", (c.status ?? "active") as "active" | "inactive");
     setIsDialogOpen(true);
   };
@@ -275,6 +292,30 @@ export default function CustomersPage() {
                   <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
                     <Label htmlFor="phone">{tc("phone")}</Label>
                     <Input id="phone" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} className="col-span-3" />
+                  </div>
+                )}
+              </form.Field>
+              <form.Field name="whatsapp_phone">
+                {(field) => (
+                  <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+                    <Label htmlFor="whatsapp_phone">WhatsApp</Label>
+                    <Input id="whatsapp_phone" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} className="col-span-3" placeholder="Tel. de WhatsApp" />
+                  </div>
+                )}
+              </form.Field>
+              <form.Field name="address">
+                {(field) => (
+                  <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+                    <Label htmlFor="address">Dirección</Label>
+                    <Input id="address" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} className="col-span-3" placeholder="Zona / dirección de entrega" />
+                  </div>
+                )}
+              </form.Field>
+              <form.Field name="notes">
+                {(field) => (
+                  <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+                    <Label htmlFor="notes">Notas</Label>
+                    <Input id="notes" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} className="col-span-3" placeholder="Notas del cliente" />
                   </div>
                 )}
               </form.Field>
