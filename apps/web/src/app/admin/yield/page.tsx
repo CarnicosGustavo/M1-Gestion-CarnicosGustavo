@@ -57,6 +57,22 @@ export default function YieldPage() {
 	const { data: latestPurchase } = useQuery(trpc.yields.latestPurchase.queryOptions()) as {
 		data: { numMedias: number; kgComprado: number; supplier: string | null } | null | undefined;
 	};
+	const { data: prodHistory = [] } = useQuery(
+		trpc.yields.productionHistory.queryOptions(),
+	) as {
+		data: {
+			productId: number;
+			productName: string;
+			weighings: { kg: number; pieces: number; date: string | null }[];
+			totalKg: number;
+			totalPieces: number;
+		}[];
+	};
+	// Máximo de pesajes para armar las columnas (estilo Excel) del historial
+	const maxWeighings = useMemo(
+		() => prodHistory.reduce((m, p) => Math.max(m, p.weighings.length), 0),
+		[prodHistory],
+	);
 
 	// Auto-rellena la cabecera con la última compra de canales (una sola vez)
 	const filledRef = useRef(false);
@@ -265,6 +281,71 @@ export default function YieldPage() {
 									</div>
 								</div>
 							))}
+						</div>
+					</CardContent>
+				</Card>
+			)}
+
+			{/* Historial de pesajes de producción (acumulado por pieza) */}
+			{prodHistory.length > 0 && (
+				<Card>
+					<CardHeader className="pb-2">
+						<CardTitle className="text-base">
+							Pesajes de producción (acumulado)
+						</CardTitle>
+						<p className="text-xs text-muted-foreground">
+							Cada pesaje de producción de una pieza se va agregando como
+							columna. Útil para pesar lotes grandes en varios momentos (ej. 120
+							jamones por partes). El peso también se suma al inventario.
+						</p>
+					</CardHeader>
+					<CardContent>
+						<div className="overflow-x-auto">
+							<Table>
+								<TableHeader>
+									<TableRow className="bg-muted/50">
+										<TableHead className="min-w-[160px]">Pieza</TableHead>
+										{Array.from({ length: maxWeighings }).map((_, i) => (
+											<TableHead key={i} className="text-center whitespace-nowrap">
+												Pesaje {i + 1}
+											</TableHead>
+										))}
+										<TableHead className="text-center font-bold">Total kg</TableHead>
+										<TableHead className="text-center">Total pza</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{prodHistory.map((p) => (
+										<TableRow key={p.productId}>
+											<TableCell className="font-medium">{p.productName}</TableCell>
+											{Array.from({ length: maxWeighings }).map((_, i) => {
+												const w = p.weighings[i];
+												return (
+													<TableCell key={i} className="text-center">
+														{w ? (
+															<span title={w.date ? new Date(w.date).toLocaleString() : ""}>
+																{w.kg.toFixed(2)}
+																{w.pieces > 0 ? (
+																	<span className="text-[10px] text-muted-foreground">
+																		{" "}
+																		({w.pieces}pz)
+																	</span>
+																) : null}
+															</span>
+														) : (
+															<span className="text-muted-foreground">—</span>
+														)}
+													</TableCell>
+												);
+											})}
+											<TableCell className="text-center font-bold text-blue-700">
+												{p.totalKg.toFixed(2)}
+											</TableCell>
+											<TableCell className="text-center">{p.totalPieces}</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
 						</div>
 					</CardContent>
 				</Card>

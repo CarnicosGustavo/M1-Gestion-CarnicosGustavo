@@ -7,6 +7,7 @@ import {
 	channelPurchases,
 	products,
 	productTransformations,
+	inventoryTransactions,
 } from "@/lib/db/schema";
 import { eq, desc, and, ilike } from "drizzle-orm";
 
@@ -80,6 +81,54 @@ export const yieldsRouter = router({
 			supplier: (p.supplier as string | null) ?? null,
 			date: p.purchase_date,
 		};
+	}),
+
+	// Historial de pesajes de producción por pieza (desde inventory_transactions
+	// tipo PRODUCCION). Cada pesaje es una columna; se acumula un total. Sirve
+	// para pesar lotes grandes en varios momentos (ej. 120 jamones por partes).
+	productionHistory: protectedProcedure.input(z.void()).query(async () => {
+		const rows = await db
+			.select({
+				productId: inventoryTransactions.product_id,
+				productName: products.name,
+				kg: inventoryTransactions.quantity_change_kg,
+				pieces: inventoryTransactions.quantity_change_pieces,
+				date: inventoryTransactions.created_at,
+			})
+			.from(inventoryTransactions)
+			.innerJoin(products, eq(products.id, inventoryTransactions.product_id))
+			.where(eq(inventoryTransactions.transaction_type, "PRODUCCION"))
+			.orderBy(inventoryTransactions.created_at);
+
+		const map = new Map<
+			number,
+			{
+				productId: number;
+				productName: string;
+				weighings: { kg: number; pieces: number; date: Date | null }[];
+				totalKg: number;
+				totalPieces: number;
+			}
+		>();
+		for (const r of rows) {
+			if (r.productId == null) continue;
+			const kg = Number(r.kg) || 0;
+			const pcs = Number(r.pieces) || 0;
+			const cur = map.get(r.productId) ?? {
+				productId: r.productId,
+				productName: r.productName,
+				weighings: [],
+				totalKg: 0,
+				totalPieces: 0,
+			};
+			cur.weighings.push({ kg, pieces: pcs, date: r.date });
+			cur.totalKg += kg;
+			cur.totalPieces += pcs;
+			map.set(r.productId, cur);
+		}
+		return [...map.values()].sort((a, b) =>
+			a.productName.localeCompare(b.productName),
+		);
 	}),
 
 	// Lista de canales (raíz del despiece) para elegir qué proyectar
