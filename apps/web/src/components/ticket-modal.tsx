@@ -213,14 +213,27 @@ ${TICKET_STYLE}
 					<span>TOTAL</span>
 					<span>{money(parseFloat(ticket.totalAmount) / 100 || 0)}</span>
 				</div>
-				<div className="t-pay">
-					<span>PAGADO:</span>
-					<span>{money(ticket.amountPaid)}</span>
-				</div>
-				<div className="t-cobrar">
-					<span>POR COBRAR:</span>
-					<span>{money(ticket.amountDue)}</span>
-				</div>
+				{ticket.paymentStatus === "PAGADO" ? (
+					<div className="t-cobrar">
+						<span>PAGADO:</span>
+						<span>{money(ticket.amountPaid)}</span>
+					</div>
+				) : (
+					<>
+						<div className="t-pay">
+							<span>FORMA DE PAGO:</span>
+							<span>
+								{ticket.paymentStatus === "CREDITO"
+									? "CRÉDITO"
+									: "PENDIENTE"}
+							</span>
+						</div>
+						<div className="t-cobrar">
+							<span>POR COBRAR:</span>
+							<span>{money(ticket.amountDue)}</span>
+						</div>
+					</>
+				)}
 
 				{ticket.notes && <div className="t-notes">Notas: {ticket.notes}</div>}
 

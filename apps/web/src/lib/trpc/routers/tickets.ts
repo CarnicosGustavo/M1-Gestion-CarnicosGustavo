@@ -34,6 +34,7 @@ export const ticketsRouter = router({
       totalAmount: z.string(),
       amountPaid: z.number(),
       amountDue: z.number(),
+      paymentStatus: z.enum(["PAGADO", "CREDITO", "PENDIENTE"]),
       status: z.string(),
       notes: z.string().nullable(),
     }))
@@ -70,12 +71,15 @@ export const ticketsRouter = router({
 
       let amountPaid = 0;
       let amountDue = totalPesos;
+      let paymentStatus: "PAGADO" | "CREDITO" | "PENDIENTE" = "PENDIENTE";
       if (txn) {
         amountPaid = totalPesos;
         amountDue = 0;
+        paymentStatus = "PAGADO";
       } else if (charge) {
         amountPaid = 0;
         amountDue = totalPesos;
+        paymentStatus = "CREDITO";
       }
 
       const totalKg = order.orderItems.reduce(
@@ -105,6 +109,7 @@ export const ticketsRouter = router({
         totalAmount: String(order.total_amount),
         amountPaid,
         amountDue,
+        paymentStatus,
         status: order.status,
         notes: order.notes,
       };
