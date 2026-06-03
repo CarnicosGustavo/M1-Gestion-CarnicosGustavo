@@ -13,7 +13,7 @@ import {
 	creditCharges,
 	customerPrices,
 } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { alias } from "drizzle-orm/pg-core";
 
@@ -38,6 +38,8 @@ const orderDetailSchema = z.object({
 	status: z.string().nullable(),
 	user_uid: z.string(),
 	requires_weighing: z.boolean(),
+	notes: z.string().nullable(),
+	whatsapp_message_id: z.string().nullable(),
 	created_at: z.date().nullable(),
 	customer: z.object({ name: z.string() }).nullable(),
 	orderItems: z.array(
@@ -1311,11 +1313,47 @@ export const ordersRouter = router({
 					i.id === input.orderItemId ? true : i.status !== "PENDIENTE_PESAJE",
 				);
 
+				// ¿Es un pesaje de producción? (pedido sin cliente etiquetado)
+				const [ord] = await tx
+					.select({ notes: orders.notes })
+					.from(orders)
+					.where(eq(orders.id, item.order_id!))
+					.limit(1);
+				const isProduction = ord?.notes === "Pesaje de producción";
+
+				// En producción, lo pesado se suma al inventario (piezas + kg) y el
+				// pedido NO va a cobro: queda COMPLETADA.
+				if (isProduction && item.product_id) {
+					await tx
+						.update(products)
+						.set({
+							stock_kg: sql`${products.stock_kg} + ${actualWeightKg}::numeric`,
+							stock_pieces: sql`${products.stock_pieces} + ${item.quantity_pieces ?? 0}`,
+							updated_at: new Date(),
+						})
+						.where(eq(products.id, item.product_id));
+
+					await tx.insert(inventoryTransactions).values({
+						product_id: item.product_id,
+						quantity_change_pieces: item.quantity_pieces ?? 0,
+						quantity_change_kg: actualWeightKg,
+						transaction_type: "PRODUCCION",
+						reference_id: item.order_id!,
+						notes: `Pesaje de producción pedido #${item.order_id}`,
+					});
+				}
+
 				await tx
 					.update(orders)
 					.set({
 						total_amount: newTotal,
-						status: allWeighed ? "LISTA_PARA_COBRO" : "PENDIENTE_PESAJE",
+						status: isProduction
+							? allWeighed
+								? "COMPLETADA"
+								: "PENDIENTE_PESAJE"
+							: allWeighed
+								? "LISTA_PARA_COBRO"
+								: "PENDIENTE_PESAJE",
 						requires_weighing: !allWeighed,
 					})
 					.where(eq(orders.id, item.order_id!));
@@ -1851,6 +1889,46 @@ export const ordersRouter = router({
 				: null;
 
 			return { ...updated, customer: customer ?? null };
+		}),
+
+	// Crea un "pedido" de pesaje de producción: entra a la cola de la estación
+	// de pesaje (sin cliente, etiquetado como Pesaje de producción) para pesarlo
+	// pieza por pieza en el mismo flujo.
+	createProductionWeighing: protectedProcedure
+		.input(
+			z.object({
+				productId: z.number(),
+				productName: z.string().min(1),
+				pieces: z.number().int().min(1),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			return db.transaction(async (tx) => {
+				const [ord] = await tx
+					.insert(orders)
+					.values({
+						customer_id: null,
+						total_amount: "0.00",
+						user_uid: ctx.user.id,
+						status: "PENDIENTE_PESAJE",
+						requires_weighing: true,
+						notes: "Pesaje de producción",
+					})
+					.returning();
+
+				await tx.insert(orderItems).values({
+					order_id: ord.id,
+					product_id: input.productId,
+					product_name: input.productName,
+					quantity_pieces: input.pieces,
+					quantity_kg: null,
+					unit_price: "0.00",
+					subtotal: "0.00",
+					status: "PENDIENTE_PESAJE",
+				});
+
+				return { id: ord.id };
+			});
 		}),
 
 	// Reemplaza por completo los renglones de un pedido (editar productos,

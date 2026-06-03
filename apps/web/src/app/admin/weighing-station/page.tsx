@@ -228,13 +228,55 @@ export default function WeighingStationPage() {
 		}),
 	);
 
+	// Envía el producto a la cola de la estación como "Pesaje de producción"
+	const productionQueueMutation = useMutation(
+		trpc.orders.createProductionWeighing.mutationOptions({
+			onSuccess: (data: any) => {
+				toast.success("Enviado a la cola de pesaje");
+				setBatchProductId(null);
+				setBatchPieces("");
+				setBatchWeightKg("");
+				setBatchApplyToInventory(true);
+				setBatchOpen(false);
+				refetchOrders();
+				if (data?.id) setSelectedOrderId(data.id);
+			},
+			onError: (error) => {
+				toast.error(error.message);
+			},
+		}),
+	);
+
+	const sendToQueue = () => {
+		if (!batchProduct) return;
+		const pieces = Number.parseInt(batchPieces || "0", 10) || 0;
+		if (pieces <= 0) {
+			toast.error("Indica cuántas piezas vas a pesar");
+			return;
+		}
+		productionQueueMutation.mutate({
+			productId: batchProduct.id,
+			productName: batchProduct.name,
+			pieces,
+		});
+	};
+
+	// Título de un pedido en la cola: cliente, o "Pesaje de producción" si es
+	// un pesaje de producción (sin cliente).
+	const orderTitle = (o: any) =>
+		o?.customer?.name ||
+		(o?.notes === "Pesaje de producción"
+			? "Pesaje de producción"
+			: "Consumidor Final");
+
 	// ---------------------------------------------------------------------------
 	// Handlers
 	// ---------------------------------------------------------------------------
 	const handleRegisterWeight = useCallback(() => {
 		if (!currentItem || !hasValidWeight) return;
-		// ¿Es el último artículo por pesar de este pedido?
-		if (pendingItems.length <= 1 && selectedOrder) {
+		// ¿Es el último artículo por pesar? Si sí y NO es producción, ofrecer cobro.
+		const isProduction = (selectedOrder as any)?.notes === "Pesaje de producción";
+		if (pendingItems.length <= 1 && selectedOrder && !isProduction) {
 			pendingCompletionRef.current = {
 				id: selectedOrder.id,
 				name: selectedOrder.customer?.name ?? "Pedido",
@@ -390,8 +432,7 @@ export default function WeighingStationPage() {
 									>
 										<div className="space-y-1">
 											<div className="font-medium flex items-center gap-2">
-												#{order.id} –{" "}
-												{order.customer?.name || "Consumidor Final"}
+												#{order.id} – {orderTitle(order)}
 												{order.whatsapp_message_id && (
 													<Badge
 														variant="secondary"
@@ -432,7 +473,7 @@ export default function WeighingStationPage() {
 								<div className="flex items-center justify-between">
 									<div className="space-y-0.5">
 										<CardTitle className="text-lg">
-											{selectedOrder.customer?.name || "Consumidor Final"}
+											{orderTitle(selectedOrder)}
 										</CardTitle>
 										<CardDescription>Pedido #{selectedOrder.id}</CardDescription>
 									</div>
@@ -787,9 +828,24 @@ export default function WeighingStationPage() {
 						</div>
 					</div>
 
-					<DialogFooter>
+					<DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
 						<Button variant="secondary" onClick={() => setBatchOpen(false)}>
 							Cancelar
+						</Button>
+						<Button
+							variant="outline"
+							onClick={sendToQueue}
+							disabled={
+								productionQueueMutation.isPending ||
+								!batchProductId ||
+								!(Number.parseInt(batchPieces || "0", 10) > 0)
+							}
+							title="Crea un pesaje de producción en la cola para pesarlo pieza por pieza"
+						>
+							<ScaleIcon className="mr-2 h-4 w-4" />
+							{productionQueueMutation.isPending
+								? tc("loading")
+								: "Enviar a cola de pesaje"}
 						</Button>
 						<Button
 							onClick={handleRegisterBatch}
