@@ -229,7 +229,8 @@ export const productsRouter = router({
 					.insert(products)
 					.values({
 						...rest,
-						in_stock: in_stock.toFixed(3),
+						// in_stock es columna integer (deprecado): enviar entero, no decimal
+						in_stock: String(Math.round(in_stock)),
 						stock_kg: stock_kg.toFixed(3),
 						price_per_kg: price_per_kg?.toFixed(2),
 						price_per_piece: price_per_piece?.toFixed(2),
@@ -307,7 +308,7 @@ export const productsRouter = router({
 				updated_at: new Date(),
 			};
 
-			if (in_stock !== undefined) updateData.in_stock = in_stock.toFixed(3);
+			if (in_stock !== undefined) updateData.in_stock = String(Math.round(in_stock));
 			if (stock_kg !== undefined) updateData.stock_kg = stock_kg.toFixed(3);
 			if (price_per_kg !== undefined)
 				updateData.price_per_kg = price_per_kg.toFixed(2);

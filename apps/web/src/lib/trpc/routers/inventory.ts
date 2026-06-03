@@ -119,7 +119,7 @@ export const inventoryRouter = router({
 						stock_pieces: 0,
 						weighed_pieces: 0,
 						stock_kg: sql`0.000`,
-						in_stock: sql`0.000`,
+						in_stock: sql`0`,
 						updated_at: new Date(),
 					})
 					.where(eq(products.user_uid, uid));
