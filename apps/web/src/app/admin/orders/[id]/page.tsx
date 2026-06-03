@@ -114,8 +114,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
 	const replaceItemsMutation = useMutation(
 		trpc.orders.replaceItems.mutationOptions({
-			onSuccess: () => {
-				toast.success("Pedido actualizado");
+			onSuccess: (data: any) => {
+				if (data?.adjustedCredit > 0)
+					toast.success("Pedido actualizado y cuenta por cobrar ajustada");
+				else if (data?.adjustedSale > 0)
+					toast.success("Pedido actualizado y venta ajustada");
+				else toast.success("Pedido actualizado");
 				setEditOpen(false);
 				refetch();
 				queryClient.invalidateQueries({ queryKey: invalidateKey });
@@ -563,8 +567,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
 					{order.status === "COMPLETADA" && (
 						<div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-900">
-							Este pedido ya está cobrado. Si cambias los productos, ajusta
-							también el cobro/cobranza manualmente.
+							Este pedido ya está cobrado. Al guardar, el nuevo total se
+							reflejará automáticamente en la venta (contado) o en la cuenta por
+							cobrar (crédito).
 						</div>
 					)}
 

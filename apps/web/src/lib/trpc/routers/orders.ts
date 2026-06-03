@@ -1950,7 +1950,27 @@ export const ordersRouter = router({
 					.set(upd)
 					.where(eq(orders.id, input.orderId));
 
-				return { success: true, total: totalCents };
+				// Refleja el cambio en el dinero del sistema si el pedido ya estaba
+				// cobrado: a crédito (cuenta por cobrar) o de contado (venta).
+				const totalPesos = (totalCents / 100).toFixed(2);
+				const adjustedCredit = await tx
+					.update(creditCharges)
+					.set({ amount: totalPesos })
+					.where(eq(creditCharges.order_id, input.orderId))
+					.returning({ id: creditCharges.id });
+
+				const adjustedSale = await tx
+					.update(transactions)
+					.set({ amount: totalCents })
+					.where(eq(transactions.order_id, input.orderId))
+					.returning({ id: transactions.id });
+
+				return {
+					success: true,
+					total: totalCents,
+					adjustedCredit: adjustedCredit.length,
+					adjustedSale: adjustedSale.length,
+				};
 			});
 		}),
 
