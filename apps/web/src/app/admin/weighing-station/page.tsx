@@ -92,6 +92,8 @@ export default function WeighingStationPage() {
 	const [batchPieces, setBatchPieces] = useState("");
 	const [batchWeightKg, setBatchWeightKg] = useState("");
 	const [batchApplyToInventory, setBatchApplyToInventory] = useState(true);
+	// Producto a granel: se pesa por tara, sin contar piezas (DESGRASE, HUESO…)
+	const [batchNoPieces, setBatchNoPieces] = useState(false);
 
 	// ---------------------------------------------------------------------------
 	// Queries
@@ -217,6 +219,7 @@ export default function WeighingStationPage() {
 				setBatchPieces("");
 				setBatchWeightKg("");
 				setBatchApplyToInventory(true);
+				setBatchNoPieces(false);
 				setBatchOpen(false);
 				queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
 				queryClient.invalidateQueries({ queryKey: trpc.products.disassemblyDashboard.queryKey() });
@@ -237,6 +240,7 @@ export default function WeighingStationPage() {
 				setBatchPieces("");
 				setBatchWeightKg("");
 				setBatchApplyToInventory(true);
+				setBatchNoPieces(false);
 				setBatchOpen(false);
 				refetchOrders();
 				if (data?.id) setSelectedOrderId(data.id);
@@ -249,9 +253,11 @@ export default function WeighingStationPage() {
 
 	const sendToQueue = () => {
 		if (!batchProduct) return;
-		const pieces = Number.parseInt(batchPieces || "0", 10) || 0;
-		if (pieces <= 0) {
-			toast.error("Indica cuántas piezas vas a pesar");
+		const pieces = batchNoPieces
+			? null
+			: Number.parseInt(batchPieces || "0", 10) || 0;
+		if (!batchNoPieces && (!pieces || pieces <= 0)) {
+			toast.error("Indica las piezas o marca 'a granel'");
 			return;
 		}
 		productionQueueMutation.mutate({
@@ -749,9 +755,29 @@ export default function WeighingStationPage() {
 							<Combobox
 								items={products.map((p) => ({ id: p.id, name: p.name }))}
 								placeholder="Selecciona producto"
-								onSelect={(id) => setBatchProductId(Number(id))}
+								onSelect={(id) => {
+									const pid = Number(id);
+									setBatchProductId(pid);
+									// Auto: a granel si el producto no se vende por unidad
+									const p = products.find((x) => x.id === pid) as any;
+									setBatchNoPieces(p ? p.is_sellable_by_unit === false : false);
+								}}
 							/>
 						</div>
+
+						{/* A granel: pesar por tara sin contar piezas */}
+						<label className="flex items-center gap-2 rounded-md border bg-muted/20 p-3 text-sm cursor-pointer">
+							<input
+								type="checkbox"
+								className="h-4 w-4 accent-primary"
+								checked={batchNoPieces}
+								onChange={(e) => setBatchNoPieces(e.target.checked)}
+							/>
+							<span>
+								A granel — pesar por tara <strong>sin contar piezas</strong>{" "}
+								(desgrase, hueso pelón, patas en tara…)
+							</span>
+						</label>
 
 						{batchProduct && (
 							<div className="rounded-md border bg-muted/30 p-3 text-sm">
@@ -770,20 +796,22 @@ export default function WeighingStationPage() {
 							</div>
 						)}
 
-						<div className="grid grid-cols-2 gap-3">
-							<div className="space-y-1">
-								<Label>Piezas</Label>
-								<Input
-									type="number"
-									inputMode="numeric"
-									min="0"
-									step="1"
-									value={batchPieces}
-									onChange={(e) => setBatchPieces(e.target.value)}
-									onFocus={(e) => e.currentTarget.select()}
-									placeholder="Ej: 8"
-								/>
-							</div>
+						<div className={cn("grid gap-3", batchNoPieces ? "grid-cols-1" : "grid-cols-2")}>
+							{!batchNoPieces && (
+								<div className="space-y-1">
+									<Label>Piezas</Label>
+									<Input
+										type="number"
+										inputMode="numeric"
+										min="0"
+										step="1"
+										value={batchPieces}
+										onChange={(e) => setBatchPieces(e.target.value)}
+										onFocus={(e) => e.currentTarget.select()}
+										placeholder="Ej: 8"
+									/>
+								</div>
+							)}
 							<div className="space-y-1">
 								<Label>Peso total (kg)</Label>
 								<Input
@@ -838,7 +866,7 @@ export default function WeighingStationPage() {
 							disabled={
 								productionQueueMutation.isPending ||
 								!batchProductId ||
-								!(Number.parseInt(batchPieces || "0", 10) > 0)
+								(!batchNoPieces && !(Number.parseInt(batchPieces || "0", 10) > 0))
 							}
 							title="Crea un pesaje de producción en la cola para pesarlo pieza por pieza"
 						>

@@ -1899,7 +1899,9 @@ export const ordersRouter = router({
 			z.object({
 				productId: z.number(),
 				productName: z.string().min(1),
-				pieces: z.number().int().min(1),
+				// Opcional: productos a granel (DESGRASE, HUESO PELON…) se pesan por
+				// tara sin contar piezas.
+				pieces: z.number().int().min(0).nullable().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -1920,7 +1922,7 @@ export const ordersRouter = router({
 					order_id: ord.id,
 					product_id: input.productId,
 					product_name: input.productName,
-					quantity_pieces: input.pieces,
+					quantity_pieces: input.pieces && input.pieces > 0 ? input.pieces : null,
 					quantity_kg: null,
 					unit_price: "0.00",
 					subtotal: "0.00",
