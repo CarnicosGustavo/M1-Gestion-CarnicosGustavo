@@ -12,6 +12,7 @@ import {
 	FilePenIcon,
 	TrashIcon,
 	BanknoteIcon,
+	PlusIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -39,8 +40,6 @@ import { Label } from "@finopenpos/ui/components/label";
 import { Input } from "@finopenpos/ui/components/input";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { toast } from "sonner";
-
-type OrderStatus = "completed" | "pending" | "cancelled";
 
 // Mapea cualquier estado interno a etiqueta y color visible
 function getStatusDisplay(status: string): { label: string; color: string } {
@@ -71,7 +70,17 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 	const queryClient = useQueryClient();
 	const { data: order, isLoading, refetch } = useQuery(trpc.orders.get.queryOptions({ id: orderId })) as { data: any; isLoading: boolean; refetch: any };
 	const { data: productsList } = useQuery(trpc.products.list.queryOptions()) as {
-		data: { id: number; avg_weight_per_piece_kg?: number | string | null }[] | undefined;
+		data:
+			| {
+					id: number;
+					name: string;
+					price_per_kg?: number | string | null;
+					avg_weight_per_piece_kg?: number | string | null;
+			  }[]
+			| undefined;
+	};
+	const { data: customersList } = useQuery(trpc.customers.list.queryOptions()) as {
+		data: { id: number; name: string | null }[] | undefined;
 	};
 	const t = useTranslations("orders");
 	const tc = useTranslations("common");
@@ -83,8 +92,19 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 	const [payOpen, setPayOpen] = useState(false);
 	const [payMethodId, setPayMethodId] = useState<string>("");
 	const [payType, setPayType] = useState<"contado" | "credito">("contado");
-	const [editStatus, setEditStatus] = useState<OrderStatus>("pending");
-	const [editTotal, setEditTotal] = useState("");
+	const [editStatus, setEditStatus] = useState<string>("pending");
+	const [editCustomerId, setEditCustomerId] = useState<string>("");
+	const [editNotes, setEditNotes] = useState("");
+	// Renglones editables del pedido
+	type EditItem = {
+		key: string;
+		productId: number | null;
+		productName: string;
+		pieces: string;
+		kg: string;
+		price: string; // pesos por kg/pieza
+	};
+	const [editItems, setEditItems] = useState<EditItem[]>([]);
 
 	const { data: paymentMethods } = useQuery(
 		trpc.paymentMethods.list.queryOptions(),
@@ -92,15 +112,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
 	const invalidateKey = trpc.orders.list.queryOptions().queryKey;
 
-	const updateMutation = useMutation(
-		trpc.orders.update.mutationOptions({
+	const replaceItemsMutation = useMutation(
+		trpc.orders.replaceItems.mutationOptions({
 			onSuccess: () => {
-				toast.success(t("updated"));
+				toast.success("Pedido actualizado");
 				setEditOpen(false);
 				refetch();
 				queryClient.invalidateQueries({ queryKey: invalidateKey });
 			},
-			onError: (err: any) => toast.error(err.message ?? t("updateError")),
+			onError: (err: any) => toast.error(err.message ?? "No se pudo guardar"),
 		}),
 	);
 
@@ -160,9 +180,87 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 	};
 
 	const openEdit = () => {
-		setEditStatus((order?.status ?? "pending") as OrderStatus);
-		setEditTotal(order?.total_amount ? (order.total_amount / 100).toString() : "0");
+		setEditStatus(order?.status ?? "pending");
+		setEditCustomerId(order?.customer_id ? String(order.customer_id) : "");
+		setEditNotes(order?.notes ?? "");
+		setEditItems(
+			(order?.orderItems ?? []).map((it: any, idx: number) => ({
+				key: `it-${it.id ?? idx}`,
+				productId: it.product_id ?? null,
+				productName: it.product?.name ?? it.product_name ?? "",
+				pieces: it.quantity_pieces != null ? String(it.quantity_pieces) : "",
+				kg: it.quantity_kg != null ? String(it.quantity_kg) : "",
+				price:
+					it.unit_price != null ? String(Number(it.unit_price) / 100) : "",
+			})),
+		);
 		setEditOpen(true);
+	};
+
+	// Helpers del editor de renglones
+	const addEditItem = () =>
+		setEditItems((prev) => [
+			...prev,
+			{
+				key: `new-${prev.length}-${prev.reduce((a, b) => a + b.key.length, 0)}`,
+				productId: null,
+				productName: "",
+				pieces: "",
+				kg: "",
+				price: "",
+			},
+		]);
+	const removeEditItem = (key: string) =>
+		setEditItems((prev) => prev.filter((r) => r.key !== key));
+	const patchEditItem = (key: string, patch: Partial<EditItem>) =>
+		setEditItems((prev) =>
+			prev.map((r) => (r.key === key ? { ...r, ...patch } : r)),
+		);
+	// Al elegir un producto, fija nombre y precio sugerido (precio/kg del catálogo)
+	const pickProduct = (key: string, productId: number) => {
+		const p = (productsList ?? []).find((x) => x.id === productId);
+		if (!p) return;
+		patchEditItem(key, {
+			productId,
+			productName: p.name,
+			price:
+				p.price_per_kg != null && Number(p.price_per_kg) > 0
+					? String(Number(p.price_per_kg))
+					: undefined,
+		});
+	};
+	const editSubtotal = (r: EditItem) => {
+		const kg = parseFloat(r.kg) || 0;
+		const pieces = parseInt(r.pieces) || 0;
+		const price = parseFloat(r.price) || 0;
+		return (kg > 0 ? kg : pieces) * price;
+	};
+	const editTotalPesos = editItems.reduce((s, r) => s + editSubtotal(r), 0);
+
+	const saveFullEdit = () => {
+		const items = editItems
+			.filter((r) => r.productName.trim())
+			.map((r) => ({
+				productId: r.productId,
+				productName: r.productName.trim(),
+				quantityPieces: parseInt(r.pieces) || 0,
+				quantityKg: parseFloat(r.kg) || 0,
+				unitPrice: parseFloat(r.price) || 0,
+			}));
+		const allowed = [
+			"COMPLETADA",
+			"pending",
+			"cancelled",
+			"PENDIENTE_PESAJE",
+			"LISTA_PARA_COBRO",
+		];
+		replaceItemsMutation.mutate({
+			orderId,
+			customerId: editCustomerId ? parseInt(editCustomerId) : null,
+			notes: editNotes || undefined,
+			status: allowed.includes(editStatus) ? (editStatus as any) : undefined,
+			items,
+		});
 	};
 
 	if (isLoading) {
@@ -456,58 +554,182 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 				onClose={() => setTicketOpen(false)}
 			/>
 
-			{/* ── Dialog de Edición ── */}
+			{/* ── Dialog de Edición completa ── */}
 			<Dialog open={editOpen} onOpenChange={(o) => !o && setEditOpen(false)}>
-				<DialogContent>
+				<DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
 					<DialogHeader>
-						<DialogTitle>{t("editOrder")} #{order.id}</DialogTitle>
+						<DialogTitle>Editar pedido #{order.id}</DialogTitle>
 					</DialogHeader>
-					<div className="grid gap-4 py-2">
+
+					{order.status === "COMPLETADA" && (
+						<div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-900">
+							Este pedido ya está cobrado. Si cambias los productos, ajusta
+							también el cobro/cobranza manualmente.
+						</div>
+					)}
+
+					<div className="grid gap-4 py-2 sm:grid-cols-2">
 						<div className="space-y-1">
 							<Label>{t("customer")}</Label>
-							<Input value={order.customer?.name ?? "—"} disabled />
-						</div>
-						<div className="space-y-1">
-							<Label>{tc("total")}</Label>
-							<Input
-								type="number"
-								value={editTotal}
-								onChange={(e) => setEditTotal(e.target.value)}
-								onFocus={(e) => e.currentTarget.select()}
-							/>
+							<Select value={editCustomerId} onValueChange={setEditCustomerId}>
+								<SelectTrigger>
+									<SelectValue placeholder="Consumidor Final" />
+								</SelectTrigger>
+								<SelectContent className="max-h-72">
+									{(customersList ?? []).map((c) => (
+										<SelectItem key={c.id} value={String(c.id)}>
+											{c.name ?? `Cliente #${c.id}`}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
 						</div>
 						<div className="space-y-1">
 							<Label>{tc("status")}</Label>
-							<Select
-								value={editStatus}
-								onValueChange={(v) => setEditStatus(v as OrderStatus)}
-							>
+							<Select value={editStatus} onValueChange={setEditStatus}>
 								<SelectTrigger>
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="pending">{tc("pending")}</SelectItem>
-									<SelectItem value="completed">{tc("completed")}</SelectItem>
-									<SelectItem value="cancelled">{tc("cancelled")}</SelectItem>
+									<SelectItem value="pending">Pendiente</SelectItem>
+									<SelectItem value="PENDIENTE_PESAJE">Por pesar</SelectItem>
+									<SelectItem value="LISTA_PARA_COBRO">
+										Lista para cobro
+									</SelectItem>
+									<SelectItem value="COMPLETADA">Pagada</SelectItem>
+									<SelectItem value="cancelled">Cancelada</SelectItem>
 								</SelectContent>
 							</Select>
 						</div>
 					</div>
+
+					{/* Editor de renglones */}
+					<div className="space-y-2">
+						<div className="flex items-center justify-between">
+							<Label>Productos del pedido</Label>
+							<Button variant="outline" size="sm" onClick={addEditItem}>
+								<PlusIcon className="w-4 h-4 mr-1" />
+								Agregar
+							</Button>
+						</div>
+						<div className="overflow-x-auto">
+							<Table>
+								<TableHeader>
+									<TableRow className="bg-muted/50">
+										<TableHead className="min-w-[180px]">Producto</TableHead>
+										<TableHead className="text-center w-[90px]">Piezas</TableHead>
+										<TableHead className="text-center w-[100px]">Kg</TableHead>
+										<TableHead className="text-center w-[110px]">$/Kg o pza</TableHead>
+										<TableHead className="text-right w-[110px]">Subtotal</TableHead>
+										<TableHead className="w-[40px]" />
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{editItems.length === 0 ? (
+										<TableRow>
+											<TableCell colSpan={6} className="text-center text-muted-foreground py-4">
+												Sin productos. Usa "Agregar".
+											</TableCell>
+										</TableRow>
+									) : (
+										editItems.map((r) => (
+											<TableRow key={r.key}>
+												<TableCell>
+													<Select
+														value={r.productId ? String(r.productId) : ""}
+														onValueChange={(v) => pickProduct(r.key, parseInt(v))}
+													>
+														<SelectTrigger className="h-9">
+															<SelectValue placeholder={r.productName || "Selecciona"} />
+														</SelectTrigger>
+														<SelectContent className="max-h-72">
+															{(productsList ?? []).map((p) => (
+																<SelectItem key={p.id} value={String(p.id)}>
+																	{p.name}
+																</SelectItem>
+															))}
+														</SelectContent>
+													</Select>
+												</TableCell>
+												<TableCell>
+													<Input
+														type="number"
+														value={r.pieces}
+														onChange={(e) => patchEditItem(r.key, { pieces: e.target.value })}
+														className="h-9 text-center"
+														placeholder="0"
+													/>
+												</TableCell>
+												<TableCell>
+													<Input
+														type="number"
+														step="0.001"
+														value={r.kg}
+														onChange={(e) => patchEditItem(r.key, { kg: e.target.value })}
+														className="h-9 text-center"
+														placeholder="0.000"
+													/>
+												</TableCell>
+												<TableCell>
+													<Input
+														type="number"
+														step="0.01"
+														value={r.price}
+														onChange={(e) => patchEditItem(r.key, { price: e.target.value })}
+														className="h-9 text-center"
+														placeholder="0.00"
+													/>
+												</TableCell>
+												<TableCell className="text-right font-semibold">
+													{formatCurrency(Math.round(editSubtotal(r) * 100), locale)}
+												</TableCell>
+												<TableCell>
+													<button
+														type="button"
+														onClick={() => removeEditItem(r.key)}
+														className="text-muted-foreground hover:text-red-500"
+													>
+														<TrashIcon className="w-4 h-4" />
+													</button>
+												</TableCell>
+											</TableRow>
+										))
+									)}
+								</TableBody>
+							</Table>
+						</div>
+						<div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2">
+							<span className="text-sm text-muted-foreground">
+								Total {editItems.some((r) => !r.kg || parseFloat(r.kg) === 0) ? "(estimado, faltan kg por pesar)" : ""}
+							</span>
+							<span className="text-xl font-bold">
+								{formatCurrency(Math.round(editTotalPesos * 100), locale)}
+							</span>
+						</div>
+						<p className="text-[11px] text-muted-foreground">
+							Renglones sin Kg quedan "por pesar" y el pedido vuelve a la
+							estación de pesaje.
+						</p>
+					</div>
+
+					<div className="space-y-1">
+						<Label>Notas</Label>
+						<Input
+							value={editNotes}
+							onChange={(e) => setEditNotes(e.target.value)}
+							placeholder="Opcional"
+						/>
+					</div>
+
 					<DialogFooter>
 						<Button variant="secondary" onClick={() => setEditOpen(false)}>
 							{tc("cancel")}
 						</Button>
 						<Button
-							disabled={updateMutation.isPending}
-							onClick={() =>
-								updateMutation.mutate({
-									id: orderId,
-									total_amount: Math.round(parseFloat(editTotal) * 100),
-									status: editStatus,
-								})
-							}
+							disabled={replaceItemsMutation.isPending}
+							onClick={saveFullEdit}
 						>
-							{tc("update")}
+							{replaceItemsMutation.isPending ? "Guardando…" : "Guardar pedido"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

@@ -1853,6 +1853,107 @@ export const ordersRouter = router({
 			return { ...updated, customer: customer ?? null };
 		}),
 
+	// Reemplaza por completo los renglones de un pedido (editar productos,
+	// piezas, kg y precios). Recalcula total y si requiere pesaje. Útil cuando
+	// el cliente cambia el pedido por teléfono.
+	replaceItems: protectedProcedure
+		.input(
+			z.object({
+				orderId: z.number(),
+				customerId: z.number().nullable().optional(),
+				notes: z.string().optional(),
+				status: z
+					.enum([
+						"COMPLETADA",
+						"pending",
+						"cancelled",
+						"PENDIENTE_PESAJE",
+						"LISTA_PARA_COBRO",
+					])
+					.optional(),
+				items: z.array(
+					z.object({
+						productId: z.number().nullable().optional(),
+						productName: z.string().min(1),
+						quantityPieces: z.number().min(0).default(0),
+						quantityKg: z.number().min(0).default(0),
+						unitPrice: z.number().min(0).default(0), // pesos por kg/pieza
+					}),
+				),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			return db.transaction(async (tx) => {
+				const [ord] = await tx
+					.select({ id: orders.id })
+					.from(orders)
+					.where(
+						and(
+							eq(orders.id, input.orderId),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
+					)
+					.limit(1);
+				if (!ord) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Pedido no encontrado",
+					});
+				}
+
+				const rows = input.items
+					.filter((it) => it.productName.trim().length > 0)
+					.map((it) => {
+						const kg = it.quantityKg || 0;
+						const pieces = Math.round(it.quantityPieces || 0);
+						const unitCents = Math.round((it.unitPrice || 0) * 100);
+						const qty = kg > 0 ? kg : pieces;
+						const subtotalCents = Math.round(qty * unitCents);
+						return {
+							order_id: input.orderId,
+							product_id: it.productId ?? null,
+							product_name: it.productName.trim(),
+							quantity_pieces: pieces,
+							quantity_kg: kg > 0 ? kg.toFixed(3) : null,
+							unit_price: unitCents.toFixed(2),
+							subtotal: subtotalCents.toFixed(2),
+							status: (kg > 0 ? "PESADO" : "PENDIENTE_PESAJE") as
+								| "PESADO"
+								| "PENDIENTE_PESAJE",
+						};
+					});
+
+				const totalCents = rows.reduce((s, r) => s + Number(r.subtotal), 0);
+				const requiresWeighing = rows.some(
+					(r) => r.status === "PENDIENTE_PESAJE",
+				);
+
+				await tx
+					.delete(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				if (rows.length > 0) {
+					await tx.insert(orderItems).values(rows);
+				}
+
+				const upd: Record<string, unknown> = {
+					total_amount: totalCents.toFixed(2),
+					requires_weighing: requiresWeighing,
+					updated_at: new Date(),
+				};
+				if (input.status) upd.status = input.status;
+				if (input.customerId !== undefined)
+					upd.customer_id = input.customerId;
+				if (input.notes !== undefined) upd.notes = input.notes;
+
+				await tx
+					.update(orders)
+					.set(upd)
+					.where(eq(orders.id, input.orderId));
+
+				return { success: true, total: totalCents };
+			});
+		}),
+
 	delete: protectedProcedure
 		.meta({
 			openapi: {
