@@ -280,8 +280,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 		return <div className="text-muted-foreground">{t("orderNotFound")}</div>;
 	}
 
-	const { label: statusLabel, color: statusColor } = getStatusDisplay(order.status);
-	const canCharge = order.status === "LISTA_PARA_COBRO";
+	// Pesaje de producción: no es una venta, va directo a inventario
+	const isProduction = order.notes === "Pesaje de producción";
+	const base = getStatusDisplay(order.status);
+	const statusLabel = isProduction ? "Producción → inventario" : base.label;
+	const statusColor = isProduction ? "text-purple-600" : base.color;
+	const canCharge = order.status === "LISTA_PARA_COBRO" && !isProduction;
 
 	// Estimación de costo de items aún no pesados (piezas × peso promedio × precio/kg)
 	const avgWeightMap = new Map<number, number>();
@@ -335,7 +339,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 							Liquidar / Cobrar
 						</Button>
 					)}
-					{order.status === "COMPLETADA" && (
+					{order.status === "COMPLETADA" && !isProduction && (
 						<Button
 							size="sm"
 							variant="outline"

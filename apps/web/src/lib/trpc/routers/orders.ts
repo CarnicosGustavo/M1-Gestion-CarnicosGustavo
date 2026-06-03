@@ -1427,11 +1427,10 @@ export const ordersRouter = router({
 							await tx
 								.update(products)
 								.set({
-									stock_pieces: Math.max(0, nextPieces),
+									stock_pieces: nextPieces,
 									weighed_pieces: Math.max(0, nextWeighedPieces),
-									stock_kg: Math.max(0, newStockKg).toFixed(3),
-									// Note: in_stock is deprecated and kept for compatibility
-									// It should only contain whole kg values (integer)
+									stock_kg: newStockKg.toFixed(3),
+									// Stock puede quedar negativo: se compensa al despiezar.
 								})
 								.where(eq(products.id, item.product_id));
 
@@ -1529,17 +1528,12 @@ export const ordersRouter = router({
 								product.weighed_pieces ?? 0,
 								nextPieces,
 							);
-							if (newStockKg < 0) {
-								throw new TRPCError({
-									code: "PRECONDITION_FAILED",
-									message: `Stock insuficiente de ${product.name}: se requieren ${itemQuantityKg.toFixed(3)} kg pero solo hay ${currentStockKg.toFixed(3)} kg disponibles`,
-								});
-							}
+							// El stock puede quedar negativo: se compensa al despiezar.
 							await tx
 								.update(products)
 								.set({
 									stock_pieces: nextPieces,
-									weighed_pieces: nextWeighedPieces,
+									weighed_pieces: Math.max(0, nextWeighedPieces),
 									stock_kg: newStockKg.toFixed(3),
 								})
 								.where(eq(products.id, item.product_id));
@@ -1776,18 +1770,16 @@ export const ordersRouter = router({
 							const itemQuantityKg = item.quantity_kg ? Number(item.quantity_kg) : 0;
 							// La pieza ya fue pesada y está físicamente lista para entrega:
 							// el cobro NO se bloquea por stock. Se descuenta sin bajar de 0.
-							const finalStockKg = Math.max(0, Number(product.stock_kg) - itemQuantityKg);
-							const finalPieces = Math.max(
-								0,
-								item.quantity_pieces
-									? product.stock_pieces - item.quantity_pieces
-									: product.stock_pieces,
-							);
+							// Stock puede quedar negativo: se compensa al despiezar.
+							const finalStockKg = Number(product.stock_kg) - itemQuantityKg;
+							const finalPieces = item.quantity_pieces
+								? product.stock_pieces - item.quantity_pieces
+								: product.stock_pieces;
 							await tx
 								.update(products)
 								.set({
 									stock_pieces: finalPieces,
-									weighed_pieces: Math.min(product.weighed_pieces ?? 0, finalPieces),
+									weighed_pieces: Math.max(0, Math.min(product.weighed_pieces ?? 0, finalPieces)),
 									stock_kg: finalStockKg.toFixed(3),
 								})
 								.where(eq(products.id, item.product_id));

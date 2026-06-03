@@ -13,6 +13,7 @@ import { eq, and, or, desc, sql, inArray } from "drizzle-orm";
 const customerSchema = z.object({
   id: z.number(),
   name: z.string().nullable(),
+  contact_name: z.string().nullable(),
   email: z.string().nullable(),
   phone: z.string().nullable(),
   whatsapp_phone: z.string().nullable(),
@@ -42,6 +43,7 @@ export const customersRouter = router({
     .input(
       z.object({
         name: z.string().min(1),
+        contact_name: z.string().optional(),
         email: z.string().email(),
         phone: z.string().optional(),
         whatsapp_phone: z.string().optional(),
@@ -65,6 +67,7 @@ export const customersRouter = router({
       z.object({
         id: z.number(),
         name: z.string().min(1).optional(),
+        contact_name: z.string().optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
         whatsapp_phone: z.string().optional(),

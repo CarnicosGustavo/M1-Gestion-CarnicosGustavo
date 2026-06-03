@@ -41,8 +41,8 @@ export default function CustomersPage() {
 
   const customerFormSchema = z.object({
     name: z.string().min(1, t("nameRequired")),
+    contact_name: z.string(),
     email: z.string().email(t("invalidEmail")),
-    phone: z.string(),
     whatsapp_phone: z.string(),
     address: z.string(),
     notes: z.string(),
@@ -143,8 +143,8 @@ export default function CustomersPage() {
   const form = useForm({
     defaultValues: {
       name: "",
+      contact_name: "",
       email: "",
-      phone: "",
       whatsapp_phone: "",
       address: "",
       notes: "",
@@ -158,11 +158,14 @@ export default function CustomersPage() {
       },
     },
     onSubmit: ({ value }) => {
+      const wa = value.whatsapp_phone || undefined;
       const payload = {
         name: value.name,
+        contact_name: value.contact_name || undefined,
         email: value.email,
-        phone: value.phone || undefined,
-        whatsapp_phone: value.whatsapp_phone || undefined,
+        // WhatsApp es el identificador principal; el telefono se mantiene igual
+        whatsapp_phone: wa,
+        phone: wa,
         address: value.address || undefined,
         notes: value.notes || undefined,
         status: value.status,
@@ -193,9 +196,12 @@ export default function CustomersPage() {
     setEditingId(c.id);
     form.reset();
     form.setFieldValue("name", c.name ?? "");
+    form.setFieldValue("contact_name", (c as any).contact_name ?? "");
     form.setFieldValue("email", c.email ?? "");
-    form.setFieldValue("phone", c.phone ?? "");
-    form.setFieldValue("whatsapp_phone", (c as any).whatsapp_phone ?? "");
+    form.setFieldValue(
+      "whatsapp_phone",
+      (c as any).whatsapp_phone ?? c.phone ?? "",
+    );
     form.setFieldValue("address", (c as any).address ?? "");
     form.setFieldValue("notes", (c as any).notes ?? "");
     form.setFieldValue("status", (c.status ?? "active") as "active" | "inactive");
@@ -270,28 +276,18 @@ export default function CustomersPage() {
               <form.Field name="name">
                 {(field) => (
                   <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
-                    <Label htmlFor="name">{tc("name")}</Label>
+                    <Label htmlFor="name">Nombre del negocio</Label>
                     <div className="col-span-3">
-                      <Input id="name" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map(e => e?.message ?? e).join(", ") : undefined} />
+                      <Input id="name" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} placeholder="Ej. Carnicería Balderas" error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map(e => e?.message ?? e).join(", ") : undefined} />
                     </div>
                   </div>
                 )}
               </form.Field>
-              <form.Field name="email">
+              <form.Field name="contact_name">
                 {(field) => (
                   <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
-                    <Label htmlFor="email">{tc("email")}</Label>
-                    <div className="col-span-3">
-                      <Input id="email" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map(e => e?.message ?? e).join(", ") : undefined} />
-                    </div>
-                  </div>
-                )}
-              </form.Field>
-              <form.Field name="phone">
-                {(field) => (
-                  <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
-                    <Label htmlFor="phone">{tc("phone")}</Label>
-                    <Input id="phone" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} className="col-span-3" />
+                    <Label htmlFor="contact_name">Responsable</Label>
+                    <Input id="contact_name" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} className="col-span-3" placeholder="Nombre de contacto" />
                   </div>
                 )}
               </form.Field>
@@ -299,7 +295,19 @@ export default function CustomersPage() {
                 {(field) => (
                   <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
                     <Label htmlFor="whatsapp_phone">WhatsApp</Label>
-                    <Input id="whatsapp_phone" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} className="col-span-3" placeholder="Tel. de WhatsApp" />
+                    <div className="col-span-3">
+                      <Input id="whatsapp_phone" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} placeholder="Tel. de WhatsApp (identificador principal)" />
+                    </div>
+                  </div>
+                )}
+              </form.Field>
+              <form.Field name="email">
+                {(field) => (
+                  <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+                    <Label htmlFor="email">Correo</Label>
+                    <div className="col-span-3">
+                      <Input id="email" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map(e => e?.message ?? e).join(", ") : undefined} />
+                    </div>
                   </div>
                 )}
               </form.Field>

@@ -317,6 +317,7 @@ export const inventoryTransactions = pgTable("inventory_transactions", {
 export const customers = pgTable("customers", {
 	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
 	name: varchar("name", { length: 255 }).notNull(),
+	contact_name: varchar("contact_name", { length: 255 }),
 	email: varchar("email", { length: 255 }).notNull().unique(),
 	phone: varchar("phone", { length: 20 }),
 	whatsapp_phone: varchar("whatsapp_phone", { length: 20 }).unique(),
