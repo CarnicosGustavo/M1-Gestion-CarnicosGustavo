@@ -47,6 +47,11 @@ export default function YieldPage() {
 	const [rows, setRows] = useState<Row[]>(blankRows());
 	// Cantidad de canales por tipo para la proyección (productId → string)
 	const [canalQty, setCanalQty] = useState<Record<number, string>>({});
+	// Día de operación: carga la compra de ese día como base del rendimiento
+	const [yieldDate, setYieldDate] = useState(() => {
+		const d = new Date();
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+	});
 
 	const { data: products = [] } = useQuery(trpc.products.list.queryOptions()) as { data: any[] };
 	const { data: sheets } = useQuery(trpc.yields.list.queryOptions());
@@ -54,8 +59,11 @@ export default function YieldPage() {
 	const { data: canales = [] } = useQuery(trpc.yields.canales.queryOptions()) as {
 		data: { id: number; name: string; avgWeight: number }[];
 	};
-	const { data: latestPurchase } = useQuery(trpc.yields.latestPurchase.queryOptions()) as {
-		data: { numMedias: number; kgComprado: number; supplier: string | null } | null | undefined;
+	// Compra del día seleccionado (renglones por proveedor)
+	const { data: dayPurchase = [] } = useQuery(
+		trpc.yields.purchasesByDate.queryOptions({ date: yieldDate }),
+	) as {
+		data: { supplier: string; canales: number; kg: number }[];
 	};
 	const { data: prodHistory = [] } = useQuery(
 		trpc.yields.productionHistory.queryOptions(),
@@ -74,16 +82,28 @@ export default function YieldPage() {
 		[prodHistory],
 	);
 
-	// Auto-rellena la cabecera con la última compra de canales (una sola vez)
-	const filledRef = useRef(false);
+	// Resumen de la compra del día (suma de proveedores)
+	const dayBuy = useMemo(() => {
+		const canales = dayPurchase.reduce((a, r) => a + (r.canales || 0), 0);
+		const kg = dayPurchase.reduce((a, r) => a + (r.kg || 0), 0);
+		const prov = dayPurchase
+			.filter((r) => r.supplier)
+			.map((r) => r.supplier)
+			.join(", ");
+		return { canales, kg, prov };
+	}, [dayPurchase]);
+
+	// Rellena la cabecera con la compra del día seleccionado (cuando cambia el día)
+	const filledForDate = useRef<string>("");
 	useEffect(() => {
-		if (filledRef.current || !latestPurchase) return;
-		filledRef.current = true;
-		if (!numCanales) setNumCanales(String(latestPurchase.numMedias ?? ""));
-		if (!kgComprado) setKgComprado(String(latestPurchase.kgComprado ?? ""));
-		if (!supplier && latestPurchase.supplier) setSupplier(latestPurchase.supplier);
+		if (filledForDate.current === yieldDate) return;
+		if (dayPurchase === undefined) return;
+		filledForDate.current = yieldDate;
+		setNumCanales(dayBuy.canales ? String(dayBuy.canales) : "");
+		setKgComprado(dayBuy.kg ? String(Math.round(dayBuy.kg)) : "");
+		if (dayBuy.prov) setSupplier(dayBuy.prov.split(", ")[0]);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [latestPurchase]);
+	}, [yieldDate, dayPurchase, dayBuy]);
 
 	// Mapa nombre (mayúsculas) → peso promedio por pieza
 	const avgByName = useMemo(() => {
@@ -236,6 +256,7 @@ export default function YieldPage() {
 			return;
 		}
 		createMutation.mutate({
+			sheetDate: yieldDate || undefined,
 			numCanales: parseInt(numCanales) || 0,
 			kgComprado: parseFloat(kgComprado) || 0,
 			supplier: supplier || undefined,
@@ -399,21 +420,42 @@ export default function YieldPage() {
 				</Card>
 			)}
 
+			{/* Día de operación */}
+			<Card>
+				<CardContent className="grid gap-4 pt-6 sm:grid-cols-3">
+					<div className="space-y-1">
+						<Label>Día de operación</Label>
+						<Input
+							type="date"
+							value={yieldDate}
+							onChange={(e) => setYieldDate(e.target.value)}
+						/>
+					</div>
+					<div className="sm:col-span-2 flex items-end">
+						<p className="text-xs text-muted-foreground">
+							{dayBuy.canales > 0
+								? `Compra del día: ${dayBuy.canales} canales · ${dayBuy.kg.toLocaleString("es-MX", { maximumFractionDigits: 0 })} kg${dayBuy.prov ? ` · ${dayBuy.prov}` : ""}`
+								: "No hay compra registrada para este día. Captúrala en “Compra del día”."}
+						</p>
+					</div>
+				</CardContent>
+			</Card>
+
 			{/* Cabecera */}
 			<Card>
 				<CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-6">
 					<div className="space-y-1">
 						<Label>No. de medias canal</Label>
 						<Input type="number" value={numCanales} onChange={(e) => setNumCanales(e.target.value)} placeholder="Ej. 10" />
-						{latestPurchase && (
-							<p className="text-[10px] text-blue-600">Auto: última compra ({latestPurchase.numMedias})</p>
+						{dayBuy.canales > 0 && (
+							<p className="text-[10px] text-blue-600">Auto: compra del día ({dayBuy.canales})</p>
 						)}
 					</div>
 					<div className="space-y-1">
 						<Label>Kg comprado (total)</Label>
 						<Input type="number" value={kgComprado} onChange={(e) => setKgComprado(e.target.value)} placeholder="Ej. 1150" />
-						{latestPurchase && (
-							<p className="text-[10px] text-blue-600">Auto: última compra ({Number(latestPurchase.kgComprado).toFixed(0)} kg)</p>
+						{dayBuy.kg > 0 && (
+							<p className="text-[10px] text-blue-600">Auto: compra del día ({dayBuy.kg.toFixed(0)} kg)</p>
 						)}
 					</div>
 					<div className="space-y-1">
