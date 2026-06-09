@@ -98,6 +98,12 @@ export const yieldsRouter = router({
 				precio: r.price_per_kg != null ? Number(r.price_per_kg) : 0,
 				americano: r.qty_americano,
 				nacional: r.qty_nacional,
+				verifCanales:
+					(r as any).verified_canales != null
+						? Number((r as any).verified_canales)
+						: 0,
+				verifKg:
+					(r as any).verified_kg != null ? Number((r as any).verified_kg) : 0,
 			}));
 		}),
 
@@ -114,6 +120,8 @@ export const yieldsRouter = router({
 						precio: z.number().min(0).default(0),
 						americano: z.number().int().min(0).default(0),
 						nacional: z.number().int().min(0).default(0),
+						verifCanales: z.number().int().min(0).default(0),
+						verifKg: z.number().min(0).default(0),
 					}),
 				),
 			}),
@@ -140,6 +148,8 @@ export const yieldsRouter = router({
 							price_per_kg: r.precio > 0 ? r.precio.toFixed(2) : null,
 							qty_americano: r.americano,
 							qty_nacional: r.nacional,
+							verified_canales: r.verifCanales > 0 ? r.verifCanales : null,
+							verified_kg: r.verifKg > 0 ? r.verifKg.toFixed(3) : null,
 							purchase_date: input.date,
 							user_uid: ctx.user.id,
 						})),

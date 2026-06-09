@@ -38,6 +38,8 @@ type Row = {
 	precio: string;
 	americano: string;
 	nacional: string;
+	verifCanales: string;
+	verifKg: string;
 };
 
 const todayISO = () => {
@@ -51,8 +53,8 @@ let _k = 0;
 const newKey = () => `r${_k++}`;
 function emptyRows(): Row[] {
 	return [
-		{ key: newKey(), supplier: "La Barca", canales: "", kg: "", precio: "", americano: "", nacional: "" },
-		{ key: newKey(), supplier: "Valle", canales: "", kg: "", precio: "", americano: "", nacional: "" },
+		{ key: newKey(), supplier: "La Barca", canales: "", kg: "", precio: "", americano: "", nacional: "", verifCanales: "", verifKg: "" },
+		{ key: newKey(), supplier: "Valle", canales: "", kg: "", precio: "", americano: "", nacional: "", verifCanales: "", verifKg: "" },
 	];
 }
 
@@ -79,6 +81,8 @@ export default function PurchaseDayPage() {
 					precio: number;
 					americano: number;
 					nacional: number;
+					verifCanales: number;
+					verifKg: number;
 			  }[]
 			| undefined;
 	};
@@ -99,6 +103,8 @@ export default function PurchaseDayPage() {
 					precio: r.precio ? String(r.precio) : "",
 					americano: r.americano ? String(r.americano) : "",
 					nacional: r.nacional ? String(r.nacional) : "",
+					verifCanales: r.verifCanales ? String(r.verifCanales) : "",
+					verifKg: r.verifKg ? String(r.verifKg) : "",
 				})),
 			);
 		} else {
@@ -156,7 +162,7 @@ export default function PurchaseDayPage() {
 	const addRow = () =>
 		setRows((prev) => [
 			...prev,
-			{ key: newKey(), supplier: "", canales: "", kg: "", precio: "", americano: "", nacional: "" },
+			{ key: newKey(), supplier: "", canales: "", kg: "", precio: "", americano: "", nacional: "", verifCanales: "", verifKg: "" },
 		]);
 	const removeRow = (key: string) =>
 		setRows((prev) => prev.filter((r) => r.key !== key));
@@ -183,6 +189,8 @@ export default function PurchaseDayPage() {
 				precio: num(r.precio),
 				americano: intval(r.americano),
 				nacional: intval(r.nacional),
+				verifCanales: intval(r.verifCanales),
+				verifKg: num(r.verifKg),
 			})),
 		});
 	};
@@ -379,6 +387,86 @@ export default function PurchaseDayPage() {
 					<p className="mt-3 text-[11px] text-muted-foreground">
 						"Amer./Nac." son la composición por tipo de canal (opcional). El total
 						de canales y kg alimenta el módulo de Rendimiento.
+					</p>
+				</CardContent>
+			</Card>
+
+			{/* Verificación en CEDIS (peso real recibido al llegar) */}
+			<Card>
+				<CardHeader className="pb-2">
+					<CardTitle className="text-base">Verificación en CEDIS</CardTitle>
+					<p className="text-xs text-muted-foreground">
+						Al llegar los canales, pésalos y registra lo realmente recibido. La
+						diferencia contra la compra es la merma.
+					</p>
+				</CardHeader>
+				<CardContent>
+					<div className="overflow-x-auto">
+						<Table>
+							<TableHeader>
+								<TableRow className="bg-muted/50">
+									<TableHead className="min-w-[150px]">Proveedor</TableHead>
+									<TableHead className="text-center">Comprado (kg)</TableHead>
+									<TableHead className="text-center">Canales recibidos</TableHead>
+									<TableHead className="text-center">Kg recibidos</TableHead>
+									<TableHead className="text-center">Merma</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{rows
+									.filter((r) => r.supplier.trim() || r.canales || r.kg)
+									.map((r) => {
+										const compradoKg = num(r.kg);
+										const recibido = num(r.verifKg);
+										const merma = compradoKg > 0 && recibido > 0 ? compradoKg - recibido : 0;
+										const mermaPct =
+											compradoKg > 0 && recibido > 0 ? (merma / compradoKg) * 100 : 0;
+										return (
+											<TableRow key={r.key}>
+												<TableCell className="font-medium">
+													{r.supplier || "—"}
+												</TableCell>
+												<TableCell className="text-center text-muted-foreground">
+													{compradoKg > 0 ? compradoKg.toFixed(0) : "—"}
+												</TableCell>
+												<TableCell>
+													<Input
+														type="number"
+														value={r.verifCanales}
+														onChange={(e) => patch(r.key, { verifCanales: e.target.value })}
+														className="h-9 text-center"
+														placeholder={r.canales || "0"}
+													/>
+												</TableCell>
+												<TableCell>
+													<Input
+														type="number"
+														step="0.001"
+														value={r.verifKg}
+														onChange={(e) => patch(r.key, { verifKg: e.target.value })}
+														className="h-9 text-center"
+														placeholder="0"
+													/>
+												</TableCell>
+												<TableCell className="text-center text-sm font-medium">
+													{recibido > 0 && compradoKg > 0 ? (
+														<span className={merma > 0 ? "text-orange-600" : "text-green-600"}>
+															{merma > 0 ? "-" : "+"}
+															{Math.abs(merma).toFixed(1)} kg ({mermaPct.toFixed(1)}%)
+														</span>
+													) : (
+														<span className="text-muted-foreground">—</span>
+													)}
+												</TableCell>
+											</TableRow>
+										);
+									})}
+							</TableBody>
+						</Table>
+					</div>
+					<p className="mt-3 text-[11px] text-muted-foreground">
+						Si registras los kg recibidos, el Rendimiento usa ese peso (real del
+						CEDIS) como base en lugar del comprado.
 					</p>
 				</CardContent>
 			</Card>

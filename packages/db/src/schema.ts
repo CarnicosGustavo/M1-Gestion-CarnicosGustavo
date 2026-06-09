@@ -171,6 +171,9 @@ export const channelPurchases = pgTable("channel_purchases", {
 	num_medias: integer("num_medias").notNull().default(0),
 	total_kg: numeric("total_kg", { precision: 12, scale: 3 }).notNull().default("0"),
 	price_per_kg: numeric("price_per_kg", { precision: 10, scale: 2 }),
+	// Verificación al llegar al CEDIS (peso de canal real recibido)
+	verified_canales: integer("verified_canales"),
+	verified_kg: numeric("verified_kg", { precision: 12, scale: 3 }),
 	purchase_date: date("purchase_date").defaultNow(),
 	user_uid: varchar("user_uid", { length: 255 }),
 	created_at: timestamp("created_at").defaultNow(),

@@ -63,7 +63,13 @@ export default function YieldPage() {
 	const { data: dayPurchase = [] } = useQuery(
 		trpc.yields.purchasesByDate.queryOptions({ date: yieldDate }),
 	) as {
-		data: { supplier: string; canales: number; kg: number }[];
+		data: {
+			supplier: string;
+			canales: number;
+			kg: number;
+			verifCanales: number;
+			verifKg: number;
+		}[];
 	};
 	const { data: prodHistory = [] } = useQuery(
 		trpc.yields.productionHistory.queryOptions(),
@@ -82,15 +88,23 @@ export default function YieldPage() {
 		[prodHistory],
 	);
 
-	// Resumen de la compra del día (suma de proveedores)
+	// Resumen de la compra del día (suma de proveedores). Si hay verificación de
+	// CEDIS (peso real recibido), se usa esa como base; si no, la comprada.
 	const dayBuy = useMemo(() => {
-		const canales = dayPurchase.reduce((a, r) => a + (r.canales || 0), 0);
-		const kg = dayPurchase.reduce((a, r) => a + (r.kg || 0), 0);
+		const canales = dayPurchase.reduce(
+			(a, r) => a + (r.verifCanales > 0 ? r.verifCanales : r.canales || 0),
+			0,
+		);
+		const kg = dayPurchase.reduce(
+			(a, r) => a + (r.verifKg > 0 ? r.verifKg : r.kg || 0),
+			0,
+		);
+		const usaVerif = dayPurchase.some((r) => r.verifKg > 0);
 		const prov = dayPurchase
 			.filter((r) => r.supplier)
 			.map((r) => r.supplier)
 			.join(", ");
-		return { canales, kg, prov };
+		return { canales, kg, prov, usaVerif };
 	}, [dayPurchase]);
 
 	// Rellena la cabecera con la compra del día seleccionado (cuando cambia el día)
@@ -434,7 +448,7 @@ export default function YieldPage() {
 					<div className="sm:col-span-2 flex items-end">
 						<p className="text-xs text-muted-foreground">
 							{dayBuy.canales > 0
-								? `Compra del día: ${dayBuy.canales} canales · ${dayBuy.kg.toLocaleString("es-MX", { maximumFractionDigits: 0 })} kg${dayBuy.prov ? ` · ${dayBuy.prov}` : ""}`
+								? `${dayBuy.usaVerif ? "Recibido en CEDIS" : "Compra del día"}: ${dayBuy.canales} canales · ${dayBuy.kg.toLocaleString("es-MX", { maximumFractionDigits: 0 })} kg${dayBuy.prov ? ` · ${dayBuy.prov}` : ""}`
 								: "No hay compra registrada para este día. Captúrala en “Compra del día”."}
 						</p>
 					</div>
