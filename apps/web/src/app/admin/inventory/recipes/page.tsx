@@ -467,8 +467,35 @@ export default function RecipesPage() {
 		);
 	}, [canalRootId, mapByParentId, mapProductById, mapStyle]);
 
-	// --- Datos del TABLERO ---
-	// 1er nivel: una tarjeta por estilo de canal (sus piezas directas).
+	// --- CONFIGURADOR (TABLERO) ---
+	// Edición inline: captura en KG y el % se deriva del peso de referencia.
+	const quickUpdateMut = useMutation(
+		trpc.inventory.recipesQuickUpdate.mutationOptions({
+			onSuccess: () =>
+				queryClient.invalidateQueries({
+					queryKey: trpc.inventory.recipesList.queryKey(),
+				}),
+			onError: (e: any) => toast.error(e.message ?? "Error"),
+		}),
+	);
+	const refWeightMut = useMutation(
+		trpc.inventory.setRefWeight.mutationOptions({
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: trpc.inventory.recipesList.queryKey(),
+				});
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.list.queryKey(),
+				});
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error"),
+		}),
+	);
+	const [boardExpanded, setBoardExpanded] = useState<Record<string, boolean>>(
+		{},
+	);
+
+	// 1er nivel: tarjeta por estilo de canal (sus piezas directas)
 	const boardStyles = useMemo(() => {
 		const byType = new Map<string, Recipe[]>();
 		for (const r of mapRecipes) {
@@ -480,123 +507,299 @@ export default function RecipesPage() {
 		return [...byType.entries()]
 			.map(([type, rows]) => ({
 				type,
+				parentId: rows[0]?.parent_product_id ?? 0,
 				parent: rows[0]?.parentProduct?.name ?? "",
+				canalW: Number(rows[0]?.parentProduct?.avg_weight ?? 0) || 0,
 				rows: rows
 					.slice()
-					.sort((a, b) => a.childProduct.name.localeCompare(b.childProduct.name)),
-				sumPct: rows.reduce(
-					(s, r) => s + Number(r.yield_weight_ratio) * 100,
-					0,
-				),
+					.sort((a, b) =>
+						a.childProduct.name.localeCompare(b.childProduct.name),
+					),
 			}))
 			.sort((a, b) => a.type.localeCompare(b.type));
 	}, [mapRecipes]);
 
-	// 2º nivel: una tarjeta por pieza padre (BASE).
-	const boardBase = useMemo(() => {
-		const byParent = new Map<string, Recipe[]>();
+	// BASE agrupado por id de pieza padre (para ramificar inline)
+	const baseByParentId = useMemo(() => {
+		const m = new Map<number, Recipe[]>();
 		for (const r of mapRecipes) {
 			if (r.transformation_type !== "BASE") continue;
-			const arr = byParent.get(r.parentProduct.name) ?? [];
+			const arr = m.get(r.parent_product_id) ?? [];
 			arr.push(r);
-			byParent.set(r.parentProduct.name, arr);
+			m.set(r.parent_product_id, arr);
 		}
-		return [...byParent.entries()]
-			.map(([parent, rows]) => ({
-				parent,
-				rows: rows
-					.slice()
-					.sort((a, b) => a.childProduct.name.localeCompare(b.childProduct.name)),
-				sumPct: rows.reduce(
-					(s, r) => s + Number(r.yield_weight_ratio) * 100,
-					0,
-				),
-			}))
-			.sort((a, b) => a.parent.localeCompare(b.parent));
+		for (const arr of m.values())
+			arr.sort((a, b) => a.childProduct.name.localeCompare(b.childProduct.name));
+		return m;
 	}, [mapRecipes]);
 
-	const PieceList = ({ rows }: { rows: Recipe[] }) => (
-		<div className="divide-y">
-			{rows.map((r) => (
-				<button
-					key={r.id}
-					type="button"
-					onClick={() => openEdit(r)}
-					className="flex w-full items-center justify-between gap-2 px-1 py-1.5 text-left hover:bg-muted/60"
-				>
-					<span className="min-w-0 truncate text-sm font-medium">
-						{r.childProduct.name}
-						<span className="ml-1 text-[10px] text-muted-foreground">
-							×{Number(r.yield_quantity_pieces)}
-						</span>
+	// Σ de % (solo despiece; las variantes no suman) + merma
+	const SumBadge = ({ rows, refW }: { rows: Recipe[]; refW: number }) => {
+		const sumPct =
+			rows
+				.filter((r) => !r.is_variant)
+				.reduce((s, r) => s + Number(r.yield_weight_ratio), 0) * 100;
+		const kgSum = refW > 0 ? (sumPct / 100) * refW : 0;
+		const over = sumPct > 100.5;
+		const merma = Math.max(0, 100 - sumPct);
+		return (
+			<div
+				className={cn(
+					"mt-1.5 flex flex-wrap items-center gap-2 rounded-md px-2 py-1 text-[11px] font-semibold",
+					over ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700",
+				)}
+			>
+				<span>Σ {sumPct.toFixed(1)}%</span>
+				{refW > 0 && (
+					<span className="font-normal">
+						{kgSum.toFixed(2)} / {refW.toFixed(2)} kg
 					</span>
-					<span className="shrink-0 text-xs font-bold text-blue-600">
-						{(Number(r.yield_weight_ratio) * 100).toFixed(1)}%
-					</span>
-				</button>
-			))}
-		</div>
+				)}
+				<span className="font-normal">
+					{over ? "⚠ excede el peso" : `merma ${merma.toFixed(1)}%`}
+				</span>
+			</div>
+		);
+	};
+
+	// Peso de referencia editable de un producto ("pesa X kg")
+	const RefWeightControl = ({
+		productId,
+		kg,
+		label,
+	}: {
+		productId: number;
+		kg: number;
+		label: string;
+	}) => (
+		<label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+			{label}
+			<Input
+				key={`${productId}:${kg}`}
+				type="number"
+				step="0.01"
+				defaultValue={kg > 0 ? String(Math.round(kg * 100) / 100) : ""}
+				placeholder="0"
+				className="h-6 w-16 px-1 text-center text-[11px]"
+				onBlur={(e) => {
+					const n = Number.parseFloat(e.target.value) || 0;
+					if (Math.abs(n - kg) > 0.004)
+						refWeightMut.mutate({ productId, kg: n });
+				}}
+				onKeyDown={(e) =>
+					e.key === "Enter" && (e.target as HTMLInputElement).blur()
+				}
+			/>
+			kg
+		</label>
 	);
 
-	const renderBoard = () => (
-		<div className="space-y-5">
-			<div>
-				<h3 className="mb-2 text-sm font-semibold text-muted-foreground">
-					Estilos de canal (1er nivel)
-				</h3>
-				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-					{boardStyles.map((s) => (
-						<div key={s.type} className="rounded-xl border bg-card p-3">
-							<div className="mb-2 flex items-center justify-between">
-								<div className="min-w-0">
-									<div className="truncate font-bold">
-										{s.parent || s.type}
-									</div>
-									<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-										{s.type} · {s.rows.length} piezas
-									</div>
-								</div>
-								<span
-									className={cn(
-										"shrink-0 rounded-md px-2 py-1 text-xs font-bold",
-										s.sumPct > 100
-											? "bg-red-50 text-red-700"
-											: "bg-blue-50 text-blue-700",
-									)}
-									title="Suma de % de peso (debería acercarse a 100%)"
-								>
-									Σ {s.sumPct.toFixed(0)}%
-								</span>
-							</div>
-							<PieceList rows={s.rows} />
-						</div>
-					))}
-				</div>
-			</div>
-
-			{boardBase.length > 0 && (
-				<div>
-					<h3 className="mb-2 text-sm font-semibold text-muted-foreground">
-						Sub-despieces (2º nivel)
-					</h3>
-					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-						{boardBase.map((b) => (
-							<div key={b.parent} className="rounded-xl border bg-card p-3">
-								<div className="mb-2 flex items-center justify-between">
-									<div className="truncate font-bold">{b.parent}</div>
-									<span
-										className="shrink-0 rounded-md bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700"
-										title="Suma de % respecto a la pieza padre"
-									>
-										Σ {b.sumPct.toFixed(0)}%
-									</span>
-								</div>
-								<PieceList rows={b.rows} />
-							</div>
-						))}
+	// Renglón editable de una receta (nivel 1 o ramificación)
+	const recipeRow = (
+		r: Recipe,
+		refW: number,
+		ancestors: number[],
+	): JSX.Element => {
+		const ratio = Number(r.yield_weight_ratio);
+		const pieces = Number(r.yield_quantity_pieces);
+		const kg = refW > 0 ? ratio * refW : 0;
+		const pct = ratio * 100;
+		const kids = baseByParentId.get(r.child_product_id) ?? [];
+		const canExpand =
+			kids.length > 0 && !ancestors.includes(r.child_product_id);
+		const ekey = `b${r.id}`;
+		const expanded = !!boardExpanded[ekey] && canExpand;
+		return (
+			<div key={r.id}>
+				<div
+					className={cn(
+						"flex items-center gap-1.5 rounded-md px-1 py-1",
+						r.is_variant && "bg-amber-50/60",
+					)}
+				>
+					<button
+						type="button"
+						disabled={!canExpand}
+						onClick={() =>
+							setBoardExpanded((s) => ({ ...s, [ekey]: !s[ekey] }))
+						}
+						className={cn(
+							"flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs",
+							canExpand
+								? "text-foreground hover:bg-muted"
+								: "text-muted-foreground/30",
+						)}
+						title={canExpand ? "Ver/editar su despiece" : undefined}
+					>
+						{expanded ? "▾" : "▸"}
+					</button>
+					<button
+						type="button"
+						onClick={() => openEdit(r)}
+						className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline"
+						title="Editar receta a detalle"
+					>
+						{r.childProduct.name}
+						{kids.length > 0 && (
+							<span className="ml-1 text-[10px] text-blue-600">
+								⑂{kids.length}
+							</span>
+						)}
+					</button>
+					<button
+						type="button"
+						onClick={() =>
+							quickUpdateMut.mutate({ id: r.id, isVariant: !r.is_variant })
+						}
+						className={cn(
+							"shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold",
+							r.is_variant
+								? "bg-amber-100 text-amber-800"
+								: "bg-muted text-muted-foreground hover:bg-muted/80",
+						)}
+						title="Despiece: suma al peso del padre · Variante: alternativa, no suma (ej. JAMON vs JAMON S/H)"
+					>
+						{r.is_variant ? "Variante" : "Despiece"}
+					</button>
+					<div className="flex shrink-0 items-center overflow-hidden rounded-md border">
+						<button
+							type="button"
+							className="px-1.5 py-0.5 text-xs hover:bg-muted"
+							onClick={() =>
+								quickUpdateMut.mutate({
+									id: r.id,
+									yieldQuantityPieces: Math.max(0, pieces - 1),
+								})
+							}
+						>
+							−
+						</button>
+						<span className="min-w-[1.4rem] text-center text-xs font-bold">
+							{pieces}
+						</span>
+						<button
+							type="button"
+							className="px-1.5 py-0.5 text-xs hover:bg-muted"
+							onClick={() =>
+								quickUpdateMut.mutate({
+									id: r.id,
+									yieldQuantityPieces: pieces + 1,
+								})
+							}
+						>
+							+
+						</button>
 					</div>
+					<div className="flex shrink-0 items-center gap-0.5">
+						<Input
+							key={`${r.id}:${kg.toFixed(2)}`}
+							type="number"
+							step="0.01"
+							defaultValue={kg > 0 ? kg.toFixed(2) : ""}
+							placeholder="kg"
+							disabled={refW <= 0}
+							title={
+								refW <= 0
+									? "Define primero el peso de referencia del padre"
+									: "Peso real de esta pieza; el % se calcula solo"
+							}
+							className="h-7 w-20 px-1 text-right text-xs"
+							onBlur={(e) => {
+								const n = Number.parseFloat(e.target.value) || 0;
+								if (refW > 0) {
+									const nr = n / refW;
+									if (Math.abs(nr - ratio) > 0.00005)
+										quickUpdateMut.mutate({ id: r.id, yieldWeightRatio: nr });
+								}
+							}}
+							onKeyDown={(e) =>
+								e.key === "Enter" && (e.target as HTMLInputElement).blur()
+							}
+						/>
+						<span className="text-[10px] text-muted-foreground">kg</span>
+					</div>
+					<span
+						className={cn(
+							"w-14 shrink-0 text-right text-xs font-bold",
+							r.is_variant ? "text-amber-700" : "text-blue-600",
+						)}
+					>
+						{pct.toFixed(1)}%
+					</span>
 				</div>
-			)}
+				{expanded && (
+					<div className="ml-5 mt-1 mb-2 rounded-lg border border-l-2 border-l-blue-400 bg-muted/20 p-2">
+						<div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+							<span className="text-[11px] font-semibold text-muted-foreground">
+								Despiece de {r.childProduct.name}
+							</span>
+							<RefWeightControl
+								productId={r.child_product_id}
+								kg={Number(r.childProduct.avg_weight ?? 0) || 0}
+								label="pesa"
+							/>
+						</div>
+						{kids.map((k) =>
+							recipeRow(
+								k,
+								Number(r.childProduct.avg_weight ?? 0) || 0,
+								[...ancestors, r.child_product_id],
+							),
+						)}
+						<SumBadge
+							rows={kids}
+							refW={Number(r.childProduct.avg_weight ?? 0) || 0}
+						/>
+					</div>
+				)}
+			</div>
+		);
+	};
+
+	const renderBoard = () => (
+		<div className="space-y-4">
+			<div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+				{boardStyles.map((s) => (
+					<div key={s.type} className="rounded-xl border bg-card p-3">
+						<div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+							<div className="min-w-0">
+								<div className="truncate font-bold">{s.parent || s.type}</div>
+								<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+									{s.type} · {s.rows.length} piezas
+								</div>
+							</div>
+							<div className="flex items-center gap-3">
+								<RefWeightControl
+									productId={s.parentId}
+									kg={s.canalW}
+									label="Peso del canal"
+								/>
+								<Button
+									variant="outline"
+									size="sm"
+									className="h-7 px-2 text-xs"
+									onClick={() =>
+										openCreateChild(s.parentId, s.type, { id: 0, name: "" })
+									}
+								>
+									<PlusCircle className="mr-1 h-3.5 w-3.5" />
+									Pieza
+								</Button>
+							</div>
+						</div>
+						<div className="divide-y">
+							{s.rows.map((r) => recipeRow(r, s.canalW, [s.parentId]))}
+						</div>
+						<SumBadge rows={s.rows} refW={s.canalW} />
+					</div>
+				))}
+			</div>
+			<p className="text-[11px] text-muted-foreground">
+				Escribe los <b>kg</b> reales de cada pieza y el % se calcula respecto al
+				peso del padre. <b>Despiece</b> suma al peso; <b>Variante</b> es una
+				especificación alternativa (no suma). ▸ ramifica una pieza; toca el
+				nombre para editar a detalle.
+			</p>
 		</div>
 	);
 

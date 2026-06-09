@@ -46,12 +46,18 @@ const recipeSchema = z.object({
 	yield_quantity_pieces: z.union([z.string(), z.number()]),
 	yield_weight_ratio: z.union([z.string(), z.number()]),
 	transformation_type: z.string(),
+	is_variant: z.boolean(),
 	is_active: z.boolean(),
-	parentProduct: z.object({ id: z.number(), name: z.string() }),
+	parentProduct: z.object({
+		id: z.number(),
+		name: z.string(),
+		avg_weight: z.union([z.string(), z.number()]).nullable(),
+	}),
 	childProduct: z.object({
 		id: z.number(),
 		name: z.string(),
 		is_parent_product: z.boolean(),
+		avg_weight: z.union([z.string(), z.number()]).nullable(),
 	}),
 });
 
@@ -498,12 +504,18 @@ export const inventoryRouter = router({
 					yield_quantity_pieces: productTransformations.yield_quantity_pieces,
 					yield_weight_ratio: productTransformations.yield_weight_ratio,
 					transformation_type: productTransformations.transformation_type,
+					is_variant: productTransformations.is_variant,
 					is_active: productTransformations.is_active,
-					parentProduct: { id: parent.id, name: parent.name },
+					parentProduct: {
+						id: parent.id,
+						name: parent.name,
+						avg_weight: parent.avg_weight_per_piece_kg,
+					},
 					childProduct: {
 						id: child.id,
 						name: child.name,
 						is_parent_product: child.is_parent_product,
+						avg_weight: child.avg_weight_per_piece_kg,
 					},
 				})
 				.from(productTransformations)
@@ -672,6 +684,46 @@ export const inventoryRouter = router({
 
 				return { success: true, id: created.id };
 			});
+		}),
+
+	// Edición rápida inline (configurador): piezas, % (derivado de kg) y variante
+	recipesQuickUpdate: adminProcedure
+		.input(
+			z.object({
+				id: z.number(),
+				yieldQuantityPieces: z.number().min(0).optional(),
+				yieldWeightRatio: z.number().min(0).optional(),
+				isVariant: z.boolean().optional(),
+			}),
+		)
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ input }) => {
+			const set: Record<string, unknown> = { updated_at: new Date() };
+			if (input.yieldQuantityPieces !== undefined)
+				set.yield_quantity_pieces = input.yieldQuantityPieces.toFixed(2);
+			if (input.yieldWeightRatio !== undefined)
+				set.yield_weight_ratio = input.yieldWeightRatio.toFixed(4);
+			if (input.isVariant !== undefined) set.is_variant = input.isVariant;
+			await db
+				.update(productTransformations)
+				.set(set)
+				.where(eq(productTransformations.id, input.id));
+			return { success: true };
+		}),
+
+	// Peso de referencia de un producto (base para calcular % de sus subpiezas)
+	setRefWeight: adminProcedure
+		.input(z.object({ productId: z.number(), kg: z.number().min(0) }))
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ input }) => {
+			await db
+				.update(products)
+				.set({
+					avg_weight_per_piece_kg: input.kg > 0 ? input.kg.toFixed(3) : null,
+					updated_at: new Date(),
+				})
+				.where(eq(products.id, input.productId));
+			return { success: true };
 		}),
 
 	recipesSetActive: adminProcedure

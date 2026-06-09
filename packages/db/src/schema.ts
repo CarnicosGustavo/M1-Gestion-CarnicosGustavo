@@ -296,6 +296,8 @@ export const productTransformations = pgTable("product_transformations", {
 		scale: 4,
 	}).notNull(),
 	transformation_type: varchar("transformation_type", { length: 50 }).notNull(), // e.g., 'NACIONAL', 'AMERICANO'
+	// Variante: especificación alternativa (no suma al peso del padre)
+	is_variant: boolean("is_variant").notNull().default(false),
 	is_active: boolean("is_active").notNull().default(true),
 	created_at: timestamp("created_at").notNull().defaultNow(),
 	updated_at: timestamp("updated_at").notNull().defaultNow(),
