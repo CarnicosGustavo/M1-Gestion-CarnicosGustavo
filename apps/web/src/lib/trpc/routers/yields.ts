@@ -9,7 +9,7 @@ import {
 	productTransformations,
 	inventoryTransactions,
 } from "@/lib/db/schema";
-import { eq, desc, and, ilike } from "drizzle-orm";
+import { eq, desc, and, ilike, sql } from "drizzle-orm";
 
 const itemInput = z.object({
 	productId: z.number().nullable().optional(),
@@ -223,6 +223,89 @@ export const yieldsRouter = router({
 			a.productName.localeCompare(b.productName),
 		);
 	}),
+
+	// Calibra las recetas con los pesos reales pesados en un día: recalcula el
+	// yield_weight_ratio de cada transformación cuya pieza fue pesada ese día.
+	//  - Para piezas del canal (1er nivel): % = kg de la pieza / kg del canal.
+	//  - Para sub-piezas (2º nivel): % = kg de la pieza / kg de su pieza padre
+	//    (solo si el padre también se pesó). Lo no pesado se conserva.
+	calibrateFromDay: protectedProcedure
+		.input(z.object({ date: z.string() }))
+		.mutation(async ({ ctx, input }) => {
+			// Peso de canal del día (verificado si existe, si no el comprado)
+			const buys = await db
+				.select({
+					total: channelPurchases.total_kg,
+					verif: channelPurchases.verified_kg,
+				})
+				.from(channelPurchases)
+				.where(
+					and(
+						eq(channelPurchases.user_uid, ctx.user.id),
+						eq(channelPurchases.purchase_date, input.date),
+					),
+				);
+			const totalCanalKg = buys.reduce(
+				(a, b) =>
+					a + (b.verif != null ? Number(b.verif) : Number(b.total) || 0),
+				0,
+			);
+			if (totalCanalKg <= 0) {
+				throw new Error(
+					"Captura primero la compra/peso de canales del día (Compra del día).",
+				);
+			}
+
+			// Kg real pesado por producto ese día (renglones PESADO)
+			const realRows = (await db.execute(sql`
+				SELECT oi.product_id AS pid, COALESCE(SUM(oi.quantity_kg),0) AS kg
+				FROM order_items oi
+				JOIN orders o ON o.id = oi.order_id
+				WHERE oi.status = 'PESADO'
+				  AND oi.product_id IS NOT NULL
+				  AND o.created_at::date = ${input.date}
+				GROUP BY oi.product_id
+			`)) as unknown as { pid: number; kg: string | number }[];
+			const realW = new Map<number, number>();
+			for (const r of realRows as any[]) {
+				realW.set(Number(r.pid), Number(r.kg) || 0);
+			}
+
+			const txns = await db
+				.select({
+					id: productTransformations.id,
+					parentId: productTransformations.parent_product_id,
+					childId: productTransformations.child_product_id,
+				})
+				.from(productTransformations)
+				.where(eq(productTransformations.is_active, true));
+
+			const childIds = new Set(txns.map((t) => t.childId));
+			const isRoot = (id: number) => !childIds.has(id); // canal: no es hijo de nadie
+
+			let updated = 0;
+			for (const t of txns) {
+				const childKg = realW.get(t.childId);
+				if (!childKg || childKg <= 0) continue;
+				let newRatio: number;
+				if (isRoot(t.parentId)) {
+					newRatio = childKg / totalCanalKg;
+				} else {
+					const parentKg = realW.get(t.parentId);
+					if (!parentKg || parentKg <= 0) continue;
+					newRatio = childKg / parentKg;
+				}
+				await db
+					.update(productTransformations)
+					.set({
+						yield_weight_ratio: newRatio.toFixed(4),
+						updated_at: new Date(),
+					})
+					.where(eq(productTransformations.id, t.id));
+				updated += 1;
+			}
+			return { updated, totalCanalKg, piezasPesadas: realW.size };
+		}),
 
 	// Lista de canales (raíz del despiece) para elegir qué proyectar
 	canales: protectedProcedure.input(z.void()).query(async () => {

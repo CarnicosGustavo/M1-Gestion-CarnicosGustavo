@@ -211,6 +211,27 @@ export default function YieldPage() {
 		}),
 	);
 
+	const calibrateMutation = useMutation(
+		trpc.yields.calibrateFromDay.mutationOptions({
+			onSuccess: (d: any) => {
+				toast.success(
+					`Recetas calibradas: ${d.updated} transformación(es) actualizada(s) con ${d.piezasPesadas} pieza(s) del día.`,
+				);
+			},
+			onError: (e: any) => toast.error(e.message ?? "No se pudo calibrar"),
+		}),
+	);
+
+	const calibrate = () => {
+		if (
+			!window.confirm(
+				"¿Volcar los pesos reales pesados de este día a las recetas? Recalcula el % de cada pieza que se pesó hoy (las que no se pesaron se conservan). Esto actualiza las recetas globales.",
+			)
+		)
+			return;
+		calibrateMutation.mutate({ date: yieldDate });
+	};
+
 	const totals = useMemo(() => {
 		let piezas = 0, estimado = 0, real = 0;
 		for (const r of rows) {
@@ -445,12 +466,23 @@ export default function YieldPage() {
 							onChange={(e) => setYieldDate(e.target.value)}
 						/>
 					</div>
-					<div className="sm:col-span-2 flex items-end">
+					<div className="sm:col-span-2 flex items-end justify-between gap-3">
 						<p className="text-xs text-muted-foreground">
 							{dayBuy.canales > 0
 								? `${dayBuy.usaVerif ? "Recibido en CEDIS" : "Compra del día"}: ${dayBuy.canales} canales · ${dayBuy.kg.toLocaleString("es-MX", { maximumFractionDigits: 0 })} kg${dayBuy.prov ? ` · ${dayBuy.prov}` : ""}`
 								: "No hay compra registrada para este día. Captúrala en “Compra del día”."}
 						</p>
+						<Button
+							variant="outline"
+							size="sm"
+							className="shrink-0 border-blue-400 text-blue-700 hover:bg-blue-50"
+							disabled={calibrateMutation.isPending || dayBuy.kg <= 0}
+							onClick={calibrate}
+							title="Recalcula el % de cada pieza en las recetas con los pesos reales pesados hoy"
+						>
+							<SparklesIcon className="mr-2 h-4 w-4" />
+							{calibrateMutation.isPending ? "Calibrando…" : "Calibrar recetas con el día"}
+						</Button>
 					</div>
 				</CardContent>
 			</Card>
