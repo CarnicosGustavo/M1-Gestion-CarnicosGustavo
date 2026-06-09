@@ -66,32 +66,39 @@ interface NavItem {
 	icon: LucideIcon;
 }
 
-const navItems: NavItem[] = [
+// Operación del día (barra lateral): lo básico para un día de trabajo fluido
+const opNav: NavItem[] = [
 	{ href: "/admin", labelKey: "dashboard", icon: LayoutDashboardIcon },
-	{ href: "/admin/cashier", labelKey: "cashier", icon: DollarSignIcon },
-	{ href: "/admin/products", labelKey: "products", icon: PackageIcon },
-	{ href: "/admin/inventory/recipes", labelKey: "recipes", icon: BookOpenIcon },
+	{ href: "/admin/orders", labelKey: "orders", icon: ShoppingBagIcon },
 	{ href: "/admin/despiece", labelKey: "disassembly", icon: ScissorsIcon },
 	{
 		href: "/admin/weighing-station",
 		labelKey: "weighingStation",
 		icon: ScaleIcon,
 	},
-	{ href: "/admin/yield", labelKey: "yield", icon: ClipboardListIcon },
 	{ href: "/admin/checkout", labelKey: "checkout", icon: BanknoteIcon },
-	{ href: "/admin/cold-inventory", labelKey: "coldInventory", icon: SnowflakeIcon },
-	{ href: "/admin/customers", labelKey: "customers", icon: UsersIcon },
-	{ href: "/admin/prices", labelKey: "prices", icon: TagIcon },
+	{ href: "/admin/yield", labelKey: "yield", icon: ClipboardListIcon },
 	{ href: "/admin/collections", labelKey: "collections", icon: HandCoinsIcon },
-	{ href: "/admin/orders", labelKey: "orders", icon: ShoppingBagIcon },
+	{ href: "/admin/customers", labelKey: "customers", icon: UsersIcon },
+	{ href: "/admin/pos", labelKey: "pos", icon: ShoppingCartIcon },
+];
+
+// Configuración (agrupado en un menú): catálogo, recetas, precios, ajustes…
+const cfgNav: NavItem[] = [
+	{ href: "/admin/products", labelKey: "products", icon: PackageIcon },
+	{ href: "/admin/inventory/recipes", labelKey: "recipes", icon: BookOpenIcon },
+	{ href: "/admin/prices", labelKey: "prices", icon: TagIcon },
+	{ href: "/admin/cold-inventory", labelKey: "coldInventory", icon: SnowflakeIcon },
+	{ href: "/admin/cashier", labelKey: "cashier", icon: DollarSignIcon },
 	{
 		href: "/admin/payment-methods",
 		labelKey: "paymentMethods",
 		icon: CreditCardIcon,
 	},
-	{ href: "/admin/pos", labelKey: "pos", icon: ShoppingCartIcon },
 	{ href: "/admin/settings", labelKey: "settings", icon: SettingsIcon },
 ];
+
+const navItems: NavItem[] = [...opNav, ...cfgNav];
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
 	const pathname = usePathname();
@@ -102,6 +109,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 	const pageNames: Record<string, string> = Object.fromEntries(
 		navItems.map((item) => [item.href, t(item.labelKey)]),
 	);
+	const cfgActive = cfgNav.some((i) => i.href === pathname);
 
 	return (
 		<div className="flex min-h-screen w-full flex-col bg-muted/40">
@@ -190,7 +198,28 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 								<XIcon className="h-5 w-5" />
 							</Button>
 						</div>
-						{navItems.map(({ href, labelKey, icon: Icon }) => (
+						<p className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+							Operación
+						</p>
+						{opNav.map(({ href, labelKey, icon: Icon }) => (
+							<Link
+								key={href}
+								href={href}
+								onClick={() => setMobileMenuOpen(false)}
+								className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+									pathname === href
+										? "bg-accent font-medium text-accent-foreground"
+										: "text-muted-foreground hover:bg-muted hover:text-foreground"
+								}`}
+							>
+								<Icon className="h-5 w-5 shrink-0" />
+								{t(labelKey)}
+							</Link>
+						))}
+						<p className="mt-2 px-3 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+							Configuración
+						</p>
+						{cfgNav.map(({ href, labelKey, icon: Icon }) => (
 							<Link
 								key={href}
 								href={href}
@@ -211,9 +240,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
 			<div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14">
 				<aside className="fixed inset-y-0 left-0 z-10 mt-[56px] hidden w-14 flex-col border-r bg-background sm:flex">
-					<nav className="flex flex-col items-center gap-4 px-2 sm:py-5">
+					<nav className="flex flex-col items-center gap-3 px-2 sm:py-5">
 						<TooltipProvider>
-							{navItems.map(({ href, labelKey, icon: Icon }) => (
+							{opNav.map(({ href, labelKey, icon: Icon }) => (
 								<Tooltip key={href}>
 									<TooltipTrigger asChild>
 										<Link
@@ -231,6 +260,48 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 									<TooltipContent side="right">{t(labelKey)}</TooltipContent>
 								</Tooltip>
 							))}
+
+							{/* Separador */}
+							<div className="my-1 h-px w-6 bg-border" />
+
+							{/* Configuración: submenú con el resto de páginas */}
+							<DropdownMenu>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<DropdownMenuTrigger asChild>
+											<button
+												type="button"
+												className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+													cfgActive
+														? "bg-accent text-accent-foreground"
+														: "text-muted-foreground"
+												} transition-colors hover:text-foreground md:h-8 md:w-8`}
+											>
+												<SettingsIcon className="h-5 w-5" />
+												<span className="sr-only">Configuración</span>
+											</button>
+										</DropdownMenuTrigger>
+									</TooltipTrigger>
+									<TooltipContent side="right">Configuración</TooltipContent>
+								</Tooltip>
+								<DropdownMenuContent side="right" align="end" className="w-52">
+									<DropdownMenuLabel>Configuración</DropdownMenuLabel>
+									<DropdownMenuSeparator />
+									{cfgNav.map(({ href, labelKey, icon: Icon }) => (
+										<DropdownMenuItem key={href} asChild>
+											<Link
+												href={href}
+												className={`flex items-center gap-2 ${
+													pathname === href ? "font-medium text-foreground" : ""
+												}`}
+											>
+												<Icon className="h-4 w-4" />
+												{t(labelKey)}
+											</Link>
+										</DropdownMenuItem>
+									))}
+								</DropdownMenuContent>
+							</DropdownMenu>
 						</TooltipProvider>
 					</nav>
 				</aside>
