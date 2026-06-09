@@ -66,6 +66,89 @@ export const yieldsRouter = router({
 			return result;
 		}),
 
+	// Fechas con compra registrada (para el selector de día)
+	purchaseDates: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
+		const rows = await db
+			.selectDistinct({ date: channelPurchases.purchase_date })
+			.from(channelPurchases)
+			.where(eq(channelPurchases.user_uid, ctx.user.id))
+			.orderBy(desc(channelPurchases.purchase_date));
+		return rows.map((r) => r.date).filter(Boolean) as string[];
+	}),
+
+	// Compra en pie de un día (renglones por proveedor)
+	purchasesByDate: protectedProcedure
+		.input(z.object({ date: z.string() }))
+		.query(async ({ ctx, input }) => {
+			const rows = await db
+				.select()
+				.from(channelPurchases)
+				.where(
+					and(
+						eq(channelPurchases.user_uid, ctx.user.id),
+						eq(channelPurchases.purchase_date, input.date),
+					),
+				)
+				.orderBy(channelPurchases.id);
+			return rows.map((r) => ({
+				id: r.id,
+				supplier: r.supplier ?? "",
+				canales: r.num_medias,
+				kg: Number(r.total_kg),
+				precio: r.price_per_kg != null ? Number(r.price_per_kg) : 0,
+				americano: r.qty_americano,
+				nacional: r.qty_nacional,
+			}));
+		}),
+
+	// Guarda la compra en pie de un día: reemplaza los renglones de esa fecha
+	savePurchases: protectedProcedure
+		.input(
+			z.object({
+				date: z.string(),
+				rows: z.array(
+					z.object({
+						supplier: z.string().default(""),
+						canales: z.number().int().min(0).default(0),
+						kg: z.number().min(0).default(0),
+						precio: z.number().min(0).default(0),
+						americano: z.number().int().min(0).default(0),
+						nacional: z.number().int().min(0).default(0),
+					}),
+				),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			return db.transaction(async (tx) => {
+				await tx
+					.delete(channelPurchases)
+					.where(
+						and(
+							eq(channelPurchases.user_uid, ctx.user.id),
+							eq(channelPurchases.purchase_date, input.date),
+						),
+					);
+				const valid = input.rows.filter(
+					(r) => r.supplier.trim() || r.canales > 0 || r.kg > 0,
+				);
+				if (valid.length > 0) {
+					await tx.insert(channelPurchases).values(
+						valid.map((r) => ({
+							supplier: r.supplier.trim() || null,
+							num_medias: r.canales,
+							total_kg: r.kg.toFixed(3),
+							price_per_kg: r.precio > 0 ? r.precio.toFixed(2) : null,
+							qty_americano: r.americano,
+							qty_nacional: r.nacional,
+							purchase_date: input.date,
+							user_uid: ctx.user.id,
+						})),
+					);
+				}
+				return { success: true, count: valid.length };
+			});
+		}),
+
 	// Última compra de canales registrada (para auto-rellenar la hoja)
 	latestPurchase: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
 		const [p] = await db

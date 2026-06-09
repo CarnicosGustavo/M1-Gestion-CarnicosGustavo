@@ -23,6 +23,7 @@ import {
 	type LucideIcon,
 	MenuIcon,
 	PackageIcon,
+	PiggyBankIcon,
 	ScaleIcon,
 	ClipboardListIcon,
 	TagIcon,
@@ -48,6 +49,7 @@ interface NavItem {
 	href: string;
 	labelKey:
 		| "dashboard"
+		| "purchase"
 		| "cashier"
 		| "products"
 		| "recipes"
@@ -69,6 +71,7 @@ interface NavItem {
 // Operación del día (barra lateral): lo básico para un día de trabajo fluido
 const opNav: NavItem[] = [
 	{ href: "/admin", labelKey: "dashboard", icon: LayoutDashboardIcon },
+	{ href: "/admin/purchase", labelKey: "purchase", icon: PiggyBankIcon },
 	{ href: "/admin/orders", labelKey: "orders", icon: ShoppingBagIcon },
 	{ href: "/admin/despiece", labelKey: "disassembly", icon: ScissorsIcon },
 	{

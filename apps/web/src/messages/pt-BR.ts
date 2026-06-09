@@ -42,6 +42,7 @@ const messages: Messages = {
 	},
 	nav: {
 		dashboard: "Painel",
+		purchase: "Compra do dia",
 		cashier: "Caixa",
 		products: "Produtos",
 		recipes: "Receitas",
