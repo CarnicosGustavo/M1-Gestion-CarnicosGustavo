@@ -54,7 +54,7 @@ export default function RecipesPage() {
 	const tc = useTranslations("common");
 	const locale = useLocale();
 
-	const [viewMode, setViewMode] = useState<"table" | "map">("table");
+	const [viewMode, setViewMode] = useState<"table" | "map" | "board">("table");
 	const [search, setSearch] = useState("");
 	const [parentFilter, setParentFilter] = useState("all");
 	const [typeFilter, setTypeFilter] = useState<
@@ -467,6 +467,139 @@ export default function RecipesPage() {
 		);
 	}, [canalRootId, mapByParentId, mapProductById, mapStyle]);
 
+	// --- Datos del TABLERO ---
+	// 1er nivel: una tarjeta por estilo de canal (sus piezas directas).
+	const boardStyles = useMemo(() => {
+		const byType = new Map<string, Recipe[]>();
+		for (const r of mapRecipes) {
+			if (r.transformation_type === "BASE") continue;
+			const arr = byType.get(r.transformation_type) ?? [];
+			arr.push(r);
+			byType.set(r.transformation_type, arr);
+		}
+		return [...byType.entries()]
+			.map(([type, rows]) => ({
+				type,
+				parent: rows[0]?.parentProduct?.name ?? "",
+				rows: rows
+					.slice()
+					.sort((a, b) => a.childProduct.name.localeCompare(b.childProduct.name)),
+				sumPct: rows.reduce(
+					(s, r) => s + Number(r.yield_weight_ratio) * 100,
+					0,
+				),
+			}))
+			.sort((a, b) => a.type.localeCompare(b.type));
+	}, [mapRecipes]);
+
+	// 2º nivel: una tarjeta por pieza padre (BASE).
+	const boardBase = useMemo(() => {
+		const byParent = new Map<string, Recipe[]>();
+		for (const r of mapRecipes) {
+			if (r.transformation_type !== "BASE") continue;
+			const arr = byParent.get(r.parentProduct.name) ?? [];
+			arr.push(r);
+			byParent.set(r.parentProduct.name, arr);
+		}
+		return [...byParent.entries()]
+			.map(([parent, rows]) => ({
+				parent,
+				rows: rows
+					.slice()
+					.sort((a, b) => a.childProduct.name.localeCompare(b.childProduct.name)),
+				sumPct: rows.reduce(
+					(s, r) => s + Number(r.yield_weight_ratio) * 100,
+					0,
+				),
+			}))
+			.sort((a, b) => a.parent.localeCompare(b.parent));
+	}, [mapRecipes]);
+
+	const PieceList = ({ rows }: { rows: Recipe[] }) => (
+		<div className="divide-y">
+			{rows.map((r) => (
+				<button
+					key={r.id}
+					type="button"
+					onClick={() => openEdit(r)}
+					className="flex w-full items-center justify-between gap-2 px-1 py-1.5 text-left hover:bg-muted/60"
+				>
+					<span className="min-w-0 truncate text-sm font-medium">
+						{r.childProduct.name}
+						<span className="ml-1 text-[10px] text-muted-foreground">
+							×{Number(r.yield_quantity_pieces)}
+						</span>
+					</span>
+					<span className="shrink-0 text-xs font-bold text-blue-600">
+						{(Number(r.yield_weight_ratio) * 100).toFixed(1)}%
+					</span>
+				</button>
+			))}
+		</div>
+	);
+
+	const renderBoard = () => (
+		<div className="space-y-5">
+			<div>
+				<h3 className="mb-2 text-sm font-semibold text-muted-foreground">
+					Estilos de canal (1er nivel)
+				</h3>
+				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+					{boardStyles.map((s) => (
+						<div key={s.type} className="rounded-xl border bg-card p-3">
+							<div className="mb-2 flex items-center justify-between">
+								<div className="min-w-0">
+									<div className="truncate font-bold">
+										{s.parent || s.type}
+									</div>
+									<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+										{s.type} · {s.rows.length} piezas
+									</div>
+								</div>
+								<span
+									className={cn(
+										"shrink-0 rounded-md px-2 py-1 text-xs font-bold",
+										s.sumPct > 100
+											? "bg-red-50 text-red-700"
+											: "bg-blue-50 text-blue-700",
+									)}
+									title="Suma de % de peso (debería acercarse a 100%)"
+								>
+									Σ {s.sumPct.toFixed(0)}%
+								</span>
+							</div>
+							<PieceList rows={s.rows} />
+						</div>
+					))}
+				</div>
+			</div>
+
+			{boardBase.length > 0 && (
+				<div>
+					<h3 className="mb-2 text-sm font-semibold text-muted-foreground">
+						Sub-despieces (2º nivel)
+					</h3>
+					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+						{boardBase.map((b) => (
+							<div key={b.parent} className="rounded-xl border bg-card p-3">
+								<div className="mb-2 flex items-center justify-between">
+									<div className="truncate font-bold">{b.parent}</div>
+									<span
+										className="shrink-0 rounded-md bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700"
+										title="Suma de % respecto a la pieza padre"
+									>
+										Σ {b.sumPct.toFixed(0)}%
+									</span>
+								</div>
+								<PieceList rows={b.rows} />
+							</div>
+						))}
+					</div>
+				</div>
+			)}
+		</div>
+	);
+
 	const columns: Column<Recipe>[] = [
 		{
 			key: "parent",
@@ -694,15 +827,23 @@ export default function RecipesPage() {
 						) : null}
 					</div>
 					<div className="flex items-center gap-2">
-						<Button
-							size="sm"
-							variant={viewMode === "map" ? "default" : "outline"}
-							onClick={() =>
-								setViewMode((v) => (v === "map" ? "table" : "map"))
-							}
-						>
-							{viewMode === "map" ? "Tabla" : "Mapa"}
-						</Button>
+						<div className="inline-flex overflow-hidden rounded-lg border">
+							{(["table", "board", "map"] as const).map((v) => (
+								<button
+									key={v}
+									type="button"
+									onClick={() => setViewMode(v)}
+									className={cn(
+										"px-3 py-1.5 text-xs font-semibold transition-colors",
+										viewMode === v
+											? "bg-primary text-primary-foreground"
+											: "bg-background text-muted-foreground hover:bg-muted",
+									)}
+								>
+									{v === "table" ? "Tabla" : v === "board" ? "Tablero" : "Mapa"}
+								</button>
+							))}
+						</div>
 						<Button size="sm" onClick={openCreate}>
 							<PlusCircle className="mr-2 h-4 w-4" />
 							Nueva receta
@@ -712,7 +853,13 @@ export default function RecipesPage() {
 			</CardHeader>
 
 			<CardContent className="p-0">
-				{viewMode === "map" ? (
+				{viewMode === "board" ? (
+					<p className="text-sm text-muted-foreground">
+						Tablero de recetas: cada tarjeta es un estilo de canal (1er nivel) o
+						una pieza con sub-despiece (2º nivel). El % es la parte del peso del
+						padre; Σ es la suma. Toca una pieza para editar su receta.
+					</p>
+				) : viewMode === "map" ? (
 					<div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 						<div className="space-y-1">
 							<Label>Estilo (Mapa)</Label>
@@ -897,6 +1044,8 @@ export default function RecipesPage() {
 			<CardContent className="p-0">
 				{viewMode === "map" ? (
 					<div className="rounded-md border p-4">{renderMapTree}</div>
+				) : viewMode === "board" ? (
+					renderBoard()
 				) : (
 					<DataTable
 						data={filteredRecipes}
