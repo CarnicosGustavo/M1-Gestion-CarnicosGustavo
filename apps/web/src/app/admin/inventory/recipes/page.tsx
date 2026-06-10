@@ -58,7 +58,13 @@ export default function RecipesPage() {
 	const [search, setSearch] = useState("");
 	const [parentFilter, setParentFilter] = useState("all");
 	const [typeFilter, setTypeFilter] = useState<
-		"all" | "BASE" | "NACIONAL" | "AMERICANO" | "POLINESIO"
+		| "all"
+		| "BASE"
+		| "NACIONAL"
+		| "AMERICANO"
+		| "POLINESIO"
+		| "NACIONAL_LOMO"
+		| "NACIONAL_ESPILOMO"
 	>("all");
 	const [statusFilter, setStatusFilter] = useState<"active" | "all">("active");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -396,7 +402,7 @@ export default function RecipesPage() {
 			parentId: number,
 			depth: number,
 			visited: Set<number>,
-		): JSX.Element | null => {
+		) => {
 			if (visited.has(parentId)) return null;
 			visited.add(parentId);
 			const byType = mapByParentId.get(parentId);
@@ -599,7 +605,7 @@ export default function RecipesPage() {
 		r: Recipe,
 		refW: number,
 		ancestors: number[],
-	): JSX.Element => {
+	) => {
 		const ratio = Number(r.yield_weight_ratio);
 		const pieces = Number(r.yield_quantity_pieces);
 		const kg = refW > 0 ? ratio * refW : 0;
@@ -728,10 +734,38 @@ export default function RecipesPage() {
 					</span>
 				</div>
 				{expanded && (
-					<div className="ml-5 mt-1 mb-2 rounded-lg border border-l-2 border-l-blue-400 bg-muted/20 p-2">
+					<div
+						className={cn(
+							"ml-5 mt-1 mb-2 rounded-lg border border-l-2 border-l-blue-400 bg-muted/20 p-2",
+							dropTarget === `branch:${r.id}` && "ring-2 ring-blue-400",
+						)}
+						onDragOver={(e) => {
+							if (draggedChild) {
+								e.preventDefault();
+								e.stopPropagation();
+								setDropTarget(`branch:${r.id}`);
+							}
+						}}
+						onDragLeave={() =>
+							setDropTarget((t) => (t === `branch:${r.id}` ? null : t))
+						}
+						onDrop={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							if (draggedChild)
+								dropCreate(r.child_product_id, "BASE", draggedChild);
+							clearDrag();
+							setDropTarget(null);
+						}}
+					>
 						<div className="mb-1 flex flex-wrap items-center justify-between gap-2">
 							<span className="text-[11px] font-semibold text-muted-foreground">
 								Despiece de {r.childProduct.name}
+								{draggedChild && (
+									<span className="ml-2 font-normal text-blue-600">
+										· suelta aquí para agregar sub-pieza
+									</span>
+								)}
 							</span>
 							<RefWeightControl
 								productId={r.child_product_id}
@@ -756,52 +790,346 @@ export default function RecipesPage() {
 		);
 	};
 
-	const renderBoard = () => (
-		<div className="space-y-4">
-			<div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-				{boardStyles.map((s) => (
-					<div key={s.type} className="rounded-xl border bg-card p-3">
-						<div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+	// --- Paleta + drag & drop + acentos + modo enfoque ---
+	const STYLE_ACCENTS: Record<string, string> = {
+		AMERICANO: "#e11d48",
+		NACIONAL_LOMO: "#16a34a",
+		NACIONAL_ESPILOMO: "#0d9488",
+		POLINESIO: "#ea580c",
+	};
+	const accentFor = (t: string) => STYLE_ACCENTS[t] ?? "#2563eb";
+	const CAT_COLORS: Record<string, string> = {
+		Canales: "#e11d48",
+		Lomos: "#dc2626",
+		Jamones: "#d97706",
+		Cueros: "#ea580c",
+		Pulpas: "#db2777",
+		Visceras: "#9333ea",
+		Huesos: "#78716c",
+		Otros: "#0d9488",
+		General: "#64748b",
+		Compra: "#16a34a",
+		Duplicado: "#9ca3af",
+	};
+	const PALETTE_ORDER = [
+		"Canales",
+		"Lomos",
+		"Jamones",
+		"Cueros",
+		"Pulpas",
+		"Visceras",
+		"Huesos",
+		"Otros",
+		"General",
+		"Compra",
+		"Duplicado",
+	];
+
+	const [paletteQuery, setPaletteQuery] = useState("");
+	const [focusedType, setFocusedType] = useState<string | null>(null);
+	const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+	// Uso por producto: en qué estilos sale (1er nivel) y de qué piezas (BASE)
+	const styleUseByChild = useMemo(() => {
+		const m = new Map<number, { type: string }[]>();
+		for (const r of mapRecipes) {
+			if (r.transformation_type === "BASE") continue;
+			const arr = m.get(r.child_product_id) ?? [];
+			if (!arr.some((x) => x.type === r.transformation_type))
+				arr.push({ type: r.transformation_type });
+			m.set(r.child_product_id, arr);
+		}
+		return m;
+	}, [mapRecipes]);
+	const parentUseByChild = useMemo(() => {
+		const m = new Map<number, string[]>();
+		for (const r of mapRecipes) {
+			if (r.transformation_type !== "BASE") continue;
+			const arr = m.get(r.child_product_id) ?? [];
+			if (!arr.includes(r.parentProduct.name)) arr.push(r.parentProduct.name);
+			m.set(r.child_product_id, arr);
+		}
+		return m;
+	}, [mapRecipes]);
+
+	const paletteGroups = useMemo(() => {
+		const q = paletteQuery.trim().toLowerCase();
+		const g = new Map<string, Product[]>();
+		for (const p of productOptions) {
+			if (q && !p.name.toLowerCase().includes(q)) continue;
+			const cat =
+				p.category && PALETTE_ORDER.includes(p.category) ? p.category : "Otros";
+			const arr = g.get(cat) ?? [];
+			arr.push(p);
+			g.set(cat, arr);
+		}
+		return g;
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [productOptions, paletteQuery]);
+
+	// Crear receta al soltar un producto (en estilo o en ramificación)
+	const dropCreate = (
+		parentProductId: number,
+		transformationType: string,
+		child: { id: number; name: string },
+	) => {
+		if (child.id === parentProductId) return;
+		upsertMutation.mutate({
+			parentProductId,
+			childProductId: child.id,
+			yieldQuantityPieces: 1,
+			yieldWeightRatio: 0,
+			transformationType,
+			isActive: true,
+		});
+	};
+
+	const PaletteChip = ({ p }: { p: Product }) => {
+		const styles = styleUseByChild.get(p.id) ?? [];
+		const parents = parentUseByChild.get(p.id) ?? [];
+		const isSupplier = p.category === "Compra";
+		const orphan = !isSupplier && styles.length === 0 && parents.length === 0;
+		return (
+			<div
+				draggable
+				onDragStart={(e) => {
+					setDraggedChild({ id: p.id, name: p.name });
+					e.dataTransfer.effectAllowed = "copy";
+				}}
+				onDragEnd={clearDrag}
+				className="cursor-grab rounded-lg border bg-background px-2 py-1.5 active:cursor-grabbing hover:border-foreground/30"
+				title="Arrastra a un estilo o a una ramificación"
+			>
+				<div className="flex items-center gap-1.5">
+					<span
+						className="h-2 w-2 shrink-0 rounded-full"
+						style={{ background: CAT_COLORS[p.category ?? "Otros"] ?? "#64748b" }}
+					/>
+					<span className="min-w-0 flex-1 truncate text-xs font-semibold">
+						{p.name}
+					</span>
+					{p.avg_weight_per_piece_kg != null &&
+						Number(p.avg_weight_per_piece_kg) > 0 && (
+							<span className="shrink-0 text-[9px] text-muted-foreground">
+								{Number(p.avg_weight_per_piece_kg)}kg
+							</span>
+						)}
+				</div>
+				{(styles.length > 0 || parents.length > 0 || orphan || isSupplier) && (
+					<div className="mt-0.5 flex flex-wrap gap-0.5">
+						{styles.map((s) => (
+							<span
+								key={s.type}
+								className="rounded border px-1 text-[8px] font-bold leading-3"
+								style={{ color: accentFor(s.type), borderColor: accentFor(s.type) }}
+							>
+								{s.type.replace("NACIONAL_", "N·")}
+							</span>
+						))}
+						{parents.map((n) => (
+							<span
+								key={n}
+								className="rounded bg-muted px-1 text-[8px] font-semibold leading-3 text-muted-foreground"
+							>
+								⑂ {n}
+							</span>
+						))}
+						{isSupplier && (
+							<span className="rounded bg-green-50 px-1 text-[8px] font-bold leading-3 text-green-700">
+								proveedor
+							</span>
+						)}
+						{orphan && (
+							<span className="rounded bg-amber-50 px-1 text-[8px] font-bold leading-3 text-amber-700">
+								sin ubicar
+							</span>
+						)}
+					</div>
+				)}
+			</div>
+		);
+	};
+
+	const styleCard = (s: (typeof boardStyles)[number], focus: boolean) => {
+		const accent = accentFor(s.type);
+		const dkey = `style:${s.type}`;
+		return (
+			<div
+				key={s.type}
+				className={cn(
+					"overflow-hidden rounded-xl border bg-card",
+					dropTarget === dkey && "ring-2 ring-offset-1",
+				)}
+				style={dropTarget === dkey ? ({ ["--tw-ring-color" as any]: accent } as any) : undefined}
+				onDragOver={(e) => {
+					if (draggedChild) {
+						e.preventDefault();
+						setDropTarget(dkey);
+					}
+				}}
+				onDragLeave={() => setDropTarget((t) => (t === dkey ? null : t))}
+				onDrop={(e) => {
+					e.preventDefault();
+					if (draggedChild) dropCreate(s.parentId, s.type, draggedChild);
+					clearDrag();
+					setDropTarget(null);
+				}}
+			>
+				<div className="h-1 w-full" style={{ background: accent }} />
+				<div className="p-3">
+					<div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+						<div className="flex min-w-0 items-center gap-2">
 							<div className="min-w-0">
 								<div className="truncate font-bold">{s.parent || s.type}</div>
-								<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-									{s.type} · {s.rows.length} piezas
-								</div>
-							</div>
-							<div className="flex items-center gap-3">
-								<RefWeightControl
-									productId={s.parentId}
-									kg={s.canalW}
-									label="Peso del canal"
-								/>
-								<Button
-									variant="outline"
-									size="sm"
-									className="h-7 px-2 text-xs"
-									onClick={() =>
-										openCreateChild(s.parentId, s.type, { id: 0, name: "" })
-									}
+								<span
+									className="rounded border px-1 text-[9px] font-bold uppercase tracking-wide"
+									style={{ color: accent, borderColor: accent }}
 								>
-									<PlusCircle className="mr-1 h-3.5 w-3.5" />
-									Pieza
-								</Button>
+									{s.type}
+								</span>
+								<span className="ml-1 text-[10px] text-muted-foreground">
+									{s.rows.length} piezas
+								</span>
 							</div>
 						</div>
-						<div className="divide-y">
-							{s.rows.map((r) => recipeRow(r, s.canalW, [s.parentId]))}
+						<div className="flex items-center gap-2">
+							<RefWeightControl
+								productId={s.parentId}
+								kg={s.canalW}
+								label="Peso del canal"
+							/>
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-7 px-2 text-xs"
+								onClick={() =>
+									openCreateChild(s.parentId, s.type, { id: 0, name: "" })
+								}
+							>
+								<PlusCircle className="mr-1 h-3.5 w-3.5" />
+								Pieza
+							</Button>
+							<button
+								type="button"
+								className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+								title={focus ? "Volver al tablero" : "Editar a detalle (enfoque)"}
+								onClick={() => setFocusedType(focus ? null : s.type)}
+							>
+								{focus ? "✕" : "⤢"}
+							</button>
 						</div>
-						<SumBadge rows={s.rows} refW={s.canalW} />
 					</div>
-				))}
+					<div className="divide-y">
+						{s.rows.map((r) => recipeRow(r, s.canalW, [s.parentId]))}
+					</div>
+					{draggedChild && (
+						<div
+							className="mt-1 rounded-md border-2 border-dashed px-2 py-1.5 text-center text-[11px] font-semibold text-muted-foreground"
+							style={{ borderColor: accent }}
+						>
+							Suelta aquí para agregar {draggedChild.name} a {s.type}
+						</div>
+					)}
+					<SumBadge rows={s.rows} refW={s.canalW} />
+				</div>
 			</div>
-			<p className="text-[11px] text-muted-foreground">
-				Escribe los <b>kg</b> reales de cada pieza y el % se calcula respecto al
-				peso del padre. <b>Despiece</b> suma al peso; <b>Variante</b> es una
-				especificación alternativa (no suma). ▸ ramifica una pieza; toca el
-				nombre para editar a detalle.
-			</p>
-		</div>
-	);
+		);
+	};
+
+	const renderBoard = () => {
+		const focused = focusedType
+			? boardStyles.find((s) => s.type === focusedType)
+			: null;
+		return (
+			<div className="flex gap-4">
+				{/* Paleta de productos */}
+				<aside className="hidden w-60 shrink-0 lg:block">
+					<div className="sticky top-16 rounded-xl border bg-card">
+						<div className="border-b p-2.5">
+							<div className="text-sm font-bold">Productos</div>
+							<p className="text-[10px] text-muted-foreground">
+								Arrastra a un estilo o a una ramificación abierta.
+							</p>
+							<Input
+								value={paletteQuery}
+								onChange={(e) => setPaletteQuery(e.target.value)}
+								placeholder="Buscar pieza…"
+								className="mt-1.5 h-7 text-xs"
+							/>
+						</div>
+						<div className="max-h-[70vh] space-y-2 overflow-y-auto p-2">
+							{PALETTE_ORDER.map((cat) => {
+								const items = paletteGroups.get(cat);
+								if (!items || items.length === 0) return null;
+								return (
+									<div key={cat}>
+										<div className="mb-1 flex items-center gap-1.5 px-0.5">
+											<span
+												className="h-2 w-2 rounded-full"
+												style={{ background: CAT_COLORS[cat] }}
+											/>
+											<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+												{cat}
+											</span>
+											<span className="text-[10px] text-muted-foreground/60">
+												{items.length}
+											</span>
+										</div>
+										<div className="space-y-1">
+											{items.map((p) => (
+												<PaletteChip key={p.id} p={p} />
+											))}
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				</aside>
+
+				{/* Tablero / enfoque */}
+				<div className="min-w-0 flex-1 space-y-3">
+					{focused ? (
+						<>
+							<div className="flex flex-wrap gap-1.5">
+								{boardStyles.map((s) => (
+									<button
+										key={s.type}
+										type="button"
+										onClick={() => setFocusedType(s.type)}
+										className={cn(
+											"flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold",
+											s.type === focusedType
+												? "bg-foreground text-background"
+												: "text-muted-foreground hover:bg-muted",
+										)}
+									>
+										<span
+											className="h-2 w-2 rounded-full"
+											style={{ background: accentFor(s.type) }}
+										/>
+										{s.type}
+										<span className="text-[9px] opacity-60">{s.rows.length}</span>
+									</button>
+								))}
+							</div>
+							{styleCard(focused, true)}
+						</>
+					) : (
+						<div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+							{boardStyles.map((s) => styleCard(s, false))}
+						</div>
+					)}
+					<p className="text-[11px] text-muted-foreground">
+						Escribe los <b>kg</b> reales y el % se calcula respecto al peso del
+						padre. <b>Despiece</b> suma; <b>Variante</b> es alternativa (no
+						suma). ▸ ramifica una pieza; arrastra productos desde la paleta; ⤢
+						edita un estilo en pantalla completa.
+					</p>
+				</div>
+			</div>
+		);
+	};
 
 	const columns: Column<Recipe>[] = [
 		{
