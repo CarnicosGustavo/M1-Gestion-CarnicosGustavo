@@ -1666,7 +1666,9 @@ export default function RecipesPage({
 				)}
 			</CardContent>
 
-			{productsWithoutRecipe.length > 0 && (
+			{/* Banner de huérfanos: redundante con la paleta del Tablero, así que
+			    solo se muestra en las vistas Tabla/Mapa. */}
+			{viewMode !== "board" && productsWithoutRecipe.length > 0 && (
 				<CardContent className="pt-0">
 					<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 text-xs">
 						<span className="font-bold">
