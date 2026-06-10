@@ -40,7 +40,7 @@ import {
 	XCircleIcon,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
 import { useTRPC } from "@/lib/trpc/client";
@@ -64,6 +64,17 @@ export default function RecipesPage({
 		configurator ? "board" : "table",
 	);
 	const [showHelp, setShowHelp] = useState(false);
+	// Abre la ayuda automáticamente la primera vez en este navegador.
+	useEffect(() => {
+		try {
+			if (!localStorage.getItem("recipes_help_seen")) {
+				setShowHelp(true);
+				localStorage.setItem("recipes_help_seen", "1");
+			}
+		} catch {
+			// localStorage no disponible: no pasa nada
+		}
+	}, []);
 	const [search, setSearch] = useState("");
 	const [parentFilter, setParentFilter] = useState("all");
 	const [typeFilter, setTypeFilter] = useState<
