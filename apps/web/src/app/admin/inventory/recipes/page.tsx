@@ -881,6 +881,16 @@ export default function RecipesPage({
 		POLINESIO: "#ea580c",
 	};
 	const accentFor = (t: string) => STYLE_ACCENTS[t] ?? "#2563eb";
+
+	// ¿La receta del canal se configura sobre el cerdo entero o sobre un solo
+	// lado? Se decide por el nombre (LADO/MEDIA → media) y, si no, por el peso
+	// (~105 kg = completo; ~52.5 kg = media canal).
+	const canalKind = (name: string, kg: number): "completo" | "media" => {
+		const n = (name || "").toUpperCase();
+		if (/\b(LADO|MEDIA|1\/2)\b/.test(n)) return "media";
+		if (/\b(COMPLET|ENTER)/.test(n)) return "completo";
+		return kg >= 75 ? "completo" : "media";
+	};
 	const CAT_COLORS: Record<string, string> = {
 		Canales: "#e11d48",
 		Lomos: "#dc2626",
@@ -1079,6 +1089,28 @@ export default function RecipesPage({
 								>
 									{s.type}
 								</span>
+								{(() => {
+									const kind = canalKind(s.parent || s.type, s.canalW);
+									return (
+										<span
+											className={cn(
+												"ml-1 rounded px-1.5 py-0.5 font-bold text-[9px] uppercase tracking-wide",
+												kind === "completo"
+													? "bg-blue-100 text-blue-700"
+													: "bg-amber-100 text-amber-700",
+											)}
+											title={
+												kind === "completo"
+													? "Canal completo: el cerdo entero (≈2 medias canales). Los kg y % de cada pieza son sobre el peso total del canal."
+													: "Media canal: un solo lado del cerdo. Los kg y % de cada pieza son sobre ese medio canal."
+											}
+										>
+											{kind === "completo"
+												? "🐷 Canal completo"
+												: "½ Media canal"}
+										</span>
+									);
+								})()}
 								<span className="ml-1 text-[10px] text-muted-foreground">
 									{s.rows.length} piezas
 								</span>
@@ -1578,10 +1610,24 @@ export default function RecipesPage({
 							</h3>
 							<p className="mt-1 text-muted-foreground text-xs leading-relaxed">
 								Una <strong>receta</strong> define cómo se{" "}
-								<strong>despieza un canal</strong> (medio cerdo) en sus piezas y{" "}
+								<strong>despieza un canal</strong> en sus piezas y{" "}
 								<strong>qué porcentaje del peso</strong> es cada una. Es el dato
 								medular: a partir de aquí el sistema calcula todo lo demás. Si la
 								receta está bien configurada, el resto funciona solo.
+							</p>
+							<p className="mt-2 rounded-md bg-background/70 px-2 py-1.5 text-[11px] text-muted-foreground leading-relaxed">
+								<strong>¿Canal completo o media canal?</strong> Cada tarjeta
+								indica si la receta se configura sobre el{" "}
+								<span className="font-semibold text-blue-700">
+									🐷 canal completo
+								</span>{" "}
+								(el cerdo entero, ≈105 kg) o sobre una{" "}
+								<span className="font-semibold text-amber-700">
+									½ media canal
+								</span>{" "}
+								(un solo lado, ≈52.5 kg). El <strong>“Peso del canal”</strong> y
+								los % de las piezas siempre se entienden sobre esa base, así que
+								todos los kg que captures deben ser de la misma unidad.
 							</p>
 						</div>
 
