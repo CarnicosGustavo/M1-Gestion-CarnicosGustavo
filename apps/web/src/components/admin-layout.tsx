@@ -16,24 +16,24 @@ import {
 	TooltipTrigger,
 } from "@finopenpos/ui/components/tooltip";
 import {
+	BanknoteIcon,
 	BookOpenIcon,
+	ClipboardListIcon,
 	CreditCardIcon,
 	DollarSignIcon,
+	HandCoinsIcon,
 	LayoutDashboardIcon,
 	type LucideIcon,
 	MenuIcon,
 	PackageIcon,
 	PiggyBankIcon,
 	ScaleIcon,
-	ClipboardListIcon,
-	TagIcon,
-	SnowflakeIcon,
-	HandCoinsIcon,
-	BanknoteIcon,
 	ScissorsIcon,
 	SettingsIcon,
 	ShoppingBagIcon,
 	ShoppingCartIcon,
+	SnowflakeIcon,
+	TagIcon,
 	UsersIcon,
 	XIcon,
 } from "lucide-react";
@@ -91,7 +91,11 @@ const cfgNav: NavItem[] = [
 	{ href: "/admin/products", labelKey: "products", icon: PackageIcon },
 	{ href: "/admin/inventory/recipes", labelKey: "recipes", icon: BookOpenIcon },
 	{ href: "/admin/prices", labelKey: "prices", icon: TagIcon },
-	{ href: "/admin/cold-inventory", labelKey: "coldInventory", icon: SnowflakeIcon },
+	{
+		href: "/admin/cold-inventory",
+		labelKey: "coldInventory",
+		icon: SnowflakeIcon,
+	},
 	{ href: "/admin/cashier", labelKey: "cashier", icon: DollarSignIcon },
 	{
 		href: "/admin/payment-methods",
@@ -113,6 +117,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 		navItems.map((item) => [item.href, t(item.labelKey)]),
 	);
 	const cfgActive = cfgNav.some((i) => i.href === pathname);
+
+	// El configurador se abre en su propia ventana: sin menú ni cabecera del
+	// dashboard, a pantalla completa.
+	if (pathname === "/admin/configurador") {
+		return <div className="min-h-screen w-full bg-muted/40">{children}</div>;
+	}
 
 	return (
 		<div className="flex min-h-screen w-full flex-col bg-muted/40">
@@ -201,7 +211,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 								<XIcon className="h-5 w-5" />
 							</Button>
 						</div>
-						<p className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+						<p className="px-3 pt-1 font-semibold text-[11px] text-muted-foreground/70 uppercase tracking-wider">
 							Operación
 						</p>
 						{opNav.map(({ href, labelKey, icon: Icon }) => (
@@ -219,7 +229,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 								{t(labelKey)}
 							</Link>
 						))}
-						<p className="mt-2 px-3 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+						<p className="mt-2 px-3 pt-1 font-semibold text-[11px] text-muted-foreground/70 uppercase tracking-wider">
 							Configuración
 						</p>
 						{cfgNav.map(({ href, labelKey, icon: Icon }) => (

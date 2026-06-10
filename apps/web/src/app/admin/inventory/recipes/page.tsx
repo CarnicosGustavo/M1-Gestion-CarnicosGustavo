@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@finopenpos/ui/components/badge";
 import { Button } from "@finopenpos/ui/components/button";
 import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
 import {
@@ -17,8 +18,6 @@ import {
 } from "@finopenpos/ui/components/dialog";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
-import { Badge } from "@finopenpos/ui/components/badge";
-import { cn } from "@finopenpos/ui/lib/utils";
 import {
 	Select,
 	SelectContent,
@@ -27,35 +26,42 @@ import {
 	SelectValue,
 } from "@finopenpos/ui/components/select";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
+import { cn } from "@finopenpos/ui/lib/utils";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	BookOpenIcon,
 	CheckCircleIcon,
 	FilePenIcon,
+	MaximizeIcon,
 	PlusCircle,
 	UploadIcon,
 	XCircleIcon,
 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 import { formatCurrency } from "@/lib/utils";
-import { useLocale } from "next-intl";
 
 type Recipe = RouterOutputs["inventory"]["recipesList"][number];
 type Product = RouterOutputs["products"]["list"][number];
 
-export default function RecipesPage() {
+export default function RecipesPage({
+	configurator = false,
+}: {
+	configurator?: boolean;
+} = {}) {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
 	const tc = useTranslations("common");
 	const locale = useLocale();
 
-	const [viewMode, setViewMode] = useState<"table" | "map" | "board">("table");
+	const [viewMode, setViewMode] = useState<"table" | "map" | "board">(
+		configurator ? "board" : "table",
+	);
 	const [search, setSearch] = useState("");
 	const [parentFilter, setParentFilter] = useState("all");
 	const [typeFilter, setTypeFilter] = useState<
@@ -323,7 +329,10 @@ export default function RecipesPage() {
 		form.setFieldValue("childName", r.childProduct.name);
 		form.setFieldValue("transformationType", r.transformation_type);
 		form.setFieldValue("yieldQuantityPieces", Number(r.yield_quantity_pieces));
-		form.setFieldValue("yieldWeightPercentage", Number(r.yield_weight_ratio) * 100);
+		form.setFieldValue(
+			"yieldWeightPercentage",
+			Number(r.yield_weight_ratio) * 100,
+		);
 		form.setFieldValue("isActive", r.is_active);
 		setShowAdvanced(Number(r.yield_weight_ratio) > 0);
 		setIsDialogOpen(true);
@@ -347,7 +356,10 @@ export default function RecipesPage() {
 	};
 
 	// Producto arrastrado (chip huérfano) y celda resaltada al arrastrar
-	const [draggedChild, setDraggedChild] = useState<{ id: number; name: string } | null>(null);
+	const [draggedChild, setDraggedChild] = useState<{
+		id: number;
+		name: string;
+	} | null>(null);
 	const [dropParentId, setDropParentId] = useState<number | null>(null);
 	// Hijo resaltado: soltar aquí crea un despiece de 2º nivel (esa pieza es el padre)
 	const [dropOntoChildId, setDropOntoChildId] = useState<number | null>(null);
@@ -393,7 +405,9 @@ export default function RecipesPage() {
 						? "Marcado como compra de proveedor"
 						: "Marcado como duplicado",
 				);
-				queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.list.queryKey(),
+				});
 			},
 			onError: (e: any) => toast.error(e.message ?? "Error"),
 		}),
@@ -594,7 +608,9 @@ export default function RecipesPage() {
 			m.set(r.parent_product_id, arr);
 		}
 		for (const arr of m.values())
-			arr.sort((a, b) => a.childProduct.name.localeCompare(b.childProduct.name));
+			arr.sort((a, b) =>
+				a.childProduct.name.localeCompare(b.childProduct.name),
+			);
 		return m;
 	}, [mapRecipes]);
 
@@ -610,7 +626,7 @@ export default function RecipesPage() {
 		return (
 			<div
 				className={cn(
-					"mt-1.5 flex flex-wrap items-center gap-2 rounded-md px-2 py-1 text-[11px] font-semibold",
+					"mt-1.5 flex flex-wrap items-center gap-2 rounded-md px-2 py-1 font-semibold text-[11px]",
 					over ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700",
 				)}
 			>
@@ -660,11 +676,7 @@ export default function RecipesPage() {
 	);
 
 	// Renglón editable de una receta (nivel 1 o ramificación)
-	const recipeRow = (
-		r: Recipe,
-		refW: number,
-		ancestors: number[],
-	) => {
+	const recipeRow = (r: Recipe, refW: number, ancestors: number[]) => {
 		const ratio = Number(r.yield_weight_ratio);
 		const pieces = Number(r.yield_quantity_pieces);
 		const kg = refW > 0 ? ratio * refW : 0;
@@ -701,7 +713,7 @@ export default function RecipesPage() {
 					<button
 						type="button"
 						onClick={() => openEdit(r)}
-						className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline"
+						className="min-w-0 flex-1 truncate text-left font-medium text-sm hover:underline"
 						title="Editar receta a detalle"
 					>
 						{r.childProduct.name}
@@ -717,7 +729,7 @@ export default function RecipesPage() {
 							quickUpdateMut.mutate({ id: r.id, isVariant: !r.is_variant })
 						}
 						className={cn(
-							"shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold",
+							"shrink-0 rounded px-1.5 py-0.5 font-bold text-[10px]",
 							r.is_variant
 								? "bg-amber-100 text-amber-800"
 								: "bg-muted text-muted-foreground hover:bg-muted/80",
@@ -739,7 +751,7 @@ export default function RecipesPage() {
 						>
 							−
 						</button>
-						<span className="min-w-[1.4rem] text-center text-xs font-bold">
+						<span className="min-w-[1.4rem] text-center font-bold text-xs">
 							{pieces}
 						</span>
 						<button
@@ -785,7 +797,7 @@ export default function RecipesPage() {
 					</div>
 					<span
 						className={cn(
-							"w-14 shrink-0 text-right text-xs font-bold",
+							"w-14 shrink-0 text-right font-bold text-xs",
 							r.is_variant ? "text-amber-700" : "text-blue-600",
 						)}
 					>
@@ -795,7 +807,7 @@ export default function RecipesPage() {
 				{expanded && (
 					<div
 						className={cn(
-							"ml-5 mt-1 mb-2 rounded-lg border border-l-2 border-l-blue-400 bg-muted/20 p-2",
+							"mt-1 mb-2 ml-5 rounded-lg border border-l-2 border-l-blue-400 bg-muted/20 p-2",
 							dropTarget === `branch:${r.id}` && "ring-2 ring-blue-400",
 						)}
 						onDragOver={(e) => {
@@ -818,7 +830,7 @@ export default function RecipesPage() {
 						}}
 					>
 						<div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-							<span className="text-[11px] font-semibold text-muted-foreground">
+							<span className="font-semibold text-[11px] text-muted-foreground">
 								Despiece de {r.childProduct.name}
 								{draggedChild && (
 									<span className="ml-2 font-normal text-blue-600">
@@ -833,11 +845,10 @@ export default function RecipesPage() {
 							/>
 						</div>
 						{kids.map((k) =>
-							recipeRow(
-								k,
-								Number(r.childProduct.avg_weight ?? 0) || 0,
-								[...ancestors, r.child_product_id],
-							),
+							recipeRow(k, Number(r.childProduct.avg_weight ?? 0) || 0, [
+								...ancestors,
+								r.child_product_id,
+							]),
 						)}
 						<SumBadge
 							rows={kids}
@@ -956,15 +967,17 @@ export default function RecipesPage() {
 					e.dataTransfer.effectAllowed = "copy";
 				}}
 				onDragEnd={clearDrag}
-				className="cursor-grab rounded-lg border bg-background px-2 py-1.5 active:cursor-grabbing hover:border-foreground/30"
+				className="cursor-grab rounded-lg border bg-background px-2 py-1.5 hover:border-foreground/30 active:cursor-grabbing"
 				title="Arrastra a un estilo o a una ramificación"
 			>
 				<div className="flex items-center gap-1.5">
 					<span
 						className="h-2 w-2 shrink-0 rounded-full"
-						style={{ background: CAT_COLORS[p.category ?? "Otros"] ?? "#64748b" }}
+						style={{
+							background: CAT_COLORS[p.category ?? "Otros"] ?? "#64748b",
+						}}
 					/>
-					<span className="min-w-0 flex-1 truncate text-xs font-semibold">
+					<span className="min-w-0 flex-1 truncate font-semibold text-xs">
 						{p.name}
 					</span>
 					{p.avg_weight_per_piece_kg != null &&
@@ -979,8 +992,11 @@ export default function RecipesPage() {
 						{styles.map((s) => (
 							<span
 								key={s.type}
-								className="rounded border px-1 text-[8px] font-bold leading-3"
-								style={{ color: accentFor(s.type), borderColor: accentFor(s.type) }}
+								className="rounded border px-1 font-bold text-[8px] leading-3"
+								style={{
+									color: accentFor(s.type),
+									borderColor: accentFor(s.type),
+								}}
 							>
 								{s.type.replace("NACIONAL_", "N·")}
 							</span>
@@ -988,18 +1004,18 @@ export default function RecipesPage() {
 						{parents.map((n) => (
 							<span
 								key={n}
-								className="rounded bg-muted px-1 text-[8px] font-semibold leading-3 text-muted-foreground"
+								className="rounded bg-muted px-1 font-semibold text-[8px] text-muted-foreground leading-3"
 							>
 								⑂ {n}
 							</span>
 						))}
 						{isSupplier && (
-							<span className="rounded bg-green-50 px-1 text-[8px] font-bold leading-3 text-green-700">
+							<span className="rounded bg-green-50 px-1 font-bold text-[8px] text-green-700 leading-3">
 								proveedor
 							</span>
 						)}
 						{orphan && (
-							<span className="rounded bg-amber-50 px-1 text-[8px] font-bold leading-3 text-amber-700">
+							<span className="rounded bg-amber-50 px-1 font-bold text-[8px] text-amber-700 leading-3">
 								sin ubicar
 							</span>
 						)}
@@ -1019,7 +1035,11 @@ export default function RecipesPage() {
 					"overflow-hidden rounded-xl border bg-card",
 					dropTarget === dkey && "ring-2 ring-offset-1",
 				)}
-				style={dropTarget === dkey ? ({ ["--tw-ring-color" as any]: accent } as any) : undefined}
+				style={
+					dropTarget === dkey
+						? ({ ["--tw-ring-color" as any]: accent } as any)
+						: undefined
+				}
 				onDragOver={(e) => {
 					if (draggedChild) {
 						e.preventDefault();
@@ -1041,7 +1061,7 @@ export default function RecipesPage() {
 							<div className="min-w-0">
 								<div className="truncate font-bold">{s.parent || s.type}</div>
 								<span
-									className="rounded border px-1 text-[9px] font-bold uppercase tracking-wide"
+									className="rounded border px-1 font-bold text-[9px] uppercase tracking-wide"
 									style={{ color: accent, borderColor: accent }}
 								>
 									{s.type}
@@ -1071,7 +1091,9 @@ export default function RecipesPage() {
 							<button
 								type="button"
 								className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-								title={focus ? "Volver al tablero" : "Editar a detalle (enfoque)"}
+								title={
+									focus ? "Volver al tablero" : "Editar a detalle (enfoque)"
+								}
 								onClick={() => setFocusedType(focus ? null : s.type)}
 							>
 								{focus ? "✕" : "⤢"}
@@ -1083,7 +1105,7 @@ export default function RecipesPage() {
 					</div>
 					{draggedChild && (
 						<div
-							className="mt-1 rounded-md border-2 border-dashed px-2 py-1.5 text-center text-[11px] font-semibold text-muted-foreground"
+							className="mt-1 rounded-md border-2 border-dashed px-2 py-1.5 text-center font-semibold text-[11px] text-muted-foreground"
 							style={{ borderColor: accent }}
 						>
 							Suelta aquí para agregar {draggedChild.name} a {s.type}
@@ -1105,7 +1127,7 @@ export default function RecipesPage() {
 				<aside className="hidden w-60 shrink-0 lg:block">
 					<div className="sticky top-16 rounded-xl border bg-card">
 						<div className="border-b p-2.5">
-							<div className="text-sm font-bold">Productos</div>
+							<div className="font-bold text-sm">Productos</div>
 							<p className="text-[10px] text-muted-foreground">
 								Arrastra a un estilo o a una ramificación abierta.
 							</p>
@@ -1127,7 +1149,7 @@ export default function RecipesPage() {
 												className="h-2 w-2 rounded-full"
 												style={{ background: CAT_COLORS[cat] }}
 											/>
-											<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+											<span className="font-bold text-[10px] text-muted-foreground uppercase tracking-wide">
 												{cat}
 											</span>
 											<span className="text-[10px] text-muted-foreground/60">
@@ -1157,7 +1179,7 @@ export default function RecipesPage() {
 										type="button"
 										onClick={() => setFocusedType(s.type)}
 										className={cn(
-											"flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold",
+											"flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold text-xs",
 											s.type === focusedType
 												? "bg-foreground text-background"
 												: "text-muted-foreground hover:bg-muted",
@@ -1168,7 +1190,9 @@ export default function RecipesPage() {
 											style={{ background: accentFor(s.type) }}
 										/>
 										{s.type}
-										<span className="text-[9px] opacity-60">{s.rows.length}</span>
+										<span className="text-[9px] opacity-60">
+											{s.rows.length}
+										</span>
 									</button>
 								))}
 							</div>
@@ -1208,16 +1232,25 @@ export default function RecipesPage() {
 					onDrop={(e) => {
 						e.preventDefault();
 						if (draggedChild && draggedChild.id !== r.parent_product_id) {
-							openCreateChild(r.parent_product_id, r.transformation_type, draggedChild);
+							openCreateChild(
+								r.parent_product_id,
+								r.transformation_type,
+								draggedChild,
+							);
 						}
 						clearDrag();
 					}}
 					className={cn(
 						"-mx-2 -my-1 rounded px-2 py-1 transition-colors",
-						draggedChild && "ring-1 ring-dashed ring-amber-300",
-						dropParentId === r.parent_product_id && "bg-amber-100 ring-amber-500",
+						draggedChild && "ring-1 ring-amber-300 ring-dashed",
+						dropParentId === r.parent_product_id &&
+							"bg-amber-100 ring-amber-500",
 					)}
-					title={draggedChild ? `Soltar para hacer ${draggedChild.name} hijo de ${r.parentProduct.name}` : undefined}
+					title={
+						draggedChild
+							? `Soltar para hacer ${draggedChild.name} hijo de ${r.parentProduct.name}`
+							: undefined
+					}
 				>
 					{r.parentProduct.name}
 				</div>
@@ -1256,7 +1289,8 @@ export default function RecipesPage() {
 							draggedChild &&
 								draggedChild.id !== r.child_product_id &&
 								"ring-1 ring-dashed ring-sky-300",
-							dropOntoChildId === r.child_product_id && "bg-sky-100 ring-sky-500",
+							dropOntoChildId === r.child_product_id &&
+								"bg-sky-100 ring-sky-500",
 						)}
 						title={
 							draggedChild
@@ -1305,19 +1339,20 @@ export default function RecipesPage() {
 			render: (r) => {
 				const ratio = Number(r.yield_weight_ratio);
 				if (ratio <= 0) return <span className="text-muted-foreground">-</span>;
-				
+
 				// Buscar el precio del padre
-				const parent = allProducts.find(p => p.id === r.parent_product_id);
-				if (!parent || !parent.price_per_kg) return <span className="text-muted-foreground">-</span>;
-				
+				const parent = allProducts.find((p) => p.id === r.parent_product_id);
+				if (!parent || !parent.price_per_kg)
+					return <span className="text-muted-foreground">-</span>;
+
 				const parentPrice = Number(parent.price_per_kg);
 				// El precio sugerido es el costo del padre distribuido por rendimiento
 				// Nota: Esta es una estimación simple. En la realidad el precio sugerido
 				// suele ser mayor para compensar mermas.
-				const suggested = parentPrice / ratio; 
+				const suggested = parentPrice / ratio;
 				return (
 					<div className="flex flex-col">
-						<span className="text-xs font-bold text-green-700">
+						<span className="font-bold text-green-700 text-xs">
 							{formatCurrency(suggested * 100, locale)}
 						</span>
 						<span className="text-[9px] text-muted-foreground leading-none">
@@ -1403,37 +1438,85 @@ export default function RecipesPage() {
 		);
 	}
 
+	const saving =
+		quickUpdateMut.isPending ||
+		refWeightMut.isPending ||
+		upsertMutation.isPending ||
+		setActiveMutation.isPending;
+
 	return (
 		<Card className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
 			<CardHeader className="p-0">
-				<div className="flex items-center justify-between">
+				<div className="flex flex-wrap items-center justify-between gap-2">
 					<div className="flex items-center gap-2 text-muted-foreground">
 						<BookOpenIcon className="h-5 w-5" />
+						{configurator ? (
+							<span className="font-bold text-base text-foreground">
+								Configurador de Despiece
+							</span>
+						) : null}
 						<span className="text-sm">{filteredRecipes.length} recetas</span>
 						{duplicateGroupsCount > 0 ? (
 							<span className="text-amber-700 text-xs">
 								{duplicateGroupsCount} grupo(s) duplicado(s)
 							</span>
 						) : null}
+						{/* Indicador de autoguardado en vivo */}
+						<span
+							className={cn(
+								"flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-[11px]",
+								saving
+									? "bg-amber-50 text-amber-700"
+									: "bg-green-50 text-green-700",
+							)}
+							title="Los cambios se guardan solos en la base de datos"
+						>
+							<span
+								className={cn(
+									"h-1.5 w-1.5 rounded-full",
+									saving ? "bg-amber-500" : "bg-green-500",
+								)}
+							/>
+							{saving ? "Guardando…" : "Guardado"}
+						</span>
 					</div>
 					<div className="flex items-center gap-2">
-						<div className="inline-flex overflow-hidden rounded-lg border">
-							{(["table", "board", "map"] as const).map((v) => (
-								<button
-									key={v}
-									type="button"
-									onClick={() => setViewMode(v)}
-									className={cn(
-										"px-3 py-1.5 text-xs font-semibold transition-colors",
-										viewMode === v
-											? "bg-primary text-primary-foreground"
-											: "bg-background text-muted-foreground hover:bg-muted",
-									)}
+						{!configurator && (
+							<>
+								<div className="inline-flex overflow-hidden rounded-lg border">
+									{(["table", "board", "map"] as const).map((v) => (
+										<button
+											key={v}
+											type="button"
+											onClick={() => setViewMode(v)}
+											className={cn(
+												"px-3 py-1.5 font-semibold text-xs transition-colors",
+												viewMode === v
+													? "bg-primary text-primary-foreground"
+													: "bg-background text-muted-foreground hover:bg-muted",
+											)}
+										>
+											{v === "table"
+												? "Tabla"
+												: v === "board"
+													? "Tablero"
+													: "Mapa"}
+										</button>
+									))}
+								</div>
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() =>
+										window.open("/admin/configurador", "_blank", "noopener")
+									}
+									title="Abre el configurador a pantalla completa en otra ventana"
 								>
-									{v === "table" ? "Tabla" : v === "board" ? "Tablero" : "Mapa"}
-								</button>
-							))}
-						</div>
+									<MaximizeIcon className="mr-2 h-4 w-4" />
+									Configurador
+								</Button>
+							</>
+						)}
 						<Button
 							size="sm"
 							variant="outline"
@@ -1465,7 +1548,7 @@ export default function RecipesPage() {
 
 			<CardContent className="p-0">
 				{viewMode === "board" ? (
-					<p className="text-sm text-muted-foreground">
+					<p className="text-muted-foreground text-sm">
 						Tablero de recetas: cada tarjeta es un estilo de canal (1er nivel) o
 						una pieza con sub-despiece (2º nivel). El % es la parte del peso del
 						padre; Σ es la suma. Toca una pieza para editar su receta.
@@ -1585,21 +1668,23 @@ export default function RecipesPage() {
 
 			{productsWithoutRecipe.length > 0 && (
 				<CardContent className="pt-0">
-					<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+					<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 text-xs">
 						<span className="font-bold">
 							{productsWithoutRecipe.length} producto(s) sin receta
 						</span>{" "}
 						(no salen de ningún despiece ni se despiezan). Es normal para piezas
 						finales. Arrastra un producto sobre la tabla:{" "}
-						<strong>sobre un PADRE</strong> → será hijo de ese padre (mismo estilo);{" "}
-						<strong>sobre un HIJO</strong> → saldrá del despiece de esa pieza (2º
-						nivel, receta BASE).
+						<strong>sobre un PADRE</strong> → será hijo de ese padre (mismo
+						estilo); <strong>sobre un HIJO</strong> → saldrá del despiece de esa
+						pieza (2º nivel, receta BASE).
 						<div className="mt-1 flex flex-wrap gap-1">
 							{productsWithoutRecipe.map((p) => (
 								<span
 									key={p.id}
 									draggable
-									onDragStart={() => setDraggedChild({ id: p.id, name: p.name })}
+									onDragStart={() =>
+										setDraggedChild({ id: p.id, name: p.name })
+									}
 									onDragEnd={clearDrag}
 									className="cursor-grab rounded bg-amber-100 px-1.5 py-0.5 font-medium hover:bg-amber-200 active:cursor-grabbing"
 									title="Arrástrame sobre un PADRE (será su hijo) o sobre un HIJO (saldrá de su despiece, 2º nivel)"
@@ -1608,7 +1693,6 @@ export default function RecipesPage() {
 								</span>
 							))}
 						</div>
-
 						{/* Zonas de drop alternativas */}
 						<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
 							<div
@@ -1616,36 +1700,46 @@ export default function RecipesPage() {
 								onDrop={(e) => {
 									e.preventDefault();
 									if (draggedChild)
-										classifyOrphanMut.mutate({ productId: draggedChild.id, action: "purchased" });
+										classifyOrphanMut.mutate({
+											productId: draggedChild.id,
+											action: "purchased",
+										});
 									clearDrag();
 								}}
 								className={cn(
-									"rounded-lg border-2 border-dashed p-3 text-center text-xs font-semibold transition-colors",
+									"rounded-lg border-2 border-dashed p-3 text-center font-semibold text-xs transition-colors",
 									draggedChild
 										? "border-green-400 bg-green-50 text-green-800"
 										: "border-border text-muted-foreground",
 								)}
 							>
 								📦 Producto de proveedor (compra)
-								<div className="font-normal">Manteca, lomo ahumado, chicharrón…</div>
+								<div className="font-normal">
+									Manteca, lomo ahumado, chicharrón…
+								</div>
 							</div>
 							<div
 								onDragOver={(e) => draggedChild && e.preventDefault()}
 								onDrop={(e) => {
 									e.preventDefault();
 									if (draggedChild)
-										classifyOrphanMut.mutate({ productId: draggedChild.id, action: "duplicate" });
+										classifyOrphanMut.mutate({
+											productId: draggedChild.id,
+											action: "duplicate",
+										});
 									clearDrag();
 								}}
 								className={cn(
-									"rounded-lg border-2 border-dashed p-3 text-center text-xs font-semibold transition-colors",
+									"rounded-lg border-2 border-dashed p-3 text-center font-semibold text-xs transition-colors",
 									draggedChild
 										? "border-red-400 bg-red-50 text-red-800"
 										: "border-border text-muted-foreground",
 								)}
 							>
 								🗑️ Repetido / duplicado
-								<div className="font-normal">Ej. Máscara vs Máscara Completa</div>
+								<div className="font-normal">
+									Ej. Máscara vs Máscara Completa
+								</div>
 							</div>
 						</div>
 					</div>
@@ -1680,14 +1774,17 @@ export default function RecipesPage() {
 							{isEditing ? "Editar receta" : "Nueva receta"}
 						</DialogTitle>
 					</DialogHeader>
-					<div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-900 leading-relaxed">
-						Una <strong>receta</strong> dice qué pieza (hijo) sale al despiezar un
-						producto (padre) y en qué proporción.
-						<br />• <strong>Piezas</strong>: cuántas salen de 1 padre (ej. 2 piernas por canal).
-						<br />• <strong>Rendimiento %</strong>: qué parte del peso del padre es esta pieza.
-						La suma de todas las piezas de un padre debería acercarse a 100%.
-						<br />• <strong>Estilo</strong>: AMERICANO / NACIONAL_LOMO / NACIONAL_ESPILOMO
-						(despiece del canal) · BASE (despiece de una pieza, ej. PIERNA→JAMÓN).
+					<div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-blue-900 text-xs leading-relaxed">
+						Una <strong>receta</strong> dice qué pieza (hijo) sale al despiezar
+						un producto (padre) y en qué proporción.
+						<br />• <strong>Piezas</strong>: cuántas salen de 1 padre (ej. 2
+						piernas por canal).
+						<br />• <strong>Rendimiento %</strong>: qué parte del peso del padre
+						es esta pieza. La suma de todas las piezas de un padre debería
+						acercarse a 100%.
+						<br />• <strong>Estilo</strong>: AMERICANO / NACIONAL_LOMO /
+						NACIONAL_ESPILOMO (despiece del canal) · BASE (despiece de una
+						pieza, ej. PIERNA→JAMÓN).
 					</div>
 					<form
 						onSubmit={(e) => {
@@ -1835,7 +1932,8 @@ export default function RecipesPage() {
 												onBlur={field.handleBlur}
 											/>
 											<div className="mt-1 text-[10px] text-muted-foreground">
-												Cuántas de esta pieza salen de 1 padre (ej. 2 piernas por canal).
+												Cuántas de esta pieza salen de 1 padre (ej. 2 piernas
+												por canal).
 											</div>
 										</div>
 									</div>
@@ -1845,7 +1943,7 @@ export default function RecipesPage() {
 							<form.Field name="yieldWeightPercentage">
 								{(field) => (
 									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-										<Label className="sm:text-right text-blue-600 font-semibold">
+										<Label className="font-semibold text-blue-600 sm:text-right">
 											% peso est.
 										</Label>
 										<div className="col-span-3 flex items-center gap-2">
@@ -1861,8 +1959,9 @@ export default function RecipesPage() {
 											/>
 											<span className="text-muted-foreground text-sm">%</span>
 										</div>
-										<div className="col-start-2 col-span-3 text-[10px] text-muted-foreground">
-											% del peso del padre que representa esta pieza (composición, no rendimiento de valor).
+										<div className="col-span-3 col-start-2 text-[10px] text-muted-foreground">
+											% del peso del padre que representa esta pieza
+											(composición, no rendimiento de valor).
 										</div>
 									</div>
 								)}
