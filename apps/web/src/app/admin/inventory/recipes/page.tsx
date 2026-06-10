@@ -34,10 +34,11 @@ import {
 	CheckCircleIcon,
 	FilePenIcon,
 	PlusCircle,
+	UploadIcon,
 	XCircleIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
 import { useTRPC } from "@/lib/trpc/client";
@@ -189,6 +190,64 @@ export default function RecipesPage() {
 			onError: (e) => toast.error(e.message),
 		}),
 	);
+
+	// Importar el JSON exportado por el Configurador Visual (standalone)
+	const importFileRef = useRef<HTMLInputElement>(null);
+	const importMutation = useMutation(
+		trpc.inventory.recipesImport.mutationOptions({
+			onSuccess: (d: any) => {
+				toast.success(
+					`Recetas configuradas: ${d.total} transformaciones (${d.inserted} nuevas, ${d.updated} actualizadas, ${d.deactivated} desactivadas).`,
+				);
+				if (d.missing?.length) {
+					toast.warning(
+						`Productos del archivo no encontrados en el catálogo (omitidos): ${d.missing.join(", ")}`,
+						{ duration: 12000 },
+					);
+				}
+				queryClient.invalidateQueries({
+					queryKey: trpc.inventory.recipesList.queryKey(),
+				});
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.list.queryKey(),
+				});
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error al importar"),
+		}),
+	);
+
+	const handleImportFile = async (file: File) => {
+		try {
+			const data = JSON.parse(await file.text());
+			const okShape =
+				data &&
+				(Array.isArray(data.canales) || Array.isArray(data.ramificaciones));
+			if (!okShape) {
+				toast.error(
+					'El archivo no tiene el formato del configurador (se esperan "canales" y "ramificaciones").',
+				);
+				return;
+			}
+			const total =
+				(data.canales ?? []).reduce(
+					(n: number, c: any) => n + (c.piezas?.length ?? 0),
+					0,
+				) +
+				(data.ramificaciones ?? []).reduce(
+					(n: number, b: any) => n + (b.subpiezas?.length ?? 0),
+					0,
+				);
+			if (
+				!window.confirm(
+					`Importar ${total} transformaciones del configurador?\n\n• Las recetas del archivo se crean o actualizan (match por nombre de producto).\n• Las recetas que NO estén en el archivo quedarán INACTIVAS (recuperables en el filtro "Todas").\n• También se actualizan los pesos de referencia (canal y piezas).`,
+				)
+			)
+				return;
+			importMutation.mutate(data);
+		} catch {
+			toast.error("No se pudo leer el archivo JSON.");
+		}
+	};
 
 	const setActiveMutation = useMutation(
 		trpc.inventory.recipesSetActive.mutationOptions({
@@ -1375,6 +1434,27 @@ export default function RecipesPage() {
 								</button>
 							))}
 						</div>
+						<Button
+							size="sm"
+							variant="outline"
+							disabled={importMutation.isPending}
+							onClick={() => importFileRef.current?.click()}
+							title="Importa el JSON exportado por el Configurador Visual de Despiece"
+						>
+							<UploadIcon className="mr-2 h-4 w-4" />
+							{importMutation.isPending ? "Importando…" : "Importar"}
+						</Button>
+						<input
+							ref={importFileRef}
+							type="file"
+							accept=".json,application/json"
+							className="hidden"
+							onChange={(e) => {
+								const f = e.target.files?.[0];
+								if (f) handleImportFile(f);
+								e.target.value = "";
+							}}
+						/>
 						<Button size="sm" onClick={openCreate}>
 							<PlusCircle className="mr-2 h-4 w-4" />
 							Nueva receta

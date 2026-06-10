@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
@@ -724,6 +724,219 @@ export const inventoryRouter = router({
 				})
 				.where(eq(products.id, input.productId));
 			return { success: true };
+		}),
+
+	// Importa el JSON exportado por el Configurador Visual de Despiece.
+	// Las recetas del archivo se crean/actualizan (match por NOMBRE de producto,
+	// sin acentos); las que NO estén en el archivo quedan INACTIVAS (recuperables).
+	recipesImport: adminProcedure
+		.input(
+			z.object({
+				canales: z
+					.array(
+						z.object({
+							receta: z.string().optional(),
+							transformation_type: z.string().min(1),
+							parent: z.string().min(1),
+							peso_canal_kg: z.number().optional(),
+							draft: z.boolean().optional(),
+							piezas: z.array(
+								z.object({
+									child: z.string().min(1),
+									yield_quantity_pieces: z.number().default(1),
+									peso_kg: z.number().optional(),
+									yield_weight_ratio: z.number().min(0).default(0),
+								}),
+							),
+						}),
+					)
+					.default([]),
+				ramificaciones: z
+					.array(
+						z.object({
+							parent: z.string().min(1),
+							peso_ref_kg: z.number().optional(),
+							subpiezas: z.array(
+								z.object({
+									child: z.string().min(1),
+									yield_quantity_pieces: z.number().default(1),
+									peso_kg: z.number().optional(),
+									transformation_type: z.string().optional(),
+									modo: z.string().optional(),
+									yield_weight_ratio: z.number().min(0).default(0),
+								}),
+							),
+						}),
+					)
+					.default([]),
+			}),
+		)
+		.output(
+			z.object({
+				total: z.number(),
+				inserted: z.number(),
+				updated: z.number(),
+				deactivated: z.number(),
+				missing: z.array(z.string()),
+			}),
+		)
+		.mutation(async ({ input }) => {
+			return db.transaction(async (tx) => {
+				const all = await tx
+					.select({ id: products.id, name: products.name })
+					.from(products);
+				// Match por nombre sin acentos/Ñ y en mayúsculas (CAÑA == CANA)
+				const norm = (s: string) =>
+					s
+						.normalize("NFD")
+						.replace(/[̀-ͯ]/g, "")
+						.trim()
+						.toUpperCase();
+				const byName = new Map(all.map((p) => [norm(p.name), p.id]));
+				const missing = new Set<string>();
+				const findId = (name: string): number | undefined => {
+					const id = byName.get(norm(name));
+					if (!id) missing.add(name);
+					return id;
+				};
+
+				type Row = {
+					parentId: number;
+					childId: number;
+					type: string;
+					pieces: number;
+					ratio: number;
+					isVariant: boolean;
+				};
+				const desired = new Map<string, Row>();
+				const refWeights = new Map<number, number>();
+
+				for (const c of input.canales) {
+					const pid = findId(c.parent);
+					if (!pid) continue;
+					if (c.peso_canal_kg && c.peso_canal_kg > 0)
+						refWeights.set(pid, c.peso_canal_kg);
+					for (const it of c.piezas) {
+						const cid = findId(it.child);
+						if (!cid || cid === pid) continue;
+						desired.set(`${pid}:${cid}:${c.transformation_type}`, {
+							parentId: pid,
+							childId: cid,
+							type: c.transformation_type,
+							pieces: it.yield_quantity_pieces || 0,
+							ratio: it.yield_weight_ratio || 0,
+							isVariant: false,
+						});
+					}
+				}
+				for (const b of input.ramificaciones) {
+					const pid = findId(b.parent);
+					if (!pid) continue;
+					if (b.peso_ref_kg && b.peso_ref_kg > 0)
+						refWeights.set(pid, b.peso_ref_kg);
+					for (const it of b.subpiezas) {
+						const cid = findId(it.child);
+						if (!cid || cid === pid) continue;
+						const isVariant =
+							it.modo === "variante" || it.transformation_type === "VARIANTE";
+						desired.set(`${pid}:${cid}:BASE`, {
+							parentId: pid,
+							childId: cid,
+							type: "BASE",
+							pieces: it.yield_quantity_pieces || 0,
+							ratio: it.yield_weight_ratio || 0,
+							isVariant,
+						});
+					}
+				}
+
+				const existing = await tx
+					.select({
+						id: productTransformations.id,
+						parent_product_id: productTransformations.parent_product_id,
+						child_product_id: productTransformations.child_product_id,
+						transformation_type: productTransformations.transformation_type,
+						is_active: productTransformations.is_active,
+					})
+					.from(productTransformations);
+				const exByKey = new Map(
+					existing.map((e) => [
+						`${e.parent_product_id}:${e.child_product_id}:${e.transformation_type}`,
+						e,
+					]),
+				);
+
+				// Todo inactivo primero; lo del archivo se reactiva/actualiza
+				await tx
+					.update(productTransformations)
+					.set({ is_active: false, updated_at: new Date() });
+
+				let inserted = 0;
+				let updated = 0;
+				for (const [k, r] of desired) {
+					const ex = exByKey.get(k);
+					if (ex) {
+						await tx
+							.update(productTransformations)
+							.set({
+								yield_quantity_pieces: r.pieces.toFixed(2),
+								yield_weight_ratio: r.ratio.toFixed(4),
+								is_variant: r.isVariant,
+								is_active: true,
+								updated_at: new Date(),
+							})
+							.where(eq(productTransformations.id, ex.id));
+						updated += 1;
+					} else {
+						await tx.insert(productTransformations).values({
+							parent_product_id: r.parentId,
+							child_product_id: r.childId,
+							yield_quantity_pieces: r.pieces.toFixed(2),
+							yield_weight_ratio: r.ratio.toFixed(4),
+							transformation_type: r.type,
+							is_variant: r.isVariant,
+							is_active: true,
+						});
+						inserted += 1;
+					}
+				}
+
+				// Pesos de referencia (canal y piezas padre) + marcar despiezables
+				for (const [pid, kg] of refWeights) {
+					await tx
+						.update(products)
+						.set({
+							avg_weight_per_piece_kg: kg.toFixed(3),
+							updated_at: new Date(),
+						})
+						.where(eq(products.id, pid));
+				}
+				const parentIds = [
+					...new Set([...desired.values()].map((r) => r.parentId)),
+				];
+				if (parentIds.length > 0) {
+					await tx
+						.update(products)
+						.set({ is_parent_product: true, updated_at: new Date() })
+						.where(inArray(products.id, parentIds));
+				}
+
+				const deactivated = existing.filter(
+					(e) =>
+						e.is_active &&
+						!desired.has(
+							`${e.parent_product_id}:${e.child_product_id}:${e.transformation_type}`,
+						),
+				).length;
+
+				return {
+					total: desired.size,
+					inserted,
+					updated,
+					deactivated,
+					missing: [...missing],
+				};
+			});
 		}),
 
 	recipesSetActive: adminProcedure
