@@ -33,6 +33,7 @@ import {
 	BookOpenIcon,
 	CheckCircleIcon,
 	FilePenIcon,
+	InfoIcon,
 	MaximizeIcon,
 	PlusCircle,
 	UploadIcon,
@@ -62,6 +63,7 @@ export default function RecipesPage({
 	const [viewMode, setViewMode] = useState<"table" | "map" | "board">(
 		configurator ? "board" : "table",
 	);
+	const [showHelp, setShowHelp] = useState(false);
 	const [search, setSearch] = useState("");
 	const [parentFilter, setParentFilter] = useState("all");
 	const [typeFilter, setTypeFilter] = useState<
@@ -1479,6 +1481,15 @@ export default function RecipesPage({
 							/>
 							{saving ? "Guardando…" : "Guardado"}
 						</span>
+						<button
+							type="button"
+							onClick={() => setShowHelp((v) => !v)}
+							className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+							title="Qué es una receta y por qué es el núcleo del sistema"
+						>
+							<InfoIcon className="h-3.5 w-3.5" />
+							{showHelp ? "Ocultar ayuda" : "¿Qué es esto?"}
+						</button>
 					</div>
 					<div className="flex items-center gap-2">
 						{!configurator && (
@@ -1545,6 +1556,103 @@ export default function RecipesPage({
 					</div>
 				</div>
 			</CardHeader>
+
+			{showHelp && (
+				<CardContent className="pt-0">
+					<div className="overflow-hidden rounded-xl border bg-gradient-to-br from-primary/5 to-transparent">
+						<div className="border-b bg-muted/40 px-4 py-3">
+							<h3 className="flex items-center gap-2 font-bold text-sm">
+								<BookOpenIcon className="h-4 w-4 text-primary" />
+								Las recetas son el corazón del sistema
+							</h3>
+							<p className="mt-1 text-muted-foreground text-xs leading-relaxed">
+								Una <strong>receta</strong> define cómo se{" "}
+								<strong>despieza un canal</strong> (medio cerdo) en sus piezas y{" "}
+								<strong>qué porcentaje del peso</strong> es cada una. Es el dato
+								medular: a partir de aquí el sistema calcula todo lo demás. Si la
+								receta está bien configurada, el resto funciona solo.
+							</p>
+						</div>
+
+						{/* Flujo: de la receta sale todo */}
+						<div className="grid gap-3 p-4 md:grid-cols-[auto_1fr] md:items-center">
+							<div className="flex items-center justify-center gap-1 rounded-lg border bg-background px-3 py-2 text-center">
+								<div>
+									<div className="font-bold text-sm">🐷 CANAL</div>
+									<div className="text-[11px] text-muted-foreground">
+										se despieza en piezas
+										<br />
+										con su % de peso
+									</div>
+								</div>
+								<span className="px-2 text-2xl text-muted-foreground">→</span>
+							</div>
+							<div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+								{[
+									{
+										icon: "✂️",
+										t: "Despiece",
+										d: "Guía el corte: qué piezas y cuántas salen de cada canal.",
+									},
+									{
+										icon: "📦",
+										t: "Proyección de pedidos",
+										d: "Estima piezas y kg disponibles según lo que vas a despiezar.",
+									},
+									{
+										icon: "📊",
+										t: "Rendimiento",
+										d: "Compara el % estimado contra el peso real pesado del día.",
+									},
+									{
+										icon: "💲",
+										t: "Precio sugerido",
+										d: "Base para calcular el costo y precio de cada pieza.",
+									},
+								].map((x) => (
+									<div
+										key={x.t}
+										className="rounded-lg border bg-background p-2.5"
+									>
+										<div className="text-base">{x.icon}</div>
+										<div className="mt-0.5 font-semibold text-xs">{x.t}</div>
+										<div className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
+											{x.d}
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
+
+						{/* Las 3 vistas son la misma información */}
+						<div className="border-t bg-muted/30 px-4 py-3">
+							<p className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wide">
+								Tres formas de ver la misma información
+							</p>
+							<div className="mt-1.5 grid gap-2 text-xs sm:grid-cols-3">
+								<div>
+									<span className="font-semibold">📋 Tabla</span> — lista
+									editable, fila por fila. Buena para revisar y filtrar.
+								</div>
+								<div>
+									<span className="font-semibold">🗂️ Tablero / Configurador</span>{" "}
+									— visual, capturas en kg y arrastras piezas. La forma más
+									intuitiva.
+								</div>
+								<div>
+									<span className="font-semibold">🌳 Mapa</span> — árbol de
+									despiece (padre → hijos) para ver la jerarquía completa.
+								</div>
+							</div>
+							<p className="mt-2 text-[11px] text-muted-foreground">
+								Las tres leen y guardan en la <strong>misma tabla</strong> de
+								recetas: lo que cambias en una se refleja en las otras al
+								instante.
+							</p>
+						</div>
+					</div>
+				</CardContent>
+			)}
 
 			<CardContent className="p-0">
 				{viewMode === "board" ? (
