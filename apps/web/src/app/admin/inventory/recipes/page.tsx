@@ -824,11 +824,9 @@ export default function RecipesPage({
 							dropTarget === `branch:${r.id}` && "ring-2 ring-blue-400",
 						)}
 						onDragOver={(e) => {
-							if (draggedChild) {
-								e.preventDefault();
-								e.stopPropagation();
-								setDropTarget(`branch:${r.id}`);
-							}
+							e.preventDefault();
+							e.stopPropagation();
+							if (draggedChild) setDropTarget(`branch:${r.id}`);
 						}}
 						onDragLeave={() =>
 							setDropTarget((t) => (t === `branch:${r.id}` ? null : t))
@@ -988,6 +986,8 @@ export default function RecipesPage({
 				onDragStart={(e) => {
 					setDraggedChild({ id: p.id, name: p.name });
 					e.dataTransfer.effectAllowed = "copy";
+					// Necesario para que el arrastre inicie en Firefox/algunos Chrome.
+					e.dataTransfer.setData("text/plain", String(p.id));
 				}}
 				onDragEnd={clearDrag}
 				className="cursor-grab rounded-lg border bg-background px-2 py-1.5 hover:border-foreground/30 active:cursor-grabbing"
@@ -1064,10 +1064,8 @@ export default function RecipesPage({
 						: undefined
 				}
 				onDragOver={(e) => {
-					if (draggedChild) {
-						e.preventDefault();
-						setDropTarget(dkey);
-					}
+					e.preventDefault();
+					if (draggedChild) setDropTarget(dkey);
 				}}
 				onDragLeave={() => setDropTarget((t) => (t === dkey ? null : t))}
 				onDrop={(e) => {
@@ -1268,10 +1266,8 @@ export default function RecipesPage({
 			render: (r) => (
 				<div
 					onDragOver={(e) => {
-						if (draggedChild) {
-							e.preventDefault();
-							setDropParentId(r.parent_product_id);
-						}
+						e.preventDefault();
+						if (draggedChild) setDropParentId(r.parent_product_id);
 					}}
 					onDragLeave={() => setDropParentId(null)}
 					onDrop={(e) => {
@@ -1313,10 +1309,9 @@ export default function RecipesPage({
 				return (
 					<div
 						onDragOver={(e) => {
-							if (draggedChild && draggedChild.id !== r.child_product_id) {
-								e.preventDefault();
+							e.preventDefault();
+							if (draggedChild && draggedChild.id !== r.child_product_id)
 								setDropOntoChildId(r.child_product_id);
-							}
 						}}
 						onDragLeave={() => setDropOntoChildId(null)}
 						onDrop={(e) => {
@@ -1863,7 +1858,7 @@ export default function RecipesPage({
 						{/* Zonas de drop alternativas */}
 						<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
 							<div
-								onDragOver={(e) => draggedChild && e.preventDefault()}
+								onDragOver={(e) => e.preventDefault()}
 								onDrop={(e) => {
 									e.preventDefault();
 									if (draggedChild)
@@ -1886,7 +1881,7 @@ export default function RecipesPage({
 								</div>
 							</div>
 							<div
-								onDragOver={(e) => draggedChild && e.preventDefault()}
+								onDragOver={(e) => e.preventDefault()}
 								onDrop={(e) => {
 									e.preventDefault();
 									if (draggedChild)
