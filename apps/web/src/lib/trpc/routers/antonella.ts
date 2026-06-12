@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
@@ -10,8 +11,6 @@ import {
 	productTransformations,
 } from "@/lib/db/schema";
 import { protectedProcedure, router } from "../init";
-
-const Anthropic = require("@anthropic-ai/sdk").default;
 
 const client = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY,
