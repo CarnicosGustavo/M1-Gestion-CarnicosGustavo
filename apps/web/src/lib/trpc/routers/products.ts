@@ -1915,4 +1915,57 @@ export const productsRouter = router({
 
 			return transformationTypes.map((t) => t.type).filter((t) => t !== null);
 		}),
+
+	// Admin: crear canales base (POLINESIO, genéricos) si no existen
+	initializeChannels: adminProcedure
+		.input(z.void())
+		.output(z.object({ created: z.array(z.string()) }))
+		.mutation(async ({ ctx }) => {
+			const uid = ctx.user.id;
+			const created: string[] = [];
+
+			const channels = [
+				{
+					name: "CANAL POLINESIO",
+					weight: 105,
+					category: "Canales",
+					sortOrder: 40,
+				},
+				{
+					name: "CANAL GENÉRICO",
+					weight: 100,
+					category: "Canales",
+					sortOrder: 50,
+				},
+			];
+
+			for (const ch of channels) {
+				const exists = await db
+					.select({ id: products.id })
+					.from(products)
+					.where(and(eq(products.user_uid, uid), eq(products.name, ch.name)))
+					.limit(1);
+
+				if (!exists.length) {
+					await db.insert(products).values({
+						user_uid: uid,
+						name: ch.name,
+						category: ch.category,
+						is_parent_product: true,
+						is_sellable_by_unit: false,
+						is_sellable_by_weight: true,
+						default_sale_unit: "KG",
+						avg_weight_per_piece_kg: String(ch.weight),
+						stock_pieces: 0,
+						weighed_pieces: 0,
+						stock_kg: "0",
+						active: true,
+						sort_order: ch.sortOrder,
+					});
+					created.push(ch.name);
+				}
+			}
+
+			return { created };
+		}),
 });

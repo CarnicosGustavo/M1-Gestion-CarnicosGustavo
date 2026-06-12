@@ -252,13 +252,31 @@ async function getProductDetail(
 	productName: string,
 	userId: string,
 ): Promise<string> {
-	const prod = await db
+	// Búsqueda fuzzy: exact match primero, luego substring insensible a mayúsculas
+	let prod = await db
 		.select()
 		.from(products)
 		.where(and(eq(products.user_uid, userId), eq(products.name, productName)))
 		.limit(1);
 
-	if (!prod.length) return `❌ Producto "${productName}" no encontrado`;
+	if (!prod.length) {
+		// Búsqueda fuzzy (substring)
+		const allProds = await db
+			.select()
+			.from(products)
+			.where(eq(products.user_uid, userId));
+		const matches = allProds.filter((p) =>
+			p.name.toUpperCase().includes(productName.toUpperCase()),
+		);
+		if (matches.length === 1) {
+			prod = [matches[0]];
+		} else if (matches.length > 1) {
+			const list = matches.map((m) => m.name).join(", ");
+			return `❓ "${productName}" es ambiguo. Coincidencias: ${list}. Sé más específico.`;
+		} else {
+			return `❌ Producto "${productName}" no encontrado`;
+		}
+	}
 
 	const p = prod[0];
 
@@ -361,17 +379,24 @@ async function getDemand(period: string, userId: string): Promise<string> {
 
 	const totalPz = Object.values(grouped).reduce((s, x) => s + x.pz, 0);
 	const totalKg = Object.values(grouped).reduce((s, x) => s + x.kg, 0);
+	const uniqueOrders = new Set(openOrders.map((o) => o.order_id)).size;
+
+	const criticalItems = Object.entries(grouped).filter(
+		([, { pz }]) => pz > 50,
+	).length;
 
 	return `
 ┌───────────────────────────────────────┐
-│ DEMANDA: ${period}
+│ DEMANDA: ${period.toUpperCase()}
 ├───────────────────────────────────────┤
-│ Órdenes abiertas: ${openOrders.length > 0 ? Math.ceil(openOrders.length / 5) : 0}
+│ Órdenes abiertas: ${uniqueOrders}
+│ Items críticos (>50 pz): ${criticalItems}
 │
-│ PIEZAS PEDIDAS:
+│ PIEZAS PEDIDAS (ordenado):
 ${summary || "  (ninguna)"}
 │
-│ TOTAL: ${totalPz} pz (~${totalKg.toFixed(0)} kg)
+│ TOTALES: ${totalPz} pz | ~${totalKg.toFixed(0)} kg
+│ Promedio/orden: ${uniqueOrders > 0 ? (totalPz / uniqueOrders).toFixed(1) : 0} pz
 └───────────────────────────────────────┘
 `;
 }
@@ -471,40 +496,64 @@ async function getCoverage(userId: string): Promise<string> {
 		)
 		.groupBy(products.name);
 
-	const demandMap = new Map(
-		demand.map((d) => [d.product_name, d.total_pz || 0]),
-	);
-	const invMap = new Map(inventory.map((i) => [i.name, i.stock]));
+	if (!demand.length) {
+		return `
+┌───────────────────────────────────────┐
+│ COBERTURA DE DEMANDA
+├───────────────────────────────────────┤
+│ ✅ SIN DEMANDA ABIERTA
+│ (no hay órdenes pendientes)
+└───────────────────────────────────────┘
+`;
+	}
 
-	const analysis = Array.from(demandMap.entries())
-		.map(([name, pz]) => {
-			const stock = invMap.get(name) || 0;
-			const status = stock >= pz ? "✅" : "❌";
-			const shortage = Math.max(0, pz - stock);
-			return `  ${status} ${name.padEnd(20)} ${pz} pedidas / ${stock} en stock ${shortage > 0 ? `(faltan ${shortage})` : ""}`;
+	const analysis = demand
+		.map(({ product_name, total_pz }) => {
+			const stock = (
+				inventory.find((i) => i.name === product_name) || { stock: 0 }
+			).stock;
+			const shortage = Math.max(0, (total_pz || 0) - stock);
+			const status = shortage === 0 ? "✅" : "❌";
+
+			let msg = `${status} ${product_name.padEnd(20)} ${total_pz ?? 0} pz`;
+			if (shortage > 0) {
+				msg += ` (stock ${stock}, faltan ${shortage})`;
+			}
+			return `  ${msg}`;
 		})
 		.join("\n");
+
+	const totalDemand = demand.reduce((s, d) => s + (d.total_pz ?? 0), 0);
+	const totalStock = inventory.reduce((s, i) => s + i.stock, 0);
+	const coverageRate =
+		totalStock > 0 ? ((totalStock / totalDemand) * 100).toFixed(1) : "0";
 
 	return `
 ┌───────────────────────────────────────┐
 │ COBERTURA DE DEMANDA
 ├───────────────────────────────────────┤
+│ Demanda total: ${totalDemand} pz
+│ Stock disponible: ${totalStock} pz
+│ Cobertura: ${coverageRate}%
 │
-${analysis || "  (sin demanda abierta)"}
+${analysis}
 │
 └───────────────────────────────────────┘
 `;
 }
 
 async function forecastDemand(days: number, userId: string): Promise<string> {
-	// ML-lite: promedio de últimas 4 semanas + tendencia
+	// ML-lite: promedio de últimas 4 semanas + tendencia + ponderación reciente
 	const fourWeeksAgo = new Date();
 	fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+	const twoWeeksAgo = new Date();
+	twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
 	const historical = await db
 		.select({
 			product_name: products.name,
 			total_pz: sql<number>`SUM(${orderItems.quantity_pieces})`,
+			created_at: orders.created_at,
 		})
 		.from(orderItems)
 		.innerJoin(orders, eq(orderItems.order_id, orders.id))
@@ -516,32 +565,62 @@ async function forecastDemand(days: number, userId: string): Promise<string> {
 				sql`${orders.status} NOT IN ('CANCELADA')`,
 			),
 		)
-		.groupBy(products.name);
+		.groupBy(products.name, orders.created_at);
 
-	const avgWeekly = historical.map((h) => ({
-		name: h.product_name,
-		avg: (h.total_pz || 0) / 4,
-		forecast: ((h.total_pz || 0) / 4) * (days / 7),
-	}));
+	const productHistory: Record<string, { all: number; recent: number }> = {};
+	for (const h of historical) {
+		if (!productHistory[h.product_name]) {
+			productHistory[h.product_name] = { all: 0, recent: 0 };
+		}
+		productHistory[h.product_name].all += h.total_pz || 0;
+		if (h.created_at && h.created_at >= twoWeeksAgo) {
+			productHistory[h.product_name].recent += h.total_pz || 0;
+		}
+	}
+
+	const avgWeekly = Object.entries(productHistory).map(
+		([name, { all, recent }]) => {
+			const avg = all / 4;
+			// Ponder reciente 60% + histórico 40%
+			const weighted = (recent / 2) * 0.6 + avg * 0.4;
+			const forecast = weighted * (days / 7);
+			return {
+				name,
+				avg: weighted,
+				forecast,
+				confidence: recent > 0 ? "⭐⭐⭐⭐" : "⭐⭐",
+			};
+		},
+	);
+
+	avgWeekly.sort((a, b) => b.forecast - a.forecast);
 
 	const forecastLines = avgWeekly
-		.slice(0, 5)
-		.map((f) => `  ${f.name.padEnd(20)} ${f.forecast.toFixed(0)} pz (est.)`)
+		.slice(0, 8)
+		.map(
+			(f) =>
+				`  ${f.name.padEnd(20)} ${f.forecast.toFixed(0)} pz (${f.confidence})`,
+		)
 		.join("\n");
+
+	const totalForecast = avgWeekly.reduce((s, f) => s + f.forecast, 0);
+	const confidence = avgWeekly.some((f) => f.confidence === "⭐⭐⭐⭐")
+		? "Alta (datos recientes)"
+		: "Baja (datos históricos)";
 
 	return `
 ┌───────────────────────────────────────┐
-│ FORECAST (${days} días)
+│ FORECAST: ${days} DÍAS
 ├───────────────────────────────────────┤
+│ Total predicho: ${totalForecast.toFixed(0)} pz
+│ Confianza: ${confidence}
+│ Método: Ponderado (reciente 60% + histórico 40%)
 │
-│ Basado en últimas 4 semanas
-│ Confianza: ⭐⭐⭐ (datos limitados)
-│
-│ PREDICCIÓN TOP:
+│ TOP PRODUCTOS:
 ${forecastLines}
 │
 │ RECOMENDACIÓN:
-│ Compra +30% de lo predicho (buffer)
+│ Compra ~${(totalForecast * 1.3).toFixed(0)} pz (+30% buffer)
 └───────────────────────────────────────┘
 `;
 }
