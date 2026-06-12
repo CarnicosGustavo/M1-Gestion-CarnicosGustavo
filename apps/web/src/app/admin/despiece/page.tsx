@@ -1,481 +1,471 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
-import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
 import {
-	ShoppingCartIcon,
-	ScissorsIcon,
-	GitBranchIcon,
-	ArrowRightIcon,
-	CheckCircle2Icon,
-} from "lucide-react";
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+} from "@finopenpos/ui/components/card";
 import { cn } from "@finopenpos/ui/lib/utils";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	GitBranchIcon,
+	MinusIcon,
+	PackageIcon,
+	PlusIcon,
+	ScissorsIcon,
+	ShoppingCartIcon,
+} from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useTRPC } from "@/lib/trpc/client";
 
-type Tab = "comprar" | "despiezar" | "recetas";
+type Tab = "despiezar" | "recetas";
+
+const TYPE_ACCENT: Record<string, string> = {
+	AMERICANO: "#e11d48",
+	NACIONAL_LOMO: "#16a34a",
+	NACIONAL_ESPILOMO: "#0d9488",
+	POLINESIO: "#ea580c",
+};
+const accentFor = (t: string) => TYPE_ACCENT[t] ?? "#2563eb";
+
+// "CANAL NACIONAL LADO LOMO" -> "Nacional · Lomo"
+const shortCanal = (name: string) =>
+	name
+		.replace(/^CANAL\s+/i, "")
+		.replace(/NACIONAL\s+LADO\s+/i, "Nacional · ")
+		.replace(/^AMERICANO$/i, "Americano")
+		.trim();
 
 export default function DespiecePage() {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
-	const [tab, setTab] = useState<Tab>("comprar");
+	const [tab, setTab] = useState<Tab>("despiezar");
 
-	const { data: products = [] } = useQuery(trpc.products.list.queryOptions()) as {
-		data: any[];
-	};
+	const panelOpts = trpc.yields.despiecePanel.queryOptions();
+	const { data: panel } = useQuery(panelOpts);
+	const canales = panel?.canales ?? [];
+	const recipes = panel?.recipes ?? [];
+	const demand = panel?.demandByProduct ?? {};
+
 	const productsKey = trpc.products.list.queryOptions().queryKey;
-	const invalidateProducts = () =>
+	const invalidate = () => {
+		queryClient.invalidateQueries({ queryKey: panelOpts.queryKey });
 		queryClient.invalidateQueries({ queryKey: productsKey });
-
-	// ── Productos padre (despiezables) ──
-	const parents = useMemo(
-		() => products.filter((p) => p.is_parent_product),
-		[products],
-	);
-
-	// Mapa de stock + peso promedio por pieza (para estimar kg)
-	const prodMap = useMemo(() => {
-		const m = new Map<number, { stockPieces: number; avgWeight: number; name: string }>();
-		for (const p of products) {
-			m.set(p.id, {
-				stockPieces: p.stock_pieces ?? 0,
-				avgWeight:
-					p.avg_weight_per_piece_kg != null ? Number(p.avg_weight_per_piece_kg) : 0,
-				name: p.name,
-			});
-		}
-		return m;
-	}, [products]);
-
-	const estKg = (productId: number, pieces: number) => {
-		const w = prodMap.get(productId)?.avgWeight ?? 0;
-		return w > 0 ? w * pieces : 0;
 	};
-
-	// ───────────────────────── TAB 1: COMPRAR ─────────────────────────
-	const [qtyAmericano, setQtyAmericano] = useState("");
-	const [qtyNacional, setQtyNacional] = useState("");
-	const [totalWeight, setTotalWeight] = useState("");
-	const [pricePerKg, setPricePerKg] = useState("");
-	const [supplier, setSupplier] = useState("");
-	const [purchaseResult, setPurchaseResult] = useState<any | null>(null);
-
-	const purchaseMut = useMutation(
-		trpc.products.registerChannelPurchase.mutationOptions({
-			onSuccess: (data: any) => {
-				toast.success(`Compra registrada: ${data.totalPieces} medias canal`);
-				setPurchaseResult(data);
-				setQtyAmericano("");
-				setQtyNacional("");
-				setTotalWeight("");
-				invalidateProducts();
-			},
-			onError: (e: any) => toast.error(e.message ?? "Error al registrar compra"),
-		}),
-	);
-
-	const registrarCompra = () => {
-		const a = parseInt(qtyAmericano) || 0;
-		const n = parseInt(qtyNacional) || 0;
-		const w = parseFloat(totalWeight) || 0;
-		if (a <= 0 && n <= 0) {
-			toast.error("Indica cuántos cerdos americanos o nacionales");
-			return;
-		}
-		if (w <= 0) {
-			toast.error("Indica el peso total");
-			return;
-		}
-		purchaseMut.mutate({
-			purchaseMode: "CANAL_COMPLETO",
-			qtyAmericano: a,
-			qtyNacional: n,
-			totalWeightKg: w,
-			pricePerKg: parseFloat(pricePerKg) || undefined,
-			supplier: supplier || undefined,
-		});
-	};
-
-	// ───────────────────────── TAB 2: DESPIEZAR ─────────────────────────
-	const [parentId, setParentId] = useState<string>("");
-	const [ttype, setTtype] = useState<string>("");
-	const [qtyProcess, setQtyProcess] = useState("1");
-
-	const selectedParent = useMemo(
-		() => parents.find((p) => String(p.id) === parentId),
-		[parents, parentId],
-	);
-
-	const ttypesQuery = useQuery({
-		...trpc.products.getAvailableTransformationTypes.queryOptions({
-			parentProductId: parseInt(parentId) || 0,
-		}),
-		enabled: !!parentId,
-	});
-
-	const treeQuery = useQuery({
-		...trpc.products.getTransformations.queryOptions({
-			parentProductId: parseInt(parentId) || 0,
-			transformationType: ttype || undefined,
-		}),
-		enabled: !!parentId && !!ttype,
-	});
 
 	const disassembleMut = useMutation(
 		trpc.products.processDisassembly.mutationOptions({
 			onSuccess: () => {
 				toast.success("Despiece procesado");
-				invalidateProducts();
+				invalidate();
 			},
 			onError: (e: any) => toast.error(e.message ?? "Error al despiezar"),
 		}),
 	);
 
-	const despiezar = () => {
-		if (!parentId || !ttype) {
-			toast.error("Selecciona producto y tipo de despiece");
+	// ── Demanda total por canal (para badge "tiene pedidos") ──
+	const demandByCanal = useMemo(() => {
+		const m = new Map<number, number>();
+		for (const r of recipes) {
+			const d = demand[r.childId]?.pieces ?? 0;
+			if (d > 0) m.set(r.parentId, (m.get(r.parentId) ?? 0) + d);
+		}
+		return m;
+	}, [recipes, demand]);
+
+	// Auto-selecciona el primer canal con stock o con pedidos
+	const [selectedId, setSelectedId] = useState<number | null>(null);
+	useEffect(() => {
+		if (selectedId != null || canales.length === 0) return;
+		const withDemand = canales.find(
+			(c) => (demandByCanal.get(c.canalProductId) ?? 0) > 0,
+		);
+		const withStock = canales.find((c) => c.stockPieces > 0);
+		setSelectedId((withDemand ?? withStock ?? canales[0]).canalProductId);
+	}, [canales, demandByCanal, selectedId]);
+
+	const sel = canales.find((c) => c.canalProductId === selectedId) ?? null;
+
+	// Piezas del canal seleccionado, con capacidad y demanda
+	const pieces = useMemo(() => {
+		if (!sel) return [];
+		return recipes
+			.filter((r) => r.parentId === sel.canalProductId)
+			.map((r) => ({
+				...r,
+				demand: demand[r.childId]?.pieces ?? 0,
+				capacity: sel.stockPieces * r.pieces, // si despiezo todo el stock
+			}))
+			.sort(
+				(a, b) => b.demand - a.demand || a.childName.localeCompare(b.childName),
+			);
+	}, [sel, recipes, demand]);
+
+	// Canales sugeridos = los necesarios para cubrir la pieza más pedida
+	const suggested = useMemo(() => {
+		if (!sel) return 0;
+		let need = 0;
+		for (const p of pieces) {
+			if (p.demand > 0 && p.pieces > 0)
+				need = Math.max(need, Math.ceil(p.demand / p.pieces));
+		}
+		return Math.min(need, sel.stockPieces);
+	}, [pieces, sel]);
+
+	const [qty, setQty] = useState(1);
+	// Al cambiar de canal, propone la cantidad sugerida (o 1)
+	useEffect(() => {
+		setQty(Math.max(1, Math.min(suggested || 1, sel?.stockPieces ?? 1)));
+	}, [suggested, sel]);
+
+	const maxQty = sel?.stockPieces ?? 0;
+	const clampedQty = Math.max(1, Math.min(qty, Math.max(1, maxQty)));
+
+	const ejecutar = () => {
+		if (!sel || !sel.type) {
+			toast.error("Este canal no tiene receta configurada");
 			return;
 		}
 		disassembleMut.mutate({
-			parentProductId: parseInt(parentId),
-			quantityToProcess: parseInt(qtyProcess) || 1,
-			transformationType: ttype,
+			parentProductId: sel.canalProductId,
+			quantityToProcess: clampedQty,
+			transformationType: sel.type,
+			entryMode: false,
 		});
 	};
 
-	const tabs: { id: Tab; label: string; icon: any }[] = [
-		{ id: "comprar", label: "1. Comprar canales", icon: ShoppingCartIcon },
-		{ id: "despiezar", label: "2. Despiezar", icon: ScissorsIcon },
-		{ id: "recetas", label: "3. Recetas (árbol)", icon: GitBranchIcon },
-	];
+	const totalDemandPieces = Object.values(demand).reduce(
+		(a, d) => a + d.pieces,
+		0,
+	);
 
 	return (
-		<div className="mx-auto max-w-5xl space-y-6">
-			<div>
-				<h1 className="text-2xl font-bold">Despiece</h1>
-				<p className="text-sm text-muted-foreground">
-					Compra canales → quedan piezas en inventario → despiézalas en sus partes cuando las necesites.
-				</p>
-			</div>
-
-			{/* Tabs */}
-			<div className="flex gap-2 border-b">
-				{tabs.map((tb) => (
-					<button
-						key={tb.id}
-						onClick={() => setTab(tb.id)}
-						className={cn(
-							"flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors",
-							tab === tb.id
-								? "border-primary text-primary"
-								: "border-transparent text-muted-foreground hover:text-foreground",
-						)}
-					>
-						<tb.icon className="w-4 h-4" />
-						{tb.label}
-					</button>
-				))}
-			</div>
-
-			{/* ───── TAB 1: COMPRAR ───── */}
-			{tab === "comprar" && (
-				<div className="grid gap-6 md:grid-cols-2">
-					<Card>
-						<CardHeader>
-							<CardTitle>Registrar compra de canales</CardTitle>
-							<CardDescription>
-								Cuántos cerdos compraste y su peso total. Quedan como medias canal en inventario.
-							</CardDescription>
-						</CardHeader>
-						<CardContent className="space-y-4">
-							<div className="grid grid-cols-2 gap-3">
-								<div className="space-y-1">
-									<Label>Cerdos Americanos</Label>
-									<Input
-										type="number"
-										value={qtyAmericano}
-										onChange={(e) => setQtyAmericano(e.target.value)}
-										placeholder="0"
-									/>
-									<p className="text-[11px] text-muted-foreground">→ 2 medias iguales c/u</p>
-								</div>
-								<div className="space-y-1">
-									<Label>Cerdos Nacionales</Label>
-									<Input
-										type="number"
-										value={qtyNacional}
-										onChange={(e) => setQtyNacional(e.target.value)}
-										placeholder="0"
-									/>
-									<p className="text-[11px] text-muted-foreground">→ 1 lado Lomo + 1 Espilomo</p>
-								</div>
-							</div>
-							<div className="grid grid-cols-2 gap-3">
-								<div className="space-y-1">
-									<Label>Peso total (kg)</Label>
-									<Input
-										type="number"
-										value={totalWeight}
-										onChange={(e) => setTotalWeight(e.target.value)}
-										placeholder="Ej. 110"
-									/>
-								</div>
-								<div className="space-y-1">
-									<Label>Precio por kilo ($)</Label>
-									<Input
-										type="number"
-										value={pricePerKg}
-										onChange={(e) => setPricePerKg(e.target.value)}
-										placeholder="Ej. 55"
-									/>
-								</div>
-							</div>
-							<div className="space-y-1">
-								<Label>Proveedor</Label>
-								<div className="flex gap-2">
-									{["La Barca", "Valle"].map((prov) => (
-										<button
-											key={prov}
-											type="button"
-											onClick={() => setSupplier(prov)}
-											className={cn(
-												"flex-1 rounded-lg border px-3 py-2 text-sm font-bold transition-colors",
-												supplier === prov
-													? "border-primary bg-primary/10 text-primary"
-													: "border-border hover:bg-muted",
-											)}
-										>
-											{prov}
-										</button>
-									))}
-								</div>
-								<Input
-									value={supplier}
-									onChange={(e) => setSupplier(e.target.value)}
-									placeholder="O escribe otro proveedor"
-									className="mt-2"
-								/>
-							</div>
-							<Button
-								className="w-full"
-								disabled={purchaseMut.isPending}
-								onClick={registrarCompra}
-							>
-								{purchaseMut.isPending ? "Registrando…" : "Registrar compra"}
-							</Button>
-						</CardContent>
-					</Card>
-
-					{/* Resultado */}
-					<Card>
-						<CardHeader>
-							<CardTitle>Resultado</CardTitle>
-							<CardDescription>Piezas que entraron al inventario</CardDescription>
-						</CardHeader>
-						<CardContent>
-							{!purchaseResult ? (
-								<div className="text-sm text-muted-foreground py-8 text-center">
-									Aquí verás las medias canal generadas tras registrar la compra.
-								</div>
-							) : (
-								<div className="space-y-3">
-									<div className="rounded-lg bg-green-50 p-3 text-sm">
-										<div className="flex items-center gap-2 font-bold text-green-700">
-											<CheckCircle2Icon className="w-4 h-4" />
-											{purchaseResult.totalPieces} medias canal · {purchaseResult.totalKg} kg
-										</div>
-									</div>
-									<div className="space-y-1">
-										{(purchaseResult.allocations ?? []).map((a: any) => (
-											<div
-												key={a.productId}
-												className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-											>
-												<span className="font-medium">{a.product}</span>
-												<span className="text-muted-foreground">
-													+{a.addedPieces} pz · stock {a.newStock}
-												</span>
-											</div>
-										))}
-									</div>
-								</div>
-							)}
-						</CardContent>
-					</Card>
-				</div>
-			)}
-
-			{/* ───── TAB 2: DESPIEZAR ───── */}
-			{tab === "despiezar" && (
-				<div className="grid gap-6 md:grid-cols-2">
-					<Card>
-						<CardHeader>
-							<CardTitle>Despiezar una pieza padre</CardTitle>
-							<CardDescription>
-								Convierte un canal o pieza en sus partes. Descuenta el padre y suma los hijos.
-							</CardDescription>
-						</CardHeader>
-						<CardContent className="space-y-4">
-							<div className="space-y-2">
-								<Label>Producto a despiezar</Label>
-								<div className="grid grid-cols-2 gap-2">
-									{parents.map((p) => {
-										const hasStock = (p.stock_pieces ?? 0) > 0;
-										return (
-											<button
-												key={p.id}
-												type="button"
-												onClick={() => {
-													setParentId(String(p.id));
-													setTtype("");
-												}}
-												className={cn(
-													"rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors",
-													parentId === String(p.id)
-														? "border-primary bg-primary text-primary-foreground shadow"
-														: hasStock
-															? "border-border hover:bg-muted"
-															: "border-border/50 bg-muted/30 text-muted-foreground",
-												)}
-											>
-												<div className="truncate">{p.name}</div>
-												<div className="text-[11px] font-normal text-muted-foreground">
-													{p.stock_pieces ?? 0} pz en stock
-												</div>
-											</button>
-										);
-									})}
-								</div>
-							</div>
-
-							{parentId && (ttypesQuery.data ?? []).length > 0 && (
-								<div className="space-y-2">
-									<Label>Tipo de despiece</Label>
-									<div className="flex flex-wrap gap-2">
-										{(ttypesQuery.data ?? []).map((tt: string) => (
-											<button
-												key={tt}
-												type="button"
-												onClick={() => setTtype(tt)}
-												className={cn(
-													"rounded-lg border px-3 py-1.5 text-sm font-bold transition-colors",
-													ttype === tt
-														? "border-primary bg-primary text-primary-foreground shadow"
-														: "border-border hover:bg-muted",
-												)}
-											>
-												{tt}
-											</button>
-										))}
-									</div>
-								</div>
-							)}
-
-							<div className="space-y-1">
-								<Label>Cuántas piezas procesar</Label>
-								<Input
-									type="number"
-									value={qtyProcess}
-									onChange={(e) => setQtyProcess(e.target.value)}
-									min="1"
-								/>
-								{selectedParent && (
-									<p className="text-[11px] text-muted-foreground">
-										Disponibles: {selectedParent.stock_pieces} piezas
-									</p>
-								)}
-							</div>
-
-							<Button
-								className="w-full"
-								disabled={disassembleMut.isPending || !parentId || !ttype}
-								onClick={despiezar}
-							>
-								<ScissorsIcon className="w-4 h-4 mr-2" />
-								{disassembleMut.isPending ? "Despiezando…" : "Despiezar"}
-							</Button>
-						</CardContent>
-					</Card>
-
-					{/* Vista previa de qué genera */}
-					<Card>
-						<CardHeader>
-							<CardTitle>Qué vas a obtener</CardTitle>
-							<CardDescription>
-								{selectedParent ? selectedParent.name : "Selecciona un producto"} →
-							</CardDescription>
-						</CardHeader>
-						<CardContent>
-							{!parentId || !ttype ? (
-								<div className="text-sm text-muted-foreground py-8 text-center">
-									Selecciona producto y tipo para ver las piezas que genera.
-								</div>
-							) : (treeQuery.data ?? []).length === 0 ? (
-								<div className="text-sm text-muted-foreground py-8 text-center">
-									Este producto no tiene receta para ese tipo.
-								</div>
-							) : (
-								<div className="space-y-2">
-									{(treeQuery.data ?? []).map((tr: any) => {
-										const qty = parseInt(qtyProcess) || 1;
-										const pieces = Number(tr.yield_quantity_pieces) * qty;
-										const childId = tr.child_product_id;
-										const kg = estKg(childId, pieces);
-										const stock = prodMap.get(childId)?.stockPieces ?? 0;
-										return (
-											<div
-												key={tr.id}
-												className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-											>
-												<ArrowRightIcon className="w-4 h-4 text-primary shrink-0" />
-												<div className="flex-1 min-w-0">
-													<div className="font-medium truncate">
-														{tr.childProduct?.name ?? `#${childId}`}
-													</div>
-													<div className="text-[11px] text-muted-foreground">
-														Stock actual: {stock} pz
-													</div>
-												</div>
-												<div className="text-right">
-													<div className="font-semibold">
-														{pieces % 1 === 0 ? pieces : pieces.toFixed(1)} pz
-													</div>
-													<div className="text-[11px] text-blue-600">
-														{kg > 0 ? `~${kg.toFixed(2)} kg est.` : "—"}
-													</div>
-												</div>
-											</div>
-										);
-									})}
-								</div>
-							)}
-						</CardContent>
-					</Card>
-				</div>
-			)}
-
-			{/* ───── TAB 3: RECETAS (ÁRBOL) ───── */}
-			{tab === "recetas" && (
-				<div className="space-y-4">
-					<p className="text-sm text-muted-foreground">
-						Mapa de despiece: de cada pieza padre salen estas partes. Referencia visual.
+		<div className="mx-auto max-w-6xl space-y-5">
+			<div className="flex flex-wrap items-end justify-between gap-2">
+				<div>
+					<h1 className="font-bold text-2xl">Despiece</h1>
+					<p className="text-muted-foreground text-sm">
+						Los canales vienen de la{" "}
+						<Link
+							href="/admin/purchase"
+							className="font-medium text-primary underline-offset-2 hover:underline"
+						>
+							Compra del día
+						</Link>
+						. Elige un tipo y despiézalo según lo que se pidió.
 					</p>
-					<div className="grid gap-4 md:grid-cols-2">
-						{parents.map((p) => (
-							<RecipeTreeCard key={p.id} parent={p} />
-						))}
-					</div>
 				</div>
+				<div className="flex gap-2">
+					{(
+						[
+							{ id: "despiezar", label: "Despiezar", icon: ScissorsIcon },
+							{ id: "recetas", label: "Recetas (árbol)", icon: GitBranchIcon },
+						] as const
+					).map((tb) => (
+						<button
+							key={tb.id}
+							type="button"
+							onClick={() => setTab(tb.id)}
+							className={cn(
+								"flex items-center gap-2 rounded-lg border px-3 py-1.5 font-semibold text-sm transition-colors",
+								tab === tb.id
+									? "border-primary bg-primary text-primary-foreground"
+									: "border-border text-muted-foreground hover:bg-muted",
+							)}
+						>
+							<tb.icon className="h-4 w-4" />
+							{tb.label}
+						</button>
+					))}
+				</div>
+			</div>
+
+			{tab === "despiezar" && (
+				<>
+					{/* Banner de demanda (modo automático) */}
+					{totalDemandPieces > 0 && (
+						<div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+							<div className="flex items-center gap-2 font-bold text-blue-800 text-sm">
+								<PackageIcon className="h-4 w-4" />
+								Pedidos pendientes: {totalDemandPieces} piezas por producir
+							</div>
+							<p className="mt-0.5 text-blue-700/80 text-xs">
+								Los canales con pedidos están marcados ●. Al elegir uno, te
+								sugiero cuántos despiezar para cubrir la demanda.
+							</p>
+						</div>
+					)}
+
+					{/* Cards de canales disponibles */}
+					{canales.length === 0 ? (
+						<EmptyCanales />
+					) : (
+						<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+							{canales.map((c) => {
+								const accent = accentFor(c.type);
+								const hasStock = c.stockPieces > 0;
+								const dem = demandByCanal.get(c.canalProductId) ?? 0;
+								const active = c.canalProductId === selectedId;
+								return (
+									<button
+										key={c.canalProductId}
+										type="button"
+										onClick={() => setSelectedId(c.canalProductId)}
+										className={cn(
+											"relative overflow-hidden rounded-xl border bg-card p-3 text-left transition-all",
+											active
+												? "ring-2 ring-offset-1"
+												: "hover:border-foreground/30",
+											!hasStock && "opacity-60",
+										)}
+										style={
+											active
+												? ({ ["--tw-ring-color" as any]: accent } as any)
+												: undefined
+										}
+									>
+										<div
+											className="-mx-3 -mt-3 mb-2 h-1.5"
+											style={{ background: accent }}
+										/>
+										<div className="flex items-start justify-between gap-1">
+											<span className="font-bold text-sm leading-tight">
+												{shortCanal(c.name)}
+											</span>
+											{dem > 0 && (
+												<span
+													className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 font-bold text-[10px] text-blue-700"
+													title={`${dem} piezas pedidas de este canal`}
+												>
+													● {dem}
+												</span>
+											)}
+										</div>
+										<div className="mt-1 flex items-end gap-1">
+											<span
+												className="font-extrabold text-2xl tabular-nums leading-none"
+												style={{ color: hasStock ? accent : undefined }}
+											>
+												{c.stockPieces}
+											</span>
+											<span className="mb-0.5 text-[11px] text-muted-foreground">
+												disponibles
+											</span>
+										</div>
+										<div className="mt-0.5 text-[10px] text-muted-foreground">
+											{c.avgWeight > 0 ? `${c.avgWeight} kg c/u` : "—"}
+										</div>
+									</button>
+								);
+							})}
+						</div>
+					)}
+
+					{/* Detalle del canal seleccionado */}
+					{sel && (
+						<Card>
+							<CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
+								<div>
+									<CardTitle className="text-base">
+										{shortCanal(sel.name)} — qué obtienes y qué se pidió
+									</CardTitle>
+									<p className="text-muted-foreground text-xs">
+										Capacidad = con los {sel.stockPieces} canales disponibles ·
+										Pedidas = demanda viva de pedidos.
+									</p>
+								</div>
+
+								{/* Control de cantidad + ejecutar */}
+								<div className="flex items-center gap-3">
+									<div className="text-right">
+										<div className="text-[10px] text-muted-foreground uppercase">
+											Canales a despiezar
+										</div>
+										{suggested > 0 && (
+											<div className="text-[10px] text-blue-600">
+												sugerido: {suggested}
+											</div>
+										)}
+									</div>
+									<div className="flex items-center rounded-lg border">
+										<button
+											type="button"
+											className="px-2 py-1.5 hover:bg-muted disabled:opacity-40"
+											disabled={clampedQty <= 1}
+											onClick={() => setQty((q) => Math.max(1, q - 1))}
+										>
+											<MinusIcon className="h-4 w-4" />
+										</button>
+										<span className="w-10 text-center font-bold tabular-nums">
+											{clampedQty}
+										</span>
+										<button
+											type="button"
+											className="px-2 py-1.5 hover:bg-muted disabled:opacity-40"
+											disabled={clampedQty >= maxQty}
+											onClick={() => setQty((q) => Math.min(maxQty, q + 1))}
+										>
+											<PlusIcon className="h-4 w-4" />
+										</button>
+									</div>
+									<Button
+										disabled={
+											disassembleMut.isPending || maxQty <= 0 || !sel.type
+										}
+										onClick={ejecutar}
+									>
+										<ScissorsIcon className="mr-2 h-4 w-4" />
+										{disassembleMut.isPending
+											? "Despiezando…"
+											: `Despiezar ${clampedQty}`}
+									</Button>
+								</div>
+							</CardHeader>
+							<CardContent>
+								{maxQty <= 0 && (
+									<div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-amber-800 text-xs">
+										No hay canales de este tipo en inventario. Regístralos en{" "}
+										<Link
+											href="/admin/purchase"
+											className="font-semibold underline"
+										>
+											Compra del día
+										</Link>
+										.
+									</div>
+								)}
+								<div className="divide-y">
+									{pieces.length === 0 ? (
+										<p className="py-6 text-center text-muted-foreground text-sm">
+											Este canal no tiene receta. Configúrala en el{" "}
+											<Link
+												href="/admin/configurador"
+												className="font-semibold underline"
+											>
+												Configurador
+											</Link>
+											.
+										</p>
+									) : (
+										pieces.map((p) => {
+											const producePieces = clampedQty * p.pieces;
+											const produceKg = clampedQty * sel.avgWeight * p.ratio;
+											const covers = p.demand > 0 && producePieces >= p.demand;
+											return (
+												<div
+													key={p.childId}
+													className={cn(
+														"flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5",
+														p.demand > 0 && "bg-blue-50/40",
+													)}
+												>
+													<div className="min-w-0 flex-1">
+														<span className="font-semibold text-sm">
+															{p.childName}
+														</span>
+														<span className="ml-2 text-[11px] text-muted-foreground">
+															{p.pieces} pz/canal · {(p.ratio * 100).toFixed(1)}
+															%
+														</span>
+													</div>
+
+													{/* Pedidas */}
+													<div className="w-20 text-right">
+														{p.demand > 0 ? (
+															<span
+																className={cn(
+																	"rounded-full px-2 py-0.5 font-bold text-[11px]",
+																	covers
+																		? "bg-green-100 text-green-700"
+																		: "bg-blue-100 text-blue-700",
+																)}
+															>
+																{p.demand} pedidas
+															</span>
+														) : (
+															<span className="text-[11px] text-muted-foreground">
+																—
+															</span>
+														)}
+													</div>
+
+													{/* Capacidad total */}
+													<div className="w-24 text-right text-[11px] text-muted-foreground">
+														hasta {p.capacity} pz
+													</div>
+
+													{/* Lo que produces con qty */}
+													<div className="w-24 text-right">
+														<div className="font-bold text-sm tabular-nums">
+															+{producePieces} pz
+														</div>
+														<div className="text-[10px] text-blue-600">
+															{produceKg > 0
+																? `~${produceKg.toFixed(1)} kg`
+																: "—"}
+														</div>
+													</div>
+												</div>
+											);
+										})
+									)}
+								</div>
+							</CardContent>
+						</Card>
+					)}
+				</>
 			)}
+
+			{tab === "recetas" && <RecetasArbol />}
 		</div>
 	);
 }
 
-// Tarjeta de árbol de recetas para un padre (muestra sus hijos)
+function EmptyCanales() {
+	return (
+		<Card>
+			<CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+				<ShoppingCartIcon className="h-10 w-10 text-muted-foreground/50" />
+				<div className="text-muted-foreground text-sm">
+					No hay canales en inventario todavía.
+				</div>
+				<Button asChild>
+					<Link href="/admin/purchase">Registrar la compra del día</Link>
+				</Button>
+			</CardContent>
+		</Card>
+	);
+}
+
+// ───── Recetas (árbol) — referencia visual ─────
+function RecetasArbol() {
+	const trpc = useTRPC();
+	const { data: products = [] } = useQuery(
+		trpc.products.list.queryOptions(),
+	) as { data: any[] };
+	const parents = useMemo(
+		() => products.filter((p) => p.is_parent_product),
+		[products],
+	);
+	return (
+		<div className="space-y-4">
+			<p className="text-muted-foreground text-sm">
+				Mapa de despiece: de cada pieza padre salen estas partes. Referencia
+				visual.
+			</p>
+			<div className="grid gap-4 md:grid-cols-2">
+				{parents.map((p) => (
+					<RecipeTreeCard key={p.id} parent={p} />
+				))}
+			</div>
+		</div>
+	);
+}
+
 function RecipeTreeCard({ parent }: { parent: any }) {
 	const trpc = useTRPC();
 	const { data: tree = [] } = useQuery(
@@ -489,7 +479,7 @@ function RecipeTreeCard({ parent }: { parent: any }) {
 		for (const t of tree) {
 			const k = t.transformation_type ?? "BASE";
 			if (!map.has(k)) map.set(k, []);
-			map.get(k)!.push(t);
+			map.get(k)?.push(t);
 		}
 		return map;
 	}, [tree]);
@@ -499,24 +489,30 @@ function RecipeTreeCard({ parent }: { parent: any }) {
 	return (
 		<Card>
 			<CardHeader className="py-3">
-				<CardTitle className="text-base flex items-center gap-2">
-					<GitBranchIcon className="w-4 h-4 text-primary" />
+				<CardTitle className="flex items-center gap-2 text-base">
+					<GitBranchIcon className="h-4 w-4 text-primary" />
 					{parent.name}
 				</CardTitle>
 			</CardHeader>
 			<CardContent className="space-y-3">
 				{[...byType.entries()].map(([type, items]) => (
 					<div key={type}>
-						<div className="text-[11px] font-bold uppercase text-muted-foreground mb-1">
+						<div className="mb-1 font-bold text-[11px] text-muted-foreground uppercase">
 							{type}
 						</div>
 						<div className="space-y-1">
 							{items.map((t) => (
-								<div key={t.id} className="flex items-center gap-2 text-sm pl-2">
+								<div
+									key={t.id}
+									className="flex items-center gap-2 pl-2 text-sm"
+								>
 									<span className="text-primary">└</span>
-									<span className="flex-1">{t.childProduct?.name ?? `#${t.child_product_id}`}</span>
-									<span className="text-xs text-muted-foreground">
-										{Number(t.yield_quantity_pieces)} pz · {(Number(t.yield_weight_ratio) * 100).toFixed(0)}%
+									<span className="flex-1">
+										{t.childProduct?.name ?? `#${t.child_product_id}`}
+									</span>
+									<span className="text-muted-foreground text-xs">
+										{Number(t.yield_quantity_pieces)} pz ·{" "}
+										{(Number(t.yield_weight_ratio) * 100).toFixed(0)}%
 									</span>
 								</div>
 							))}

@@ -1,15 +1,15 @@
+import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
 import {
-	yieldSheets,
-	yieldSheetItems,
 	channelPurchases,
+	inventoryTransactions,
 	products,
 	productTransformations,
-	inventoryTransactions,
+	yieldSheetItems,
+	yieldSheets,
 } from "@/lib/db/schema";
-import { eq, desc, and, ilike, sql } from "drizzle-orm";
+import { protectedProcedure, router } from "../init";
 
 const itemInput = z.object({
 	productId: z.number().nullable().optional(),
@@ -29,42 +29,102 @@ const sheetInput = z.object({
 	items: z.array(itemInput),
 });
 
+// Mapea cuántos canales de cada tipo deja una compra: 1 cerdo americano = 1
+// CANAL AMERICANO (canal completo); 1 cerdo nacional = 1 lado Lomo + 1 lado
+// Espilomo. Devuelve cuántos "comprados" corresponden al nombre del canal.
+function purchasedForCanal(name: string, amer: number, nac: number): number {
+	const n = name.toUpperCase();
+	if (n.includes("AMERICANO")) return amer;
+	if (n.includes("NACIONAL")) return nac; // Lomo y Espilomo, 1 c/u por cerdo
+	return 0; // POLINESIO / canal genérico: aún no se compra por tipo
+}
+
+// Tipo de la transacción de Drizzle (el parámetro del callback de db.transaction)
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+// Recalcula el stock de los canales: comprado (todas las fechas) − despiezado.
+// Idempotente: hace SET, no incrementa, así re-guardar una compra no duplica.
+async function syncCanalStock(tx: Tx, uid: string): Promise<void> {
+	const totRows = (await tx.execute(sql`
+		SELECT COALESCE(SUM(qty_americano),0)::int AS amer,
+		       COALESCE(SUM(qty_nacional),0)::int AS nac
+		FROM channel_purchases WHERE user_uid = ${uid}
+	`)) as unknown as { amer: number; nac: number }[];
+	const amer = Number(totRows?.[0]?.amer ?? 0);
+	const nac = Number(totRows?.[0]?.nac ?? 0);
+
+	const canalProds = await tx
+		.select({
+			id: products.id,
+			name: products.name,
+			avg: products.avg_weight_per_piece_kg,
+		})
+		.from(products)
+		.where(
+			and(
+				eq(products.user_uid, uid),
+				eq(products.is_parent_product, true),
+				ilike(products.name, "CANAL%"),
+			),
+		);
+	if (canalProds.length === 0) return;
+
+	const usedRows = (await tx.execute(sql`
+		SELECT product_id AS pid, COALESCE(SUM(-quantity_change_pieces),0)::int AS used
+		FROM inventory_transactions
+		WHERE transaction_type = 'DESPIECE'
+		GROUP BY product_id
+	`)) as unknown as { pid: number; used: number }[];
+	const usedMap = new Map(
+		usedRows.map((r) => [Number(r.pid), Number(r.used) || 0]),
+	);
+
+	for (const c of canalProds) {
+		const purchased = purchasedForCanal(c.name, amer, nac);
+		const used = usedMap.get(c.id) ?? 0;
+		const stock = purchased - used;
+		const avg = Number(c.avg ?? 0);
+		await tx
+			.update(products)
+			.set({ stock_pieces: stock, stock_kg: (stock * avg).toFixed(3) })
+			.where(eq(products.id, c.id));
+	}
+}
+
 export const yieldsRouter = router({
 	// Lista de hojas recientes con totales
-	list: protectedProcedure
-		.input(z.void())
-		.query(async ({ ctx }) => {
-			const sheets = await db
-				.select()
-				.from(yieldSheets)
-				.where(eq(yieldSheets.user_uid, ctx.user.id))
-				.orderBy(desc(yieldSheets.id))
-				.limit(50);
+	list: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
+		const sheets = await db
+			.select()
+			.from(yieldSheets)
+			.where(eq(yieldSheets.user_uid, ctx.user.id))
+			.orderBy(desc(yieldSheets.id))
+			.limit(50);
 
-			const result = [];
-			for (const s of sheets) {
-				const items = await db
-					.select()
-					.from(yieldSheetItems)
-					.where(eq(yieldSheetItems.sheet_id, s.id));
-				const totalKg = items.reduce((a, i) => a + Number(i.kg_total), 0);
-				const totalPiezas = items.reduce((a, i) => a + (i.pieces ?? 0), 0);
-				result.push({
-					id: s.id,
-					sheetDate: s.sheet_date,
-					numCanales: s.num_canales,
-					kgComprado: Number(s.kg_comprado),
-					supplier: (s as any).supplier as string | null,
-					totalKg,
-					totalPiezas,
-					rendimiento:
-						Number(s.kg_comprado) > 0
-							? (totalKg / Number(s.kg_comprado)) * 100
-							: 0,
-				});
-			}
-			return result;
-		}),
+		const result = [];
+		for (const s of sheets) {
+			const items = await db
+				.select()
+				.from(yieldSheetItems)
+				.where(eq(yieldSheetItems.sheet_id, s.id));
+			const totalKg = items.reduce((a, i) => a + Number(i.kg_total), 0);
+			const totalPiezas = items.reduce((a, i) => a + (i.pieces ?? 0), 0);
+			result.push({
+				id: s.id,
+				sheetDate: s.sheet_date,
+				numCanales: s.num_canales,
+				kgComprado: Number(s.kg_comprado),
+				supplier: (s as any).supplier as string | null,
+				totalKg,
+				totalPiezas,
+				rendimiento:
+					Number(s.kg_comprado) > 0
+						? (totalKg / Number(s.kg_comprado)) * 100
+						: 0,
+			});
+		}
+		return result;
+	}),
 
 	// Fechas con compra registrada (para el selector de día)
 	purchaseDates: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
@@ -155,6 +215,12 @@ export const yieldsRouter = router({
 						})),
 					);
 				}
+
+				// La compra alimenta el inventario de canales (idempotente):
+				// stock = total comprado − total despiezado. Así el módulo de
+				// Despiece ve "canales disponibles" sin doble conteo al re-guardar.
+				await syncCanalStock(tx, ctx.user.id);
+
 				return { success: true, count: valid.length };
 			});
 		}),
@@ -330,6 +396,105 @@ export const yieldsRouter = router({
 		}));
 	}),
 
+	// Panel de Despiece: canales disponibles (inventario) + recetas nivel-1 de
+	// cada canal + demanda viva por pieza (pedidos abiertos). Todo lo que la UI
+	// necesita para "de N canales salen X piernas; me pidieron M; despieza K".
+	despiecePanel: protectedProcedure.input(z.void()).query(async () => {
+		// 1) Canales (raíz) con su stock disponible
+		const canalRows = await db
+			.select({
+				id: products.id,
+				name: products.name,
+				stock: products.stock_pieces,
+				avg: products.avg_weight_per_piece_kg,
+			})
+			.from(products)
+			.where(
+				and(
+					eq(products.is_parent_product, true),
+					ilike(products.name, "CANAL%"),
+				),
+			)
+			.orderBy(products.name);
+		const canalIds = canalRows.map((c) => c.id);
+
+		// 2) Catálogo (para nombres y peso promedio de las piezas hijas)
+		const prods = await db
+			.select({
+				id: products.id,
+				name: products.name,
+				avg: products.avg_weight_per_piece_kg,
+			})
+			.from(products);
+		const prodMap = new Map(prods.map((p) => [p.id, p]));
+
+		// 3) Recetas nivel-1 de cada canal (padre = canal)
+		const recRows = canalIds.length
+			? await db
+					.select({
+						parentId: productTransformations.parent_product_id,
+						childId: productTransformations.child_product_id,
+						pieces: productTransformations.yield_quantity_pieces,
+						ratio: productTransformations.yield_weight_ratio,
+						type: productTransformations.transformation_type,
+					})
+					.from(productTransformations)
+					.where(
+						and(
+							eq(productTransformations.is_active, true),
+							inArray(productTransformations.parent_product_id, canalIds),
+						),
+					)
+			: [];
+
+		const recipes = recRows.map((r) => ({
+			parentId: r.parentId,
+			childId: r.childId,
+			childName: prodMap.get(r.childId)?.name ?? `#${r.childId}`,
+			pieces: Number(r.pieces) || 0,
+			ratio: Number(r.ratio) || 0,
+			type: r.type ?? "",
+			childAvgWeight: Number(prodMap.get(r.childId)?.avg ?? 0),
+		}));
+
+		// Tipo (estilo) de cada canal = el transformation_type de sus recetas
+		const typeByCanal = new Map<number, string>();
+		for (const r of recipes) {
+			if (r.type && !typeByCanal.has(r.parentId))
+				typeByCanal.set(r.parentId, r.type);
+		}
+
+		// 4) Demanda viva por pieza: pedidos no cerrados, renglones por producir
+		const demandRows = (await db.execute(sql`
+			SELECT oi.product_id AS pid,
+			       COALESCE(SUM(oi.quantity_pieces),0)::int AS pieces,
+			       COALESCE(SUM(oi.quantity_kg),0) AS kg
+			FROM order_items oi
+			JOIN orders o ON o.id = oi.order_id
+			WHERE oi.product_id IS NOT NULL
+			  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
+			  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO')
+			GROUP BY oi.product_id
+		`)) as unknown as { pid: number; pieces: number; kg: string | number }[];
+		const demandByProduct: Record<number, { pieces: number; kg: number }> = {};
+		for (const r of demandRows) {
+			demandByProduct[Number(r.pid)] = {
+				pieces: Number(r.pieces) || 0,
+				kg: Number(r.kg) || 0,
+			};
+		}
+
+		const canales = canalRows.map((c) => ({
+			canalProductId: c.id,
+			name: c.name,
+			type: typeByCanal.get(c.id) ?? "",
+			stockPieces: c.stock ?? 0,
+			avgWeight: Number(c.avg ?? 0),
+		}));
+
+		return { canales, recipes, demandByProduct };
+	}),
+
 	// Proyecta las piezas resultado del despiece de N canales.
 	// Cascada recursiva por yield_weight_ratio: 1er nivel (canal → padres)
 	// y 2º nivel (BASE: padre → piezas finales). Devuelve árbol + hojas.
@@ -486,15 +651,24 @@ export const yieldsRouter = router({
 			.from(yieldSheets)
 			.where(eq(yieldSheets.user_uid, ctx.user.id));
 
-		const agg = new Map<string, { kgComprado: number; kgReal: number; canales: number; hojas: number }>();
+		const agg = new Map<
+			string,
+			{ kgComprado: number; kgReal: number; canales: number; hojas: number }
+		>();
 		for (const s of sheets) {
-			const prov = ((s as any).supplier as string | null)?.trim() || "Sin proveedor";
+			const prov =
+				((s as any).supplier as string | null)?.trim() || "Sin proveedor";
 			const items = await db
 				.select({ kg: yieldSheetItems.kg_total })
 				.from(yieldSheetItems)
 				.where(eq(yieldSheetItems.sheet_id, s.id));
 			const kgReal = items.reduce((a, i) => a + Number(i.kg), 0);
-			const cur = agg.get(prov) ?? { kgComprado: 0, kgReal: 0, canales: 0, hojas: 0 };
+			const cur = agg.get(prov) ?? {
+				kgComprado: 0,
+				kgReal: 0,
+				canales: 0,
+				hojas: 0,
+			};
 			cur.kgComprado += Number(s.kg_comprado);
 			cur.kgReal += kgReal;
 			cur.canales += s.num_canales;
