@@ -40,6 +40,7 @@ import {
 import { formatCurrency, formatShortDate } from "@/lib/utils";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { Button } from "@finopenpos/ui/components/button";
+import { AntonellaSlot } from "@/components/antonella-slot";
 import Image from "next/image";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery } from "@tanstack/react-query";
@@ -149,6 +150,21 @@ export default function Page() {
           Plataforma de gestión integral · inteligencia iAntonella
         </p>
       </div>
+
+      {/* iAntonella — presencia inline */}
+      <AntonellaSlot
+        data={{
+          tone: "sugerencia",
+          titulo: "Resumen del día",
+          texto:
+            "Estoy vigilando inventario, despiece, pedidos y cobranza. Pregúntame qué conviene producir hoy o si el stock cubre los pedidos abiertos.",
+          acciones: [
+            "¿Qué conviene despiezar hoy?",
+            "¿Cubre mi stock los pedidos?",
+            "Resumen de cobranza",
+          ],
+        }}
+      />
 
       {/* Toggle ocultar montos */}
       <div className="flex justify-end -mb-2">

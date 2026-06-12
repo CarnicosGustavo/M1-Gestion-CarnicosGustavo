@@ -48,6 +48,7 @@ import { useTranslations } from "next-intl";
 import { useId, useState } from "react";
 import { logout } from "@/app/login/actions";
 import { cn } from "@finopenpos/ui/lib/utils";
+import { AntonellaProvider } from "@/components/antonella-dock";
 import { type Palette, useTheme } from "@/components/theme-provider";
 import { CLIENT_NAME } from "@/lib/constants";
 
@@ -454,7 +455,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 				</nav>
 
 				<main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
-					<div className="mx-auto max-w-[1180px]">{children}</div>
+					<div className="mx-auto max-w-[1180px]">
+						<AntonellaProvider>{children}</AntonellaProvider>
+					</div>
 				</main>
 			</div>
 		</div>
