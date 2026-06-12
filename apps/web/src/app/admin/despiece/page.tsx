@@ -49,6 +49,7 @@ export default function DespiecePage() {
 	const { data: panel } = useQuery(panelOpts);
 	const canales = panel?.canales ?? [];
 	const recipes = panel?.recipes ?? [];
+	const subRecipes = panel?.subRecipes ?? [];
 	const demand = panel?.demandByProduct ?? {};
 
 	const productsKey = trpc.products.list.queryOptions().queryKey;
@@ -121,6 +122,11 @@ export default function DespiecePage() {
 	useEffect(() => {
 		setQty(Math.max(1, Math.min(suggested || 1, sel?.stockPieces ?? 1)));
 	}, [suggested, sel]);
+
+	// Card de pieza expandida (toda la información de esa pieza)
+	const [expandedId, setExpandedId] = useState<number | null>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: colapsar el detalle al cambiar de canal es intencional
+	useEffect(() => setExpandedId(null), [selectedId]);
 
 	const maxQty = sel?.stockPieces ?? 0;
 	const clampedQty = Math.max(1, Math.min(qty, Math.max(1, maxQty)));
@@ -338,82 +344,41 @@ export default function DespiecePage() {
 										.
 									</div>
 								)}
-								<div className="divide-y">
-									{pieces.length === 0 ? (
-										<p className="py-6 text-center text-muted-foreground text-sm">
-											Este canal no tiene receta. Configúrala en el{" "}
-											<Link
-												href="/admin/configurador"
-												className="font-semibold underline"
-											>
-												Configurador
-											</Link>
-											.
-										</p>
-									) : (
-										pieces.map((p) => {
-											const producePieces = clampedQty * p.pieces;
-											const produceKg = clampedQty * sel.avgWeight * p.ratio;
-											const covers = p.demand > 0 && producePieces >= p.demand;
-											return (
-												<div
-													key={p.childId}
-													className={cn(
-														"flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5",
-														p.demand > 0 && "bg-blue-50/40",
-													)}
-												>
-													<div className="min-w-0 flex-1">
-														<span className="font-semibold text-sm">
-															{p.childName}
-														</span>
-														<span className="ml-2 text-[11px] text-muted-foreground">
-															{p.pieces} pz/canal · {(p.ratio * 100).toFixed(1)}
-															%
-														</span>
-													</div>
-
-													{/* Pedidas */}
-													<div className="w-20 text-right">
-														{p.demand > 0 ? (
-															<span
-																className={cn(
-																	"rounded-full px-2 py-0.5 font-bold text-[11px]",
-																	covers
-																		? "bg-green-100 text-green-700"
-																		: "bg-blue-100 text-blue-700",
-																)}
-															>
-																{p.demand} pedidas
-															</span>
-														) : (
-															<span className="text-[11px] text-muted-foreground">
-																—
-															</span>
-														)}
-													</div>
-
-													{/* Capacidad total */}
-													<div className="w-24 text-right text-[11px] text-muted-foreground">
-														hasta {p.capacity} pz
-													</div>
-
-													{/* Lo que produces con qty */}
-													<div className="w-24 text-right">
-														<div className="font-bold text-sm tabular-nums">
-															+{producePieces} pz
-														</div>
-														<div className="text-[10px] text-blue-600">
-															{produceKg > 0
-																? `~${produceKg.toFixed(1)} kg`
-																: "—"}
-														</div>
-													</div>
-												</div>
-											);
-										})
-									)}
-								</div>
+								{pieces.length === 0 ? (
+									<p className="py-6 text-center text-muted-foreground text-sm">
+										Este canal no tiene receta. Configúrala en el{" "}
+										<Link
+											href="/admin/configurador"
+											className="font-semibold underline"
+										>
+											Configurador
+										</Link>
+										.
+									</p>
+								) : (
+									<div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+										{pieces.map((p) => (
+											<PieceCard
+												key={p.childId}
+												piece={p}
+												demandKg={demand[p.childId]?.kg ?? 0}
+												qty={clampedQty}
+												canalAvgWeight={sel.avgWeight}
+												canalStock={sel.stockPieces}
+												accent={accentFor(sel.type)}
+												expanded={expandedId === p.childId}
+												onToggle={() =>
+													setExpandedId((cur) =>
+														cur === p.childId ? null : p.childId,
+													)
+												}
+												subRecipes={subRecipes.filter(
+													(s) => s.parentId === p.childId,
+												)}
+											/>
+										))}
+									</div>
+								)}
 							</CardContent>
 						</Card>
 					)}
@@ -421,6 +386,270 @@ export default function DespiecePage() {
 			)}
 
 			{tab === "recetas" && <RecetasArbol />}
+		</div>
+	);
+}
+
+type SubRecipe = {
+	parentId: number;
+	childId: number;
+	childName: string;
+	pieces: number;
+	ratio: number;
+	isVariant: boolean;
+};
+
+type PieceInfo = {
+	childId: number;
+	childName: string;
+	pieces: number;
+	ratio: number;
+	childAvgWeight: number;
+	childStockPieces: number;
+	childStockKg: number;
+	demand: number;
+	capacity: number;
+};
+
+// Card de pieza: compacta en el grid; al presionarla se expande a lo ancho con
+// todo el detalle (pedidos, stock, capacidad, producción y sub-despieces).
+function PieceCard({
+	piece: p,
+	demandKg,
+	qty,
+	canalAvgWeight,
+	canalStock,
+	accent,
+	expanded,
+	onToggle,
+	subRecipes,
+}: {
+	piece: PieceInfo;
+	demandKg: number;
+	qty: number;
+	canalAvgWeight: number;
+	canalStock: number;
+	accent: string;
+	expanded: boolean;
+	onToggle: () => void;
+	subRecipes: SubRecipe[];
+}) {
+	const producePieces = qty * p.pieces;
+	const produceKg = qty * canalAvgWeight * p.ratio;
+	const covers = p.demand > 0 && producePieces >= p.demand;
+	const missing = Math.max(0, p.demand - p.childStockPieces);
+
+	if (!expanded) {
+		return (
+			<button
+				type="button"
+				onClick={onToggle}
+				className={cn(
+					"rounded-xl border bg-card p-2.5 text-left transition-all hover:border-foreground/30 hover:shadow-sm",
+					p.demand > 0 && "border-blue-200 bg-blue-50/40",
+				)}
+				title="Toca para ver todo el detalle de esta pieza"
+			>
+				<div className="flex items-start justify-between gap-1">
+					<span className="min-w-0 truncate font-bold text-sm">
+						{p.childName}
+					</span>
+					<span className="shrink-0 text-[10px] text-muted-foreground">▸</span>
+				</div>
+				<div className="mt-0.5 text-[10px] text-muted-foreground">
+					{p.pieces} pz/canal · {(p.ratio * 100).toFixed(1)}%
+				</div>
+				<div className="mt-1.5 flex items-center justify-between gap-1">
+					{p.demand > 0 ? (
+						<span
+							className={cn(
+								"rounded-full px-1.5 py-0.5 font-bold text-[10px]",
+								covers
+									? "bg-green-100 text-green-700"
+									: "bg-blue-100 text-blue-700",
+							)}
+						>
+							{p.demand} pedidas
+						</span>
+					) : (
+						<span className="text-[10px] text-muted-foreground">
+							sin pedidos
+						</span>
+					)}
+					<span className="font-bold text-xs tabular-nums">
+						+{producePieces} pz
+					</span>
+				</div>
+			</button>
+		);
+	}
+
+	return (
+		<div
+			className="col-span-2 overflow-hidden rounded-xl border-2 bg-card sm:col-span-3 lg:col-span-4"
+			style={{ borderColor: accent }}
+		>
+			{/* Encabezado expandido */}
+			<button
+				type="button"
+				onClick={onToggle}
+				className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left hover:bg-muted/40"
+			>
+				<div>
+					<span className="font-extrabold text-lg">{p.childName}</span>
+					<span className="ml-2 text-muted-foreground text-xs">
+						{p.pieces} pz por canal · {(p.ratio * 100).toFixed(1)}% del peso
+					</span>
+				</div>
+				<span className="text-muted-foreground text-xs">▾ cerrar</span>
+			</button>
+
+			{/* Métricas clave */}
+			<div className="grid grid-cols-2 gap-2 px-4 pb-3 lg:grid-cols-4">
+				<div className="rounded-lg bg-blue-50 p-2.5">
+					<p className="text-[10px] text-blue-700/70 uppercase">
+						📋 En pedidos
+					</p>
+					<p className="font-bold text-blue-700 text-xl tabular-nums">
+						{p.demand} pz
+					</p>
+					<p className="text-[10px] text-blue-700/70">
+						{demandKg > 0 ? `${demandKg.toFixed(1)} kg pedidos` : "—"}
+					</p>
+				</div>
+				<div className="rounded-lg bg-slate-50 p-2.5">
+					<p className="text-[10px] text-muted-foreground uppercase">
+						🧊 En stock (ya despiezadas)
+					</p>
+					<p className="font-bold text-xl tabular-nums">
+						{p.childStockPieces} pz
+					</p>
+					<p className="text-[10px] text-muted-foreground">
+						{p.childStockKg > 0 ? `${p.childStockKg.toFixed(1)} kg` : "—"}
+					</p>
+				</div>
+				<div className="rounded-lg bg-slate-50 p-2.5">
+					<p className="text-[10px] text-muted-foreground uppercase">
+						✂️ Disponibles por despiece
+					</p>
+					<p className="font-bold text-xl tabular-nums">
+						hasta {p.capacity} pz
+					</p>
+					<p className="text-[10px] text-muted-foreground">
+						de {canalStock} canales en inventario
+					</p>
+				</div>
+				<div
+					className={cn(
+						"rounded-lg p-2.5",
+						covers ? "bg-green-50" : "bg-amber-50",
+					)}
+				>
+					<p
+						className={cn(
+							"text-[10px] uppercase",
+							covers ? "text-green-700/70" : "text-amber-700/70",
+						)}
+					>
+						➕ Con {qty} canal(es)
+					</p>
+					<p
+						className={cn(
+							"font-bold text-xl tabular-nums",
+							covers ? "text-green-700" : "text-amber-700",
+						)}
+					>
+						+{producePieces} pz
+					</p>
+					<p
+						className={cn(
+							"text-[10px]",
+							covers ? "text-green-700/70" : "text-amber-700/70",
+						)}
+					>
+						{produceKg > 0 ? `~${produceKg.toFixed(1)} kg · ` : ""}
+						{p.demand === 0
+							? "sin pedidos que cubrir"
+							: covers
+								? "cubre el pedido ✓"
+								: `faltarían ${p.demand - producePieces} pz`}
+					</p>
+				</div>
+			</div>
+
+			{/* Estado vs pedido */}
+			{p.demand > 0 && (
+				<div className="px-4 pb-3">
+					<div
+						className={cn(
+							"rounded-lg border p-2.5 text-xs",
+							missing <= 0
+								? "border-green-200 bg-green-50 text-green-800"
+								: "border-blue-200 bg-blue-50 text-blue-800",
+						)}
+					>
+						{missing <= 0 ? (
+							<>
+								El stock actual ({p.childStockPieces} pz) ya cubre las{" "}
+								{p.demand} pedidas — no necesitas despiezar para esta pieza.
+							</>
+						) : (
+							<>
+								Faltan <strong>{missing} pz</strong> para cubrir el pedido (
+								{p.demand} pedidas − {p.childStockPieces} en stock). Con{" "}
+								{p.pieces} pz por canal necesitas despiezar{" "}
+								<strong>
+									{Math.ceil(missing / Math.max(1, p.pieces))} canal(es)
+								</strong>
+								.
+							</>
+						)}
+					</div>
+				</div>
+			)}
+
+			{/* Sub-despieces / estilos de esta pieza */}
+			<div className="border-t bg-muted/30 px-4 py-3">
+				<p className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wide">
+					Sub-despiece de {p.childName}
+				</p>
+				{subRecipes.length === 0 ? (
+					<p className="mt-1 text-muted-foreground text-xs">
+						Esta es una pieza final (no se despieza a su vez). Puedes cambiarlo
+						en el{" "}
+						<Link
+							href="/admin/configurador"
+							className="font-semibold underline"
+							target="_blank"
+						>
+							Configurador
+						</Link>
+						.
+					</p>
+				) : (
+					<div className="mt-1.5 grid gap-1 sm:grid-cols-2">
+						{subRecipes.map((s) => (
+							<div
+								key={`${s.parentId}:${s.childId}`}
+								className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-xs"
+							>
+								<span className="text-primary">└</span>
+								<span className="min-w-0 flex-1 truncate font-medium">
+									{s.childName}
+								</span>
+								{s.isVariant && (
+									<span className="rounded bg-purple-100 px-1 font-bold text-[9px] text-purple-700">
+										VARIANTE
+									</span>
+								)}
+								<span className="shrink-0 text-muted-foreground">
+									{s.pieces} pz · {(s.ratio * 100).toFixed(0)}%
+								</span>
+							</div>
+						))}
+					</div>
+				)}
+			</div>
 		</div>
 	);
 }

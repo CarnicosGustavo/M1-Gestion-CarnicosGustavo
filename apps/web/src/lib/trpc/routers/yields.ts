@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import {
@@ -418,44 +418,52 @@ export const yieldsRouter = router({
 			.orderBy(products.name);
 		const canalIds = canalRows.map((c) => c.id);
 
-		// 2) Catálogo (para nombres y peso promedio de las piezas hijas)
+		// 2) Catálogo (nombres, peso promedio y stock de las piezas hijas)
 		const prods = await db
 			.select({
 				id: products.id,
 				name: products.name,
 				avg: products.avg_weight_per_piece_kg,
+				stockPieces: products.stock_pieces,
+				stockKg: products.stock_kg,
 			})
 			.from(products);
 		const prodMap = new Map(prods.map((p) => [p.id, p]));
 
-		// 3) Recetas nivel-1 de cada canal (padre = canal)
-		const recRows = canalIds.length
-			? await db
-					.select({
-						parentId: productTransformations.parent_product_id,
-						childId: productTransformations.child_product_id,
-						pieces: productTransformations.yield_quantity_pieces,
-						ratio: productTransformations.yield_weight_ratio,
-						type: productTransformations.transformation_type,
-					})
-					.from(productTransformations)
-					.where(
-						and(
-							eq(productTransformations.is_active, true),
-							inArray(productTransformations.parent_product_id, canalIds),
-						),
-					)
-			: [];
+		// 3) Todas las recetas activas de una vez: nivel-1 (padre = canal) y
+		// sub-despieces (nivel 2+: la pieza se despieza a su vez)
+		const allRecRows = await db
+			.select({
+				parentId: productTransformations.parent_product_id,
+				childId: productTransformations.child_product_id,
+				pieces: productTransformations.yield_quantity_pieces,
+				ratio: productTransformations.yield_weight_ratio,
+				type: productTransformations.transformation_type,
+				isVariant: productTransformations.is_variant,
+			})
+			.from(productTransformations)
+			.where(eq(productTransformations.is_active, true));
 
-		const recipes = recRows.map((r) => ({
+		const canalIdSet = new Set(canalIds);
+		const mapRec = (r: (typeof allRecRows)[number]) => ({
 			parentId: r.parentId,
 			childId: r.childId,
 			childName: prodMap.get(r.childId)?.name ?? `#${r.childId}`,
 			pieces: Number(r.pieces) || 0,
 			ratio: Number(r.ratio) || 0,
 			type: r.type ?? "",
+			isVariant: r.isVariant === true,
 			childAvgWeight: Number(prodMap.get(r.childId)?.avg ?? 0),
-		}));
+			childStockPieces: prodMap.get(r.childId)?.stockPieces ?? 0,
+			childStockKg: Number(prodMap.get(r.childId)?.stockKg ?? 0),
+		});
+		const recipes = allRecRows
+			.filter((r) => canalIdSet.has(r.parentId))
+			.map(mapRec);
+		// Sub-despieces de cualquier pieza no-canal (la UI los busca por parentId)
+		const subRecipes = allRecRows
+			.filter((r) => !canalIdSet.has(r.parentId))
+			.map(mapRec);
 
 		// Tipo (estilo) de cada canal = el transformation_type de sus recetas
 		const typeByCanal = new Map<number, string>();
@@ -492,7 +500,7 @@ export const yieldsRouter = router({
 			avgWeight: Number(c.avg ?? 0),
 		}));
 
-		return { canales, recipes, demandByProduct };
+		return { canales, recipes, subRecipes, demandByProduct };
 	}),
 
 	// Proyecta las piezas resultado del despiece de N canales.
