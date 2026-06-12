@@ -1,15 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
 	CardContent,
 	CardHeader,
 	CardTitle,
 } from "@finopenpos/ui/components/card";
-import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@finopenpos/ui/components/select";
 import {
 	Table,
 	TableBody,
@@ -18,17 +24,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@finopenpos/ui/components/table";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@finopenpos/ui/components/select";
-import { PlusIcon, TrashIcon, SaveIcon, PiggyBankIcon } from "lucide-react";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PiggyBankIcon, PlusIcon, SaveIcon, TrashIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useTRPC } from "@/lib/trpc/client";
 
 type Row = {
 	key: string;
@@ -53,8 +53,28 @@ let _k = 0;
 const newKey = () => `r${_k++}`;
 function emptyRows(): Row[] {
 	return [
-		{ key: newKey(), supplier: "La Barca", canales: "", kg: "", precio: "", americano: "", nacional: "", verifCanales: "", verifKg: "" },
-		{ key: newKey(), supplier: "Valle", canales: "", kg: "", precio: "", americano: "", nacional: "", verifCanales: "", verifKg: "" },
+		{
+			key: newKey(),
+			supplier: "La Barca",
+			canales: "",
+			kg: "",
+			precio: "",
+			americano: "",
+			nacional: "",
+			verifCanales: "",
+			verifKg: "",
+		},
+		{
+			key: newKey(),
+			supplier: "Valle",
+			canales: "",
+			kg: "",
+			precio: "",
+			americano: "",
+			nacional: "",
+			verifCanales: "",
+			verifKg: "",
+		},
 	];
 }
 
@@ -138,13 +158,14 @@ export default function PurchaseDayPage() {
 		let americano = 0;
 		let nacional = 0;
 		for (const r of rows) {
-			const c = intval(r.canales);
+			const a = intval(r.americano);
+			const n = intval(r.nacional);
 			const k = num(r.kg);
-			canales += c;
+			americano += a;
+			nacional += n;
+			canales += a + n; // el total de canales se deriva del tipo
 			kg += k;
 			costo += k * num(r.precio);
-			americano += intval(r.americano);
-			nacional += intval(r.nacional);
 		}
 		return {
 			canales,
@@ -162,7 +183,17 @@ export default function PurchaseDayPage() {
 	const addRow = () =>
 		setRows((prev) => [
 			...prev,
-			{ key: newKey(), supplier: "", canales: "", kg: "", precio: "", americano: "", nacional: "", verifCanales: "", verifKg: "" },
+			{
+				key: newKey(),
+				supplier: "",
+				canales: "",
+				kg: "",
+				precio: "",
+				americano: "",
+				nacional: "",
+				verifCanales: "",
+				verifKg: "",
+			},
 		]);
 	const removeRow = (key: string) =>
 		setRows((prev) => prev.filter((r) => r.key !== key));
@@ -184,7 +215,7 @@ export default function PurchaseDayPage() {
 			date,
 			rows: rows.map((r) => ({
 				supplier: r.supplier,
-				canales: intval(r.canales),
+				canales: intval(r.americano) + intval(r.nacional),
 				kg: num(r.kg),
 				precio: num(r.precio),
 				americano: intval(r.americano),
@@ -196,20 +227,20 @@ export default function PurchaseDayPage() {
 	};
 
 	return (
-		<div className="space-y-6 max-w-5xl">
-			<div className="flex items-center justify-between gap-4 flex-wrap">
+		<div className="max-w-5xl space-y-6">
+			<div className="flex flex-wrap items-center justify-between gap-4">
 				<div>
-					<h1 className="flex items-center gap-2 text-2xl font-bold">
+					<h1 className="flex items-center gap-2 font-bold text-2xl">
 						<PiggyBankIcon className="h-6 w-6 text-rose-600" />
 						Compra del día
 					</h1>
-					<p className="text-sm text-muted-foreground">
+					<p className="text-muted-foreground text-sm">
 						El día empieza aquí: registra la compra en pie de los cerdos por
 						proveedor. Es la base para el rendimiento.
 					</p>
 				</div>
 				<Button onClick={save} disabled={saveMutation.isPending}>
-					<SaveIcon className="w-4 h-4 mr-2" />
+					<SaveIcon className="mr-2 h-4 w-4" />
 					{saveMutation.isPending ? "Guardando…" : "Guardar compra del día"}
 				</Button>
 			</div>
@@ -258,26 +289,30 @@ export default function PurchaseDayPage() {
 			</Card>
 
 			{/* KPIs */}
-			<div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-				<div className="rounded-lg bg-slate-50 p-3">
-					<p className="text-xs text-muted-foreground">Canales en pie</p>
-					<p className="text-2xl font-bold">{totals.canales}</p>
+			<div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+				<div className="rounded-lg border-2 border-rose-200 bg-rose-50 p-3">
+					<p className="text-muted-foreground text-xs">🐷 Americanos</p>
+					<p className="font-bold text-2xl text-rose-700">{totals.americano}</p>
 				</div>
-				<div className="rounded-lg bg-rose-50 p-3">
-					<p className="text-xs text-muted-foreground">Kg en pie</p>
-					<p className="text-2xl font-bold text-rose-700">
+				<div className="rounded-lg border-2 border-emerald-200 bg-emerald-50 p-3">
+					<p className="text-muted-foreground text-xs">🐷 Nacionales</p>
+					<p className="font-bold text-2xl text-emerald-700">
+						{totals.nacional}
+					</p>
+				</div>
+				<div className="rounded-lg bg-slate-50 p-3">
+					<p className="text-muted-foreground text-xs">Canales (total)</p>
+					<p className="font-bold text-2xl">{totals.canales}</p>
+				</div>
+				<div className="rounded-lg bg-slate-50 p-3">
+					<p className="text-muted-foreground text-xs">Kg en pie</p>
+					<p className="font-bold text-2xl">
 						{totals.kg.toLocaleString("es-MX", { maximumFractionDigits: 0 })}
 					</p>
 				</div>
 				<div className="rounded-lg bg-slate-50 p-3">
-					<p className="text-xs text-muted-foreground">Kg / canal</p>
-					<p className="text-2xl font-bold">{totals.pesoCanal.toFixed(1)}</p>
-				</div>
-				<div className="rounded-lg bg-slate-50 p-3">
-					<p className="text-xs text-muted-foreground">Precio prom / kg</p>
-					<p className="text-2xl font-bold">
-						{totals.precioProm > 0 ? `$${totals.precioProm.toFixed(2)}` : "—"}
-					</p>
+					<p className="text-muted-foreground text-xs">Kg / canal</p>
+					<p className="font-bold text-2xl">{totals.pesoCanal.toFixed(1)}</p>
 				</div>
 			</div>
 
@@ -286,7 +321,7 @@ export default function PurchaseDayPage() {
 				<CardHeader className="flex flex-row items-center justify-between">
 					<CardTitle>Compra en pie por proveedor</CardTitle>
 					<Button variant="outline" size="sm" onClick={addRow}>
-						<PlusIcon className="w-4 h-4 mr-2" />
+						<PlusIcon className="mr-2 h-4 w-4" />
 						Agregar proveedor
 					</Button>
 				</CardHeader>
@@ -296,25 +331,37 @@ export default function PurchaseDayPage() {
 							<TableHeader>
 								<TableRow className="bg-muted/50">
 									<TableHead className="min-w-[150px]">Proveedor</TableHead>
+									<TableHead
+										className="text-center text-rose-700"
+										title="Cerdos americanos (canal completo ≈105 kg)"
+									>
+										🐷 Americanos
+									</TableHead>
+									<TableHead
+										className="text-center text-emerald-700"
+										title="Cerdos nacionales (→ 1 lado Lomo + 1 lado Espilomo)"
+									>
+										🐷 Nacionales
+									</TableHead>
 									<TableHead className="text-center">Canales</TableHead>
 									<TableHead className="text-center">Kg en pie</TableHead>
 									<TableHead className="text-center">$ / kg</TableHead>
-									<TableHead className="text-center" title="Composición: canales americanos">Amer.</TableHead>
-									<TableHead className="text-center" title="Composición: canales nacionales">Nac.</TableHead>
 									<TableHead className="text-center">Kg/canal</TableHead>
 									<TableHead className="w-[5%]" />
 								</TableRow>
 							</TableHeader>
 							<TableBody>
 								{rows.map((r) => {
-									const pesoCanal =
-										intval(r.canales) > 0 ? num(r.kg) / intval(r.canales) : 0;
+									const units = intval(r.americano) + intval(r.nacional);
+									const pesoCanal = units > 0 ? num(r.kg) / units : 0;
 									return (
 										<TableRow key={r.key}>
 											<TableCell>
 												<Input
 													value={r.supplier}
-													onChange={(e) => patch(r.key, { supplier: e.target.value })}
+													onChange={(e) =>
+														patch(r.key, { supplier: e.target.value })
+													}
 													className="h-9"
 													placeholder="Proveedor"
 												/>
@@ -322,11 +369,27 @@ export default function PurchaseDayPage() {
 											<TableCell>
 												<Input
 													type="number"
-													value={r.canales}
-													onChange={(e) => patch(r.key, { canales: e.target.value })}
-													className="h-9 text-center"
+													value={r.americano}
+													onChange={(e) =>
+														patch(r.key, { americano: e.target.value })
+													}
+													className="h-9 text-center font-semibold text-rose-700"
 													placeholder="0"
 												/>
+											</TableCell>
+											<TableCell>
+												<Input
+													type="number"
+													value={r.nacional}
+													onChange={(e) =>
+														patch(r.key, { nacional: e.target.value })
+													}
+													className="h-9 text-center font-semibold text-emerald-700"
+													placeholder="0"
+												/>
+											</TableCell>
+											<TableCell className="text-center font-bold text-sm">
+												{units > 0 ? units : "—"}
 											</TableCell>
 											<TableCell>
 												<Input
@@ -343,30 +406,14 @@ export default function PurchaseDayPage() {
 													type="number"
 													step="0.01"
 													value={r.precio}
-													onChange={(e) => patch(r.key, { precio: e.target.value })}
+													onChange={(e) =>
+														patch(r.key, { precio: e.target.value })
+													}
 													className="h-9 text-center"
 													placeholder="0.00"
 												/>
 											</TableCell>
-											<TableCell>
-												<Input
-													type="number"
-													value={r.americano}
-													onChange={(e) => patch(r.key, { americano: e.target.value })}
-													className="h-9 text-center"
-													placeholder="0"
-												/>
-											</TableCell>
-											<TableCell>
-												<Input
-													type="number"
-													value={r.nacional}
-													onChange={(e) => patch(r.key, { nacional: e.target.value })}
-													className="h-9 text-center"
-													placeholder="0"
-												/>
-											</TableCell>
-											<TableCell className="text-center text-sm font-medium text-muted-foreground">
+											<TableCell className="text-center font-medium text-muted-foreground text-sm">
 												{pesoCanal > 0 ? pesoCanal.toFixed(1) : "—"}
 											</TableCell>
 											<TableCell className="text-center">
@@ -375,7 +422,7 @@ export default function PurchaseDayPage() {
 													onClick={() => removeRow(r.key)}
 													className="text-muted-foreground hover:text-red-500"
 												>
-													<TrashIcon className="w-4 h-4" />
+													<TrashIcon className="h-4 w-4" />
 												</button>
 											</TableCell>
 										</TableRow>
@@ -385,8 +432,12 @@ export default function PurchaseDayPage() {
 						</Table>
 					</div>
 					<p className="mt-3 text-[11px] text-muted-foreground">
-						"Amer./Nac." son la composición por tipo de canal (opcional). El total
-						de canales y kg alimenta el módulo de Rendimiento.
+						Captura cuántos{" "}
+						<strong className="text-rose-700">Americanos</strong> y{" "}
+						<strong className="text-emerald-700">Nacionales</strong> compraste:
+						de ahí salen los <strong>canales disponibles para Despiece</strong>{" "}
+						(1 americano = 1 canal completo; 1 nacional = 1 lado Lomo + 1 lado
+						Espilomo). El total de kg también alimenta el Rendimiento.
 					</p>
 				</CardContent>
 			</Card>
@@ -395,7 +446,7 @@ export default function PurchaseDayPage() {
 			<Card>
 				<CardHeader className="pb-2">
 					<CardTitle className="text-base">Verificación en CEDIS</CardTitle>
-					<p className="text-xs text-muted-foreground">
+					<p className="text-muted-foreground text-xs">
 						Al llegar los canales, pésalos y registra lo realmente recibido. La
 						diferencia contra la compra es la merma.
 					</p>
@@ -407,20 +458,31 @@ export default function PurchaseDayPage() {
 								<TableRow className="bg-muted/50">
 									<TableHead className="min-w-[150px]">Proveedor</TableHead>
 									<TableHead className="text-center">Comprado (kg)</TableHead>
-									<TableHead className="text-center">Canales recibidos</TableHead>
+									<TableHead className="text-center">
+										Canales recibidos
+									</TableHead>
 									<TableHead className="text-center">Kg recibidos</TableHead>
 									<TableHead className="text-center">Merma</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
 								{rows
-									.filter((r) => r.supplier.trim() || r.canales || r.kg)
+									.filter(
+										(r) =>
+											r.supplier.trim() || r.americano || r.nacional || r.kg,
+									)
 									.map((r) => {
+										const units = intval(r.americano) + intval(r.nacional);
 										const compradoKg = num(r.kg);
 										const recibido = num(r.verifKg);
-										const merma = compradoKg > 0 && recibido > 0 ? compradoKg - recibido : 0;
+										const merma =
+											compradoKg > 0 && recibido > 0
+												? compradoKg - recibido
+												: 0;
 										const mermaPct =
-											compradoKg > 0 && recibido > 0 ? (merma / compradoKg) * 100 : 0;
+											compradoKg > 0 && recibido > 0
+												? (merma / compradoKg) * 100
+												: 0;
 										return (
 											<TableRow key={r.key}>
 												<TableCell className="font-medium">
@@ -433,9 +495,11 @@ export default function PurchaseDayPage() {
 													<Input
 														type="number"
 														value={r.verifCanales}
-														onChange={(e) => patch(r.key, { verifCanales: e.target.value })}
+														onChange={(e) =>
+															patch(r.key, { verifCanales: e.target.value })
+														}
 														className="h-9 text-center"
-														placeholder={r.canales || "0"}
+														placeholder={units > 0 ? String(units) : "0"}
 													/>
 												</TableCell>
 												<TableCell>
@@ -443,16 +507,23 @@ export default function PurchaseDayPage() {
 														type="number"
 														step="0.001"
 														value={r.verifKg}
-														onChange={(e) => patch(r.key, { verifKg: e.target.value })}
+														onChange={(e) =>
+															patch(r.key, { verifKg: e.target.value })
+														}
 														className="h-9 text-center"
 														placeholder="0"
 													/>
 												</TableCell>
-												<TableCell className="text-center text-sm font-medium">
+												<TableCell className="text-center font-medium text-sm">
 													{recibido > 0 && compradoKg > 0 ? (
-														<span className={merma > 0 ? "text-orange-600" : "text-green-600"}>
+														<span
+															className={
+																merma > 0 ? "text-orange-600" : "text-green-600"
+															}
+														>
 															{merma > 0 ? "-" : "+"}
-															{Math.abs(merma).toFixed(1)} kg ({mermaPct.toFixed(1)}%)
+															{Math.abs(merma).toFixed(1)} kg (
+															{mermaPct.toFixed(1)}%)
 														</span>
 													) : (
 														<span className="text-muted-foreground">—</span>
