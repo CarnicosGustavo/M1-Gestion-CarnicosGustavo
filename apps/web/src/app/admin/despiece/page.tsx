@@ -395,6 +395,7 @@ type SubRecipe = {
 	childName: string;
 	pieces: number;
 	ratio: number;
+	type: string;
 	isVariant: boolean;
 	childStockPieces: number;
 	childStockKg: number;
@@ -648,6 +649,13 @@ function PieceCard({
 				<p className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wide">
 					Sub-despiece de {p.childName}
 				</p>
+				{directCuts.length > 0 && (
+					<SubDespieceControl
+						piece={p}
+						cuts={directCuts}
+						onChanged={onChanged}
+					/>
+				)}
 				{directCuts.length === 0 && directVariants.length === 0 ? (
 					<p className="mt-1 text-muted-foreground text-xs">
 						Esta es una pieza final (no se despieza a su vez). Puedes cambiarlo
@@ -709,6 +717,101 @@ function PieceCard({
 					</div>
 				)}
 			</div>
+		</div>
+	);
+}
+
+// Ejecuta el sub-despiece de una pieza: "despieza N PIERNAS → N JAMON, N CODILLO…"
+function SubDespieceControl({
+	piece: p,
+	cuts,
+	onChanged,
+}: {
+	piece: PieceInfo;
+	cuts: SubRecipe[];
+	onChanged: () => void;
+}) {
+	const trpc = useTRPC();
+	const [qty, setQty] = useState("");
+
+	const mut = useMutation(
+		trpc.products.processDisassembly.mutationOptions({
+			onSuccess: () => {
+				toast.success(`${qty} ${p.childName} despiezada(s)`);
+				setQty("");
+				onChanged();
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error al despiezar"),
+		}),
+	);
+
+	const n = Number.parseInt(qty, 10) || 0;
+	const overStock = n > p.childStockPieces;
+	const ttype = cuts[0]?.type || "BASE";
+
+	return (
+		<div className="mt-1.5 rounded-lg border border-primary/30 bg-primary/5 p-2.5">
+			<div className="flex flex-wrap items-center gap-2">
+				<span className="font-semibold text-xs">
+					✂️ Despiezar {p.childName}
+				</span>
+				<input
+					type="number"
+					min="1"
+					value={qty}
+					onChange={(e) => setQty(e.target.value)}
+					placeholder="pz"
+					className="h-7 w-16 rounded-md border bg-background px-1.5 text-center text-xs"
+				/>
+				<Button
+					size="sm"
+					className="h-7 px-3 text-[11px]"
+					disabled={n <= 0 || overStock || mut.isPending}
+					onClick={() =>
+						mut.mutate({
+							parentProductId: p.childId,
+							quantityToProcess: n,
+							transformationType: ttype,
+							entryMode: false,
+						})
+					}
+				>
+					<ScissorsIcon className="mr-1 h-3 w-3" />
+					{mut.isPending ? "Despiezando…" : "Despiezar"}
+				</Button>
+				<span className="text-[11px] text-muted-foreground">
+					en stock: {p.childStockPieces} pz
+				</span>
+			</div>
+			{n > 0 && (
+				<p
+					className={cn(
+						"mt-1 text-[11px]",
+						overStock ? "text-amber-700" : "text-muted-foreground",
+					)}
+				>
+					{overStock ? (
+						<>
+							Solo hay {p.childStockPieces} {p.childName} en stock — primero
+							despieza{" "}
+							<strong>
+								{Math.ceil(
+									(n - p.childStockPieces) / Math.max(1, p.pieces),
+								)}{" "}
+								canal(es)
+							</strong>{" "}
+							más (salen {p.pieces} pz por canal).
+						</>
+					) : (
+						<>
+							→ produce:{" "}
+							{cuts
+								.map((c) => `${c.childName} ×${n * c.pieces}`)
+								.join(" · ")}
+						</>
+					)}
+				</p>
+			)}
 		</div>
 	);
 }
