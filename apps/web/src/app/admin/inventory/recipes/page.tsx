@@ -628,7 +628,15 @@ export default function RecipesPage({
 	}, [mapRecipes]);
 
 	// Σ de % (solo despiece; las variantes no suman) + merma
-	const SumBadge = ({ rows, refW }: { rows: Recipe[]; refW: number }) => {
+	const SumBadge = ({
+		rows,
+		refW,
+		level,
+	}: {
+		rows: Recipe[];
+		refW: number;
+		level?: string;
+	}) => {
 		const sumPct =
 			rows
 				.filter((r) => !r.is_variant)
@@ -643,6 +651,11 @@ export default function RecipesPage({
 					over ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700",
 				)}
 			>
+				{level && (
+					<span className="rounded bg-white/70 px-1 text-[9px] uppercase tracking-wide">
+						{level}
+					</span>
+				)}
 				<span>Σ {sumPct.toFixed(1)}%</span>
 				{refW > 0 && (
 					<span className="font-normal">
@@ -703,10 +716,16 @@ export default function RecipesPage({
 			<div key={r.id}>
 				<div
 					className={cn(
-						"flex items-center gap-1.5 rounded-md px-1 py-1",
+						"group flex items-center gap-1.5 rounded-md px-1 py-1",
 						r.is_variant && "bg-amber-50/60",
 					)}
 				>
+					<span
+						className="shrink-0 cursor-default select-none text-[10px] text-muted-foreground/30 group-hover:text-muted-foreground/60"
+						title="Arrastra una pieza de la paleta sobre este renglón para ramificarla"
+					>
+						⠿
+					</span>
 					<button
 						type="button"
 						disabled={!canExpand}
@@ -723,6 +742,14 @@ export default function RecipesPage({
 					>
 						{expanded ? "▾" : "▸"}
 					</button>
+					<span
+						className="h-2 w-2 shrink-0 rounded-full"
+						style={{
+							background:
+								CAT_COLORS[r.childProduct.category ?? "Otros"] ?? "#64748b",
+						}}
+						title={r.childProduct.category ?? "Sin categoría"}
+					/>
 					<button
 						type="button"
 						onClick={() => openEdit(r)}
@@ -864,6 +891,7 @@ export default function RecipesPage({
 						<SumBadge
 							rows={kids}
 							refW={Number(r.childProduct.avg_weight ?? 0) || 0}
+							level="Nivel 2"
 						/>
 					</div>
 				)}
@@ -1154,7 +1182,7 @@ export default function RecipesPage({
 							Suelta aquí para agregar {draggedChild.name} a {s.type}
 						</div>
 					)}
-					<SumBadge rows={s.rows} refW={s.canalW} />
+					<SumBadge rows={s.rows} refW={s.canalW} level="Nivel 1" />
 				</div>
 			</div>
 		);

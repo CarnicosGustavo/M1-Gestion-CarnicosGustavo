@@ -58,6 +58,7 @@ const recipeSchema = z.object({
 		name: z.string(),
 		is_parent_product: z.boolean(),
 		avg_weight: z.union([z.string(), z.number()]).nullable(),
+		category: z.string().nullable(),
 	}),
 });
 
@@ -516,6 +517,7 @@ export const inventoryRouter = router({
 						name: child.name,
 						is_parent_product: child.is_parent_product,
 						avg_weight: child.avg_weight_per_piece_kg,
+						category: child.category,
 					},
 				})
 				.from(productTransformations)
