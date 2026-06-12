@@ -1,19 +1,20 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { router } from "./init";
+import { antonicellaRouter } from "./routers/antonella";
 import { citiesRouter } from "./routers/cities";
+import { coldInventoryRouter } from "./routers/cold-inventory";
+import { collectionsRouter } from "./routers/collections";
+import { customerPricesRouter } from "./routers/customer-prices";
 import { customersRouter } from "./routers/customers";
 import { dashboardRouter } from "./routers/dashboard";
 import { inventoryRouter } from "./routers/inventory";
 import { ordersRouter } from "./routers/orders";
 import { paymentMethodsRouter } from "./routers/payment-methods";
 import { productsRouter } from "./routers/products";
-import { transactionsRouter } from "./routers/transactions";
 import { purchaseOrdersRouter } from "./routers/purchase-orders";
 import { ticketsRouter } from "./routers/tickets";
+import { transactionsRouter } from "./routers/transactions";
 import { yieldsRouter } from "./routers/yields";
-import { customerPricesRouter } from "./routers/customer-prices";
-import { coldInventoryRouter } from "./routers/cold-inventory";
-import { collectionsRouter } from "./routers/collections";
 
 export const appRouter = router({
 	products: productsRouter,
@@ -30,6 +31,7 @@ export const appRouter = router({
 	customerPrices: customerPricesRouter,
 	coldInventory: coldInventoryRouter,
 	collections: collectionsRouter,
+	antonella: antonicellaRouter,
 });
 
 export type AppRouter = typeof appRouter;

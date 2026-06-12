@@ -18,6 +18,7 @@ import {
 import {
 	BanknoteIcon,
 	BookOpenIcon,
+	BotIcon,
 	ClipboardListIcon,
 	CreditCardIcon,
 	DollarSignIcon,
@@ -64,7 +65,8 @@ interface NavItem {
 		| "prices"
 		| "coldInventory"
 		| "collections"
-		| "checkout";
+		| "checkout"
+		| "antonella";
 	icon: LucideIcon;
 }
 
@@ -84,6 +86,7 @@ const opNav: NavItem[] = [
 	{ href: "/admin/collections", labelKey: "collections", icon: HandCoinsIcon },
 	{ href: "/admin/customers", labelKey: "customers", icon: UsersIcon },
 	{ href: "/admin/pos", labelKey: "pos", icon: ShoppingCartIcon },
+	{ href: "/admin/antonella", labelKey: "antonella", icon: BotIcon },
 ];
 
 // Configuración (agrupado en un menú): catálogo, recetas, precios, ajustes…
