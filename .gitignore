@@ -77,6 +77,9 @@ apps/docs/.source/
 # Manual fiscal test scripts (contain sensitive data)
 packages/fiscal/src/manual-*.ts
 
+# Documento con claves y conexiones (NO subir secretos al repo)
+PROYECTO_INFO.md
+
 # Local business context files
 Contexto/*.xls
 Contexto/*.xlsx
