@@ -566,6 +566,40 @@ export const antonellaConfig = pgTable("antonella_config", {
 	updated_at: timestamp("updated_at").defaultNow(),
 });
 
+// Memorias de Antonella: hechos, detalles, preferencias y estadísticas que recuerda
+export const antonellaMemories = pgTable("antonella_memories", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	user_uid: varchar("user_uid", { length: 255 }).notNull(),
+	category: varchar("category", { length: 80 }).notNull().default("general"),
+	title: varchar("title", { length: 200 }).notNull(),
+	content: text("content").notNull(),
+	tags: jsonb("tags").notNull().default([]),
+	importance: integer("importance").notNull().default(1),
+	created_at: timestamp("created_at").defaultNow(),
+	updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// "Bases de datos" que Antonella crea para memorizar cosas cotidianas
+export const antonellaDatasets = pgTable("antonella_datasets", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	user_uid: varchar("user_uid", { length: 255 }).notNull(),
+	name: varchar("name", { length: 120 }).notNull(),
+	description: text("description").notNull().default(""),
+	columns: jsonb("columns").notNull().default([]),
+	created_at: timestamp("created_at").defaultNow(),
+	updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// Filas de cada dataset (estructura flexible en jsonb)
+export const antonellaDatasetRows = pgTable("antonella_dataset_rows", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	dataset_id: integer("dataset_id")
+		.notNull()
+		.references(() => antonellaDatasets.id, { onDelete: "cascade" }),
+	data: jsonb("data").notNull().default({}),
+	created_at: timestamp("created_at").defaultNow(),
+});
+
 // --- RELACIONES ---
 
 export const userRelations = relations(user, ({ many }) => ({

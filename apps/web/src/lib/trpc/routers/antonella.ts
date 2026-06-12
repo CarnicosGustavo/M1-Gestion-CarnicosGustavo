@@ -1,7 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { antonellaConfig } from "@finopenpos/db/schema";
+import {
+	antonellaConfig,
+	antonellaDatasetRows,
+	antonellaDatasets,
+	antonellaMemories,
+} from "@finopenpos/db/schema";
 import { TRPCError } from "@trpc/server";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import {
@@ -82,6 +87,18 @@ export const TOOL_META: Record<
 		category: "accion",
 		danger: true,
 	},
+	remember: { label: "Memorizar un dato", category: "lectura", danger: false },
+	recall: { label: "Recordar (buscar memoria)", category: "lectura", danger: false },
+	list_memories: { label: "Listar recuerdos", category: "lectura", danger: false },
+	forget: { label: "Olvidar un dato", category: "lectura", danger: false },
+	create_dataset: {
+		label: "Crear tabla de memoria",
+		category: "lectura",
+		danger: false,
+	},
+	add_data: { label: "Agregar dato a tabla", category: "lectura", danger: false },
+	query_dataset: { label: "Leer tabla de memoria", category: "lectura", danger: false },
+	list_datasets: { label: "Listar tablas", category: "lectura", danger: false },
 };
 
 // Inicialización perezosa: evita que el SDK lance error al cargar el módulo
@@ -237,6 +254,135 @@ const tools = [
 			required: ["base_product_name", "variant_product_name", "quantity"],
 		},
 	},
+	// ── MEMORIA ──
+	{
+		name: "remember",
+		description:
+			"Guarda en memoria permanente un dato, detalle, preferencia o estadística para recordarlo en futuras conversaciones (ej. 'el proveedor La Barca entrega los martes', 'al cliente X le gusta el jamón S/H').",
+		input_schema: {
+			type: "object",
+			properties: {
+				title: { type: "string", description: "Título corto del recuerdo" },
+				content: {
+					type: "string",
+					description: "El dato a recordar, completo",
+				},
+				category: {
+					type: "string",
+					description:
+						"Categoría: proveedores, clientes, operacion, precios, estadisticas, preferencias, general",
+				},
+				tags: {
+					type: "array",
+					items: { type: "string" },
+					description: "Etiquetas para encontrarlo después",
+				},
+			},
+			required: ["title", "content"],
+		},
+	},
+	{
+		name: "recall",
+		description:
+			"Busca en la memoria permanente recuerdos relacionados con una consulta (busca en título, contenido y etiquetas).",
+		input_schema: {
+			type: "object",
+			properties: {
+				query: { type: "string", description: "Qué buscar" },
+			},
+			required: ["query"],
+		},
+	},
+	{
+		name: "list_memories",
+		description:
+			"Lista los recuerdos guardados, opcionalmente filtrando por categoría.",
+		input_schema: {
+			type: "object",
+			properties: {
+				category: {
+					type: "string",
+					description: "Categoría a filtrar (opcional)",
+				},
+			},
+			required: [],
+		},
+	},
+	{
+		name: "forget",
+		description: "Borra un recuerdo por su título exacto.",
+		input_schema: {
+			type: "object",
+			properties: {
+				title: {
+					type: "string",
+					description: "Título exacto del recuerdo a borrar",
+				},
+			},
+			required: ["title"],
+		},
+	},
+	// ── DATASETS (bases de datos que Antonella crea) ──
+	{
+		name: "create_dataset",
+		description:
+			"Crea una 'base de datos' (tabla) para memorizar cosas cotidianas de forma estructurada (ej. un registro de mermas diarias, control de temperatura de cámaras, bitácora de proveedores).",
+		input_schema: {
+			type: "object",
+			properties: {
+				name: {
+					type: "string",
+					description: "Nombre de la tabla (ej. 'mermas_diarias')",
+				},
+				description: { type: "string", description: "Para qué sirve" },
+				columns: {
+					type: "array",
+					items: { type: "string" },
+					description:
+						"Nombres de las columnas (ej. ['fecha','producto','kg_merma'])",
+				},
+			},
+			required: ["name", "columns"],
+		},
+	},
+	{
+		name: "add_data",
+		description:
+			"Agrega una fila de datos a una tabla creada con create_dataset.",
+		input_schema: {
+			type: "object",
+			properties: {
+				dataset: { type: "string", description: "Nombre de la tabla" },
+				row: {
+					type: "object",
+					description: "Objeto con los valores (clave=columna, valor=dato)",
+				},
+			},
+			required: ["dataset", "row"],
+		},
+	},
+	{
+		name: "query_dataset",
+		description:
+			"Lee las filas de una tabla (las últimas N), para consultarlas o analizarlas.",
+		input_schema: {
+			type: "object",
+			properties: {
+				dataset: { type: "string", description: "Nombre de la tabla" },
+				limit: {
+					type: "number",
+					description: "Cuántas filas traer (default 50)",
+				},
+			},
+			required: ["dataset"],
+		},
+	},
+	{
+		name: "list_datasets",
+		description:
+			"Lista todas las tablas que Antonella ha creado, con su descripción y columnas.",
+		input_schema: { type: "object", properties: {}, required: [] },
+	},
 ];
 
 // ────────────────────────────────────────────
@@ -273,9 +419,239 @@ async function executeTool(
 		case "convert_to_variant":
 			return `🔒 ACCIÓN PROTEGIDA REQUERIDA:\n\nConversión solicitada:\n- Base: ${toolInput.base_product_name} → ${toolInput.variant_product_name}\n- Cantidad: ${toolInput.quantity} piezas\n\nEsto abrirá un diálogo de confirmación. El usuario debe presionar [Producir] en la UI.`;
 
+		case "remember":
+			return await rememberFact(toolInput, userId);
+		case "recall":
+			return await recallMemories(toolInput.query as string, userId);
+		case "list_memories":
+			return await listMemories(toolInput.category as string | undefined, userId);
+		case "forget":
+			return await forgetMemory(toolInput.title as string, userId);
+		case "create_dataset":
+			return await createDataset(toolInput, userId);
+		case "add_data":
+			return await addDatasetRow(toolInput, userId);
+		case "query_dataset":
+			return await queryDataset(toolInput, userId);
+		case "list_datasets":
+			return await listDatasets(userId);
+
 		default:
 			return `Herramienta desconocida: ${toolName}`;
 	}
+}
+
+// ───── Implementación: MEMORIA ─────
+
+async function rememberFact(
+	input: Record<string, unknown>,
+	userId: string,
+): Promise<string> {
+	const title = String(input.title || "").trim();
+	const content = String(input.content || "").trim();
+	if (!title || !content) return "❌ Falta título o contenido.";
+	const category = String(input.category || "general").trim() || "general";
+	const tags = Array.isArray(input.tags) ? (input.tags as string[]) : [];
+
+	// Si ya existe un recuerdo con ese título, lo actualiza
+	const existing = (
+		await db
+			.select({ id: antonellaMemories.id })
+			.from(antonellaMemories)
+			.where(
+				and(
+					eq(antonellaMemories.user_uid, userId),
+					eq(antonellaMemories.title, title),
+				),
+			)
+			.limit(1)
+	)[0];
+
+	if (existing) {
+		await db
+			.update(antonellaMemories)
+			.set({ content, category, tags, updated_at: new Date() })
+			.where(eq(antonellaMemories.id, existing.id));
+		return `✅ Recuerdo actualizado: "${title}"`;
+	}
+
+	await db.insert(antonellaMemories).values({
+		user_uid: userId,
+		title,
+		content,
+		category,
+		tags,
+	});
+	return `✅ Recordado: "${title}" (categoría: ${category})`;
+}
+
+async function recallMemories(
+	query: string,
+	userId: string,
+): Promise<string> {
+	const q = `%${(query || "").trim()}%`;
+	const rows = await db
+		.select()
+		.from(antonellaMemories)
+		.where(
+			and(
+				eq(antonellaMemories.user_uid, userId),
+				or(
+					ilike(antonellaMemories.title, q),
+					ilike(antonellaMemories.content, q),
+					ilike(sql`${antonellaMemories.tags}::text`, q),
+				),
+			),
+		)
+		.orderBy(desc(antonellaMemories.importance), desc(antonellaMemories.updated_at))
+		.limit(10);
+
+	if (!rows.length) return `Sin recuerdos relacionados con "${query}".`;
+	return `Recuerdos encontrados:\n${rows
+		.map((r) => `• [${r.category}] ${r.title}: ${r.content}`)
+		.join("\n")}`;
+}
+
+async function listMemories(
+	category: string | undefined,
+	userId: string,
+): Promise<string> {
+	const rows = await db
+		.select()
+		.from(antonellaMemories)
+		.where(
+			category
+				? and(
+						eq(antonellaMemories.user_uid, userId),
+						eq(antonellaMemories.category, category),
+					)
+				: eq(antonellaMemories.user_uid, userId),
+		)
+		.orderBy(desc(antonellaMemories.updated_at))
+		.limit(50);
+
+	if (!rows.length) return "Aún no hay recuerdos guardados.";
+	return `Recuerdos (${rows.length}):\n${rows
+		.map((r) => `• [${r.category}] ${r.title}: ${r.content}`)
+		.join("\n")}`;
+}
+
+async function forgetMemory(title: string, userId: string): Promise<string> {
+	const deleted = await db
+		.delete(antonellaMemories)
+		.where(
+			and(
+				eq(antonellaMemories.user_uid, userId),
+				eq(antonellaMemories.title, title),
+			),
+		)
+		.returning({ id: antonellaMemories.id });
+	return deleted.length
+		? `🗑️ Olvidé "${title}".`
+		: `No encontré un recuerdo con título "${title}".`;
+}
+
+// ───── Implementación: DATASETS ─────
+
+async function createDataset(
+	input: Record<string, unknown>,
+	userId: string,
+): Promise<string> {
+	const name = String(input.name || "").trim();
+	if (!name) return "❌ Falta el nombre de la tabla.";
+	const description = String(input.description || "").trim();
+	const columns = Array.isArray(input.columns) ? (input.columns as string[]) : [];
+	if (!columns.length) return "❌ Indica al menos una columna.";
+
+	const existing = (
+		await db
+			.select({ id: antonellaDatasets.id })
+			.from(antonellaDatasets)
+			.where(
+				and(
+					eq(antonellaDatasets.user_uid, userId),
+					eq(antonellaDatasets.name, name),
+				),
+			)
+			.limit(1)
+	)[0];
+	if (existing) return `Ya existe una tabla llamada "${name}".`;
+
+	await db.insert(antonellaDatasets).values({
+		user_uid: userId,
+		name,
+		description,
+		columns,
+	});
+	return `✅ Tabla "${name}" creada con columnas: ${columns.join(", ")}`;
+}
+
+async function findDataset(name: string, userId: string) {
+	return (
+		await db
+			.select()
+			.from(antonellaDatasets)
+			.where(
+				and(
+					eq(antonellaDatasets.user_uid, userId),
+					eq(antonellaDatasets.name, name),
+				),
+			)
+			.limit(1)
+	)[0];
+}
+
+async function addDatasetRow(
+	input: Record<string, unknown>,
+	userId: string,
+): Promise<string> {
+	const name = String(input.dataset || "").trim();
+	const ds = await findDataset(name, userId);
+	if (!ds) return `No existe la tabla "${name}". Créala con create_dataset.`;
+	const row =
+		input.row && typeof input.row === "object"
+			? (input.row as Record<string, unknown>)
+			: {};
+	await db
+		.insert(antonellaDatasetRows)
+		.values({ dataset_id: ds.id, data: row });
+	return `✅ Fila agregada a "${name}": ${JSON.stringify(row)}`;
+}
+
+async function queryDataset(
+	input: Record<string, unknown>,
+	userId: string,
+): Promise<string> {
+	const name = String(input.dataset || "").trim();
+	const ds = await findDataset(name, userId);
+	if (!ds) return `No existe la tabla "${name}".`;
+	const limit = Math.min(Number(input.limit) || 50, 200);
+	const rows = await db
+		.select()
+		.from(antonellaDatasetRows)
+		.where(eq(antonellaDatasetRows.dataset_id, ds.id))
+		.orderBy(desc(antonellaDatasetRows.created_at))
+		.limit(limit);
+
+	if (!rows.length) return `La tabla "${name}" está vacía.`;
+	return `Tabla "${name}" (${rows.length} fila(s) recientes):\n${rows
+		.map((r) => JSON.stringify(r.data))
+		.join("\n")}`;
+}
+
+async function listDatasets(userId: string): Promise<string> {
+	const rows = await db
+		.select()
+		.from(antonellaDatasets)
+		.where(eq(antonellaDatasets.user_uid, userId))
+		.orderBy(desc(antonellaDatasets.updated_at));
+	if (!rows.length) return "Aún no hay tablas creadas.";
+	return `Tablas (${rows.length}):\n${rows
+		.map(
+			(d) =>
+				`• ${d.name} — ${d.description || "sin descripción"} [columnas: ${(d.columns as string[]).join(", ")}]`,
+		)
+		.join("\n")}`;
 }
 
 async function getInventorySnapshot(userId: string): Promise<string> {
@@ -742,10 +1118,53 @@ export const antonicellaRouter = router({
 					.limit(1)
 			)[0];
 
-			const systemPrompt =
+			const baseSystemPrompt =
 				cfg?.system_prompt && cfg.system_prompt.trim().length > 0
 					? cfg.system_prompt
 					: DEFAULT_SYSTEM_PROMPT;
+
+			// Cargar las memorias recientes/importantes para que Antonella sea
+			// "consciente" de lo que ya sabe (puede usar recall para el detalle).
+			const memories = await db
+				.select({
+					category: antonellaMemories.category,
+					title: antonellaMemories.title,
+					content: antonellaMemories.content,
+				})
+				.from(antonellaMemories)
+				.where(eq(antonellaMemories.user_uid, userId))
+				.orderBy(
+					desc(antonellaMemories.importance),
+					desc(antonellaMemories.updated_at),
+				)
+				.limit(30);
+
+			const datasetList = await db
+				.select({
+					name: antonellaDatasets.name,
+					description: antonellaDatasets.description,
+				})
+				.from(antonellaDatasets)
+				.where(eq(antonellaDatasets.user_uid, userId))
+				.limit(20);
+
+			const memoryBlock =
+				memories.length > 0
+					? `\n\n--- LO QUE RECUERDAS (memoria permanente) ---\n${memories
+							.map((m) => `• [${m.category}] ${m.title}: ${m.content}`)
+							.join(
+								"\n",
+							)}\n\nUsa la herramienta 'remember' para guardar datos nuevos que el usuario quiera que recuerdes, y 'recall' para buscar más detalle.`
+					: `\n\nPuedes guardar datos para recordarlos siempre con la herramienta 'remember'.`;
+
+			const datasetBlock =
+				datasetList.length > 0
+					? `\n\n--- TUS TABLAS DE MEMORIA ---\n${datasetList
+							.map((d) => `• ${d.name}: ${d.description || "sin descripción"}`)
+							.join("\n")}`
+					: "";
+
+			const systemPrompt = baseSystemPrompt + memoryBlock + datasetBlock;
 
 			const disabled = new Set<string>(
 				(cfg?.disabled_tools as string[] | undefined) ?? [],
