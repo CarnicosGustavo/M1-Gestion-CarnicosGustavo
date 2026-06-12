@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+	type AnyPgColumn,
 	boolean,
 	customType,
 	date,
@@ -12,7 +13,6 @@ import {
 	timestamp,
 	uuid,
 	varchar,
-	type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 // --- ENUMS ---
@@ -144,7 +144,9 @@ export const products = pgTable("products", {
 		.default("0.000"),
 	stock_pieces_frozen: integer("stock_pieces_frozen").notNull().default(0),
 	is_parent_product: boolean("is_parent_product").notNull().default(false),
-	parent_product_id: integer("parent_product_id").references((): AnyPgColumn => products.id),
+	parent_product_id: integer("parent_product_id").references(
+		(): AnyPgColumn => products.id,
+	),
 	is_sellable_by_unit: boolean("is_sellable_by_unit").notNull().default(true),
 	is_sellable_by_weight: boolean("is_sellable_by_weight")
 		.notNull()
@@ -169,7 +171,9 @@ export const channelPurchases = pgTable("channel_purchases", {
 	qty_americano: integer("qty_americano").notNull().default(0),
 	qty_nacional: integer("qty_nacional").notNull().default(0),
 	num_medias: integer("num_medias").notNull().default(0),
-	total_kg: numeric("total_kg", { precision: 12, scale: 3 }).notNull().default("0"),
+	total_kg: numeric("total_kg", { precision: 12, scale: 3 })
+		.notNull()
+		.default("0"),
 	price_per_kg: numeric("price_per_kg", { precision: 10, scale: 2 }),
 	// Verificación al llegar al CEDIS (peso de canal real recibido)
 	verified_canales: integer("verified_canales"),
@@ -355,8 +359,7 @@ export const orderItems = pgTable("order_items", {
 	order_id: integer("order_id")
 		.notNull()
 		.references(() => orders.id),
-	product_id: integer("product_id")
-		.references(() => products.id),
+	product_id: integer("product_id").references(() => products.id),
 	product_name: varchar("product_name", { length: 255 }).notNull(),
 	quantity: integer("quantity"),
 	price: numeric("price", { precision: 10, scale: 2 }),
@@ -547,6 +550,20 @@ export const invoiceEvents = pgTable("invoice_events", {
 	request_xml: text("request_xml"),
 	response_xml: text("response_xml"),
 	created_at: timestamp("created_at").defaultNow(),
+});
+
+// --- CONFIGURACIÓN DE ANTONELLA (ASISTENTE IA) ---
+export const antonellaConfig = pgTable("antonella_config", {
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+	user_uid: varchar("user_uid", { length: 255 }).notNull().unique(),
+	system_prompt: text("system_prompt").notNull().default(""),
+	// IDs de herramientas integradas que el usuario DESACTIVÓ
+	disabled_tools: jsonb("disabled_tools").notNull().default([]),
+	// Herramientas/habilidades personalizadas que el usuario agregó
+	custom_tools: jsonb("custom_tools").notNull().default([]),
+	model: varchar("model", { length: 100 }).notNull().default("claude-opus-4-8"),
+	created_at: timestamp("created_at").defaultNow(),
+	updated_at: timestamp("updated_at").defaultNow(),
 });
 
 // --- RELACIONES ---

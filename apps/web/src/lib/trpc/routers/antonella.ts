@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { antonellaConfig } from "@finopenpos/db/schema";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
@@ -11,6 +12,77 @@ import {
 	productTransformations,
 } from "@/lib/db/schema";
 import { protectedProcedure, router } from "../init";
+
+// System prompt por defecto (precargado). El usuario lo puede editar en
+// /admin/settings/antonella; si lo deja vacío, se usa éste.
+export const DEFAULT_SYSTEM_PROMPT = `Eres Antonella, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
+
+Tu rol: Ayudar a optimizar inventario, producción y órdenes.
+
+Reglas:
+1. Responde en ESPAÑOL, profesional y directo
+2. Para cada pregunta, usa las herramientas disponibles (tool_use)
+3. Si el usuario pide una acción (despiece, conversión), PRIMERO llama a la herramienta
+   que abre el diálogo (sin ejecutar aún), LUEGO explica lo que va a pasar
+4. Nunca ejecutes acciones sin confirmación del usuario
+5. Sé conciso pero completo
+6. Si no tienes datos, di "Sin datos registrados"
+
+Contexto de negocio:
+- Productos: CANALES (americano, nacional lomo, nacional espilomo)
+- Despiece: CANALES → PIERNAS, LOMOS, CUEROS, etc.
+- Segundo nivel: PIERNA → JAMON (+ variantes S/H, C/G, PINTO)
+- Demanda: órdenes abiertas (status != CANCELADA/COMPLETADA/etc)
+- Stock: pieces (pz) + kg calculados
+- Recetas: definidas en product_transformations`;
+
+// Metadata para la UI de configuración: categoría y nivel de riesgo de cada
+// herramienta integrada. El `name` debe coincidir con `tools[].name`.
+export const TOOL_META: Record<
+	string,
+	{ label: string; category: "lectura" | "accion"; danger: boolean }
+> = {
+	get_inventory_snapshot: {
+		label: "Estado del inventario",
+		category: "lectura",
+		danger: false,
+	},
+	get_product_detail: {
+		label: "Detalle de un producto",
+		category: "lectura",
+		danger: false,
+	},
+	get_demand: {
+		label: "Demanda / pedidos abiertos",
+		category: "lectura",
+		danger: false,
+	},
+	get_recipes: {
+		label: "Árbol de recetas",
+		category: "lectura",
+		danger: false,
+	},
+	get_coverage: {
+		label: "Cobertura de demanda",
+		category: "lectura",
+		danger: false,
+	},
+	forecast_demand: {
+		label: "Pronóstico de demanda",
+		category: "lectura",
+		danger: false,
+	},
+	execute_despiece: {
+		label: "Ejecutar despiece",
+		category: "accion",
+		danger: true,
+	},
+	convert_to_variant: {
+		label: "Convertir a variante",
+		category: "accion",
+		danger: true,
+	},
+};
 
 // Inicialización perezosa: evita que el SDK lance error al cargar el módulo
 // si ANTHROPIC_API_KEY no está presente en build time.
@@ -661,31 +733,47 @@ export const antonicellaRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			const userId = ctx.user.id;
 
-			const systemPrompt = `Eres Antonella, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
+			// Cargar la configuración personalizada del usuario (si existe)
+			const cfg = (
+				await db
+					.select()
+					.from(antonellaConfig)
+					.where(eq(antonellaConfig.user_uid, userId))
+					.limit(1)
+			)[0];
 
-Tu rol: Ayudar a optimizar inventario, producción y órdenes.
+			const systemPrompt =
+				cfg?.system_prompt && cfg.system_prompt.trim().length > 0
+					? cfg.system_prompt
+					: DEFAULT_SYSTEM_PROMPT;
 
-Reglas:
-1. Responde en ESPAÑOL, profesional y directo
-2. Para cada pregunta, usa las herramientas disponibles (tool_use)
-3. Si el usuario pide una acción (despiece, conversión), PRIMERO llama a la herramienta
-   que abre el diálogo (sin ejecutar aún), LUEGO explica lo que va a pasar
-4. Nunca ejecutes acciones sin confirmación del usuario
-5. Sé conciso pero completo
-6. Si no tienes datos, di "Sin datos registrados"
+			const disabled = new Set<string>(
+				(cfg?.disabled_tools as string[] | undefined) ?? [],
+			);
+			const customTools = (cfg?.custom_tools as any[] | undefined) ?? [];
+			const model = cfg?.model || "claude-opus-4-8";
 
-Contexto de negocio:
-- Productos: CANALES (americano, nacional lomo, nacional espilomo)
-- Despiece: CANALES → PIERNAS, LOMOS, CUEROS, etc.
-- Segundo nivel: PIERNA → JAMON (+ variantes S/H, C/G, PINTO)
-- Demanda: órdenes abiertas (status != CANCELADA/COMPLETADA/etc)
-- Stock: pieces (pz) + kg calculados
-- Recetas: definidas en product_transformations`;
+			// Herramientas activas = integradas (no desactivadas) + las custom.
+			// Las custom son solo declarativas (sin ejecución real todavía): si el
+			// modelo las invoca, devolvemos su descripción como resultado.
+			const activeTools = [
+				...tools.filter((t) => !disabled.has(t.name)),
+				...customTools
+					.filter((t) => t?.name && t?.description)
+					.map((t) => ({
+						name: t.name,
+						description: t.description,
+						input_schema: t.input_schema ?? {
+							type: "object",
+							properties: {},
+							required: [],
+						},
+					})),
+			];
+			const customNames = new Set(customTools.map((t) => t?.name));
 
 			// Conversación: array de mensajes que crece con cada tool_use
-			const conversation: any[] = [
-				{ role: "user", content: input.message },
-			];
+			const conversation: any[] = [{ role: "user", content: input.message }];
 
 			const toolCalls: any[] = [];
 			let requiresConfirmation = false;
@@ -697,9 +785,9 @@ Contexto de negocio:
 			// Loop agéntico: hasta 5 rondas de tool_use para evitar bucles infinitos
 			for (let round = 0; round < 5; round++) {
 				const response = await client.messages.create({
-					model: "claude-opus-4-8",
+					model,
 					max_tokens: 2000,
-					tools: tools as any,
+					tools: activeTools as any,
 					messages: conversation,
 					system: systemPrompt,
 				});
@@ -726,11 +814,11 @@ Contexto de negocio:
 				const toolResults: any[] = [];
 				for (const block of toolUses) {
 					const toolUse = block as any;
-					const toolResult = await executeTool(
-						toolUse.name,
-						toolUse.input,
-						userId,
-					);
+					// Herramienta personalizada: aún no tiene ejecución real; devolvemos
+					// su descripción para que el modelo la use como contexto.
+					const toolResult = customNames.has(toolUse.name)
+						? `[Herramienta personalizada "${toolUse.name}"] ${customTools.find((t) => t?.name === toolUse.name)?.description ?? ""}\n\n(Esta habilidad está declarada pero su ejecución automática aún no está conectada.)`
+						: await executeTool(toolUse.name, toolUse.input, userId);
 
 					toolCalls.push({
 						name: toolUse.name,
@@ -892,5 +980,118 @@ Contexto de negocio:
 				success: false,
 				message: "Acción desconocida",
 			};
+		}),
+
+	// ── Configuración de Antonella ──
+
+	// Lista las herramientas integradas con su metadata (para la UI)
+	listTools: protectedProcedure
+		.input(z.void())
+		.output(
+			z.object({
+				defaultSystemPrompt: z.string(),
+				tools: z.array(
+					z.object({
+						name: z.string(),
+						label: z.string(),
+						description: z.string(),
+						category: z.enum(["lectura", "accion"]),
+						danger: z.boolean(),
+					}),
+				),
+			}),
+		)
+		.query(async () => {
+			return {
+				defaultSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+				tools: tools.map((t) => ({
+					name: t.name,
+					label: TOOL_META[t.name]?.label ?? t.name,
+					description: t.description,
+					category: TOOL_META[t.name]?.category ?? "lectura",
+					danger: TOOL_META[t.name]?.danger ?? false,
+				})),
+			};
+		}),
+
+	// Obtiene la configuración guardada del usuario (o valores por defecto)
+	getConfig: protectedProcedure
+		.input(z.void())
+		.output(
+			z.object({
+				systemPrompt: z.string(),
+				disabledTools: z.array(z.string()),
+				customTools: z.array(z.any()),
+				model: z.string(),
+				isDefault: z.boolean(),
+			}),
+		)
+		.query(async ({ ctx }) => {
+			const cfg = (
+				await db
+					.select()
+					.from(antonellaConfig)
+					.where(eq(antonellaConfig.user_uid, ctx.user.id))
+					.limit(1)
+			)[0];
+
+			return {
+				systemPrompt: cfg?.system_prompt || DEFAULT_SYSTEM_PROMPT,
+				disabledTools: (cfg?.disabled_tools as string[]) ?? [],
+				customTools: (cfg?.custom_tools as any[]) ?? [],
+				model: cfg?.model || "claude-opus-4-8",
+				isDefault: !cfg,
+			};
+		}),
+
+	// Guarda la configuración del usuario (upsert por user_uid)
+	saveConfig: protectedProcedure
+		.input(
+			z.object({
+				systemPrompt: z.string(),
+				disabledTools: z.array(z.string()),
+				customTools: z.array(
+					z.object({
+						name: z.string().min(1),
+						description: z.string().min(1),
+						input_schema: z.any().optional(),
+					}),
+				),
+				model: z.string(),
+			}),
+		)
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ ctx, input }) => {
+			const uid = ctx.user.id;
+			const existing = (
+				await db
+					.select({ id: antonellaConfig.id })
+					.from(antonellaConfig)
+					.where(eq(antonellaConfig.user_uid, uid))
+					.limit(1)
+			)[0];
+
+			if (existing) {
+				await db
+					.update(antonellaConfig)
+					.set({
+						system_prompt: input.systemPrompt,
+						disabled_tools: input.disabledTools,
+						custom_tools: input.customTools,
+						model: input.model,
+						updated_at: new Date(),
+					})
+					.where(eq(antonellaConfig.user_uid, uid));
+			} else {
+				await db.insert(antonellaConfig).values({
+					user_uid: uid,
+					system_prompt: input.systemPrompt,
+					disabled_tools: input.disabledTools,
+					custom_tools: input.customTools,
+					model: input.model,
+				});
+			}
+
+			return { success: true };
 		}),
 });

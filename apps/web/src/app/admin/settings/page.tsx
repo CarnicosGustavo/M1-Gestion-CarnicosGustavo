@@ -1,14 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
 	CardContent,
+	CardDescription,
 	CardHeader,
 	CardTitle,
-	CardDescription,
 } from "@finopenpos/ui/components/card";
-import { Button } from "@finopenpos/ui/components/button";
 import {
 	Dialog,
 	DialogContent,
@@ -19,11 +18,12 @@ import {
 } from "@finopenpos/ui/components/dialog";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
-import { SettingsIcon } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { SettingsIcon } from "lucide-react";
+import Link from "next/link";
+import { useState } from "react";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc/client";
-import Link from "next/link";
 
 export default function SettingsPage() {
 	const trpc = useTRPC();
@@ -89,7 +89,7 @@ export default function SettingsPage() {
 		<div className="space-y-6">
 			<div className="flex items-center gap-2">
 				<SettingsIcon className="h-6 w-6" />
-				<h1 className="text-3xl font-bold">Configuración</h1>
+				<h1 className="font-bold text-3xl">Configuración</h1>
 			</div>
 
 			<Card>
@@ -107,6 +107,11 @@ export default function SettingsPage() {
 						<Button asChild variant="outline" className="justify-start">
 							<Link href="/admin/payment-methods">Métodos de pago</Link>
 						</Button>
+						<Button asChild variant="outline" className="justify-start">
+							<Link href="/admin/settings/antonella">
+								🤖 Antonella (asistente IA)
+							</Link>
+						</Button>
 					</div>
 					<div className="text-muted-foreground text-sm">
 						Usa estos accesos para administrar recetas e información de cobro.
@@ -114,9 +119,9 @@ export default function SettingsPage() {
 				</CardContent>
 			</Card>
 
-			<Card className="bg-blue-50 border-blue-200">
+			<Card className="border-blue-200 bg-blue-50">
 				<CardContent className="pt-6">
-					<p className="text-sm text-blue-900">
+					<p className="text-blue-900 text-sm">
 						💡 <strong>Consejo:</strong> Todos los cambios en esta sección se
 						guardan automáticamente. Los ajustes de configuración afectan al
 						funcionamiento del sistema.
@@ -173,11 +178,13 @@ export default function SettingsPage() {
 
 			<Card className="border-orange-200 bg-orange-50">
 				<CardHeader>
-					<CardTitle className="text-orange-900">Reset de Clientes y Pedidos</CardTitle>
+					<CardTitle className="text-orange-900">
+						Reset de Clientes y Pedidos
+					</CardTitle>
 					<CardDescription className="text-orange-900/80">
-						Borra clientes, pedidos, cobranza y precios por cliente (datos de prueba).
-						Genera un respaldo en la base de datos (tablas con fecha) antes de borrar.
-						Requiere contraseña de administrador.
+						Borra clientes, pedidos, cobranza y precios por cliente (datos de
+						prueba). Genera un respaldo en la base de datos (tablas con fecha)
+						antes de borrar. Requiere contraseña de administrador.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
@@ -223,8 +230,9 @@ export default function SettingsPage() {
 					<DialogHeader>
 						<DialogTitle>Confirmar reset de clientes y pedidos</DialogTitle>
 						<DialogDescription>
-							Se respaldan los datos (tablas con fecha) y luego se borran clientes,
-							pedidos, cobranza y precios por cliente. El catálogo y recetas no se tocan.
+							Se respaldan los datos (tablas con fecha) y luego se borran
+							clientes, pedidos, cobranza y precios por cliente. El catálogo y
+							recetas no se tocan.
 						</DialogDescription>
 					</DialogHeader>
 					<DialogFooter>
