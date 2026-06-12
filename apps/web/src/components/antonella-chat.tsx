@@ -119,7 +119,7 @@ export function AntonellaChat() {
 		}),
 	);
 
-	const handleConfirmAction = async (msg: Message) => {
+	const handleConfirmAction = async (msg: AntonellaMessage) => {
 		if (!msg.confirmationData) return;
 
 		const { toolName, toolInput } = msg.confirmationData as any;

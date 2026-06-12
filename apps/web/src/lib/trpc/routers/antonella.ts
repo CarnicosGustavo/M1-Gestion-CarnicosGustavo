@@ -12,9 +12,23 @@ import {
 } from "@/lib/db/schema";
 import { protectedProcedure, router } from "../init";
 
-const client = new Anthropic({
-	apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Inicialización perezosa: evita que el SDK lance error al cargar el módulo
+// si ANTHROPIC_API_KEY no está presente en build time.
+let _client: Anthropic | null = null;
+function getClient(): Anthropic {
+	if (!_client) {
+		const apiKey = process.env.ANTHROPIC_API_KEY;
+		if (!apiKey) {
+			throw new TRPCError({
+				code: "INTERNAL_SERVER_ERROR",
+				message:
+					"Antonella no está configurada: falta ANTHROPIC_API_KEY en el servidor.",
+			});
+		}
+		_client = new Anthropic({ apiKey });
+	}
+	return _client;
+}
 
 // ────────────────────────────────────────────
 // HERRAMIENTAS DISPONIBLES (Tool Use schema)
@@ -647,18 +661,7 @@ export const antonicellaRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			const userId = ctx.user.id;
 
-			// Llamar a Claude con tools
-			let response = await client.messages.create({
-				model: "claude-opus-4-8",
-				max_tokens: 2000,
-				tools: tools as any,
-				messages: [
-					{
-						role: "user",
-						content: input.message,
-					},
-				],
-				system: `Eres Antonella, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
+			const systemPrompt = `Eres Antonella, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
 
 Tu rol: Ayudar a optimizar inventario, producción y órdenes.
 
@@ -677,19 +680,51 @@ Contexto de negocio:
 - Segundo nivel: PIERNA → JAMON (+ variantes S/H, C/G, PINTO)
 - Demanda: órdenes abiertas (status != CANCELADA/COMPLETADA/etc)
 - Stock: pieces (pz) + kg calculados
-- Recetas: definidas en product_transformations`,
-			});
+- Recetas: definidas en product_transformations`;
 
-			// Procesar content blocks
-			const textBlock = response.content.find((b: any) => b.type === "text");
-			let answerText = textBlock ? (textBlock as any).text : "";
+			// Conversación: array de mensajes que crece con cada tool_use
+			const conversation: any[] = [
+				{ role: "user", content: input.message },
+			];
 
 			const toolCalls: any[] = [];
 			let requiresConfirmation = false;
 			let confirmationData: Record<string, unknown> = {};
+			let answerText = "";
 
-			for (const block of response.content) {
-				if (block.type === "tool_use") {
+			const client = getClient();
+
+			// Loop agéntico: hasta 5 rondas de tool_use para evitar bucles infinitos
+			for (let round = 0; round < 5; round++) {
+				const response = await client.messages.create({
+					model: "claude-opus-4-8",
+					max_tokens: 2000,
+					tools: tools as any,
+					messages: conversation,
+					system: systemPrompt,
+				});
+
+				// Capturar el texto de esta respuesta
+				const textBlock = response.content.find((b: any) => b.type === "text");
+				if (textBlock) answerText = (textBlock as any).text;
+
+				// Agregar la respuesta del asistente a la conversación
+				conversation.push({
+					role: "assistant",
+					content: response.content,
+				});
+
+				// Recolectar todos los tool_use de esta respuesta
+				const toolUses = response.content.filter(
+					(b: any) => b.type === "tool_use",
+				);
+
+				// Si no pidió herramientas, terminamos
+				if (toolUses.length === 0) break;
+
+				// Ejecutar cada herramienta y juntar los resultados
+				const toolResults: any[] = [];
+				for (const block of toolUses) {
 					const toolUse = block as any;
 					const toolResult = await executeTool(
 						toolUse.name,
@@ -703,7 +738,6 @@ Contexto de negocio:
 						result: toolResult,
 					});
 
-					// Si es acción protegida, marcar para confirmación
 					if (
 						toolUse.name === "execute_despiece" ||
 						toolUse.name === "convert_to_variant"
@@ -715,39 +749,15 @@ Contexto de negocio:
 						};
 					}
 
-					// Continuar conversación con resultado
-					response = await client.messages.create({
-						model: "claude-opus-4-8",
-						max_tokens: 2000,
-						tools: tools as any,
-						messages: [
-							...response.messages,
-							{
-								role: "assistant",
-								content: response.content,
-							},
-							{
-								role: "user",
-								content: [
-									{
-										type: "tool_result",
-										tool_use_id: toolUse.id,
-										content: toolResult,
-									},
-								],
-							},
-						],
-						system:
-							"Eres Antonella, asistente de Carnicos Gustavo. (mismo contexto)",
+					toolResults.push({
+						type: "tool_result",
+						tool_use_id: toolUse.id,
+						content: toolResult,
 					});
-
-					const newTextBlock = response.content.find(
-						(b: any) => b.type === "text",
-					);
-					if (newTextBlock) {
-						answerText = (newTextBlock as any).text;
-					}
 				}
+
+				// Agregar los resultados como mensaje del usuario y continuar el loop
+				conversation.push({ role: "user", content: toolResults });
 			}
 
 			return {

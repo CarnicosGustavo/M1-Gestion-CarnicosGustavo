@@ -6,7 +6,8 @@
     "BETTER_AUTH_SECRET",
     "BETTER_AUTH_URL",
     "BASE_URL",
-    "RUN_SEED"
+    "RUN_SEED",
+    "ANTHROPIC_API_KEY"
   ],
   "globalPassThroughEnv": ["SEED_TOKEN"],
   "tasks": {
@@ -20,6 +21,7 @@
         "BETTER_AUTH_URL",
         "BASE_URL",
         "RUN_SEED",
+        "ANTHROPIC_API_KEY",
         "NEXT_PUBLIC_*"
       ]
     },
