@@ -40,16 +40,17 @@ import {
 import { formatCurrency, formatShortDate } from "@/lib/utils";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { Button } from "@finopenpos/ui/components/button";
+import Image from "next/image";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "next-intl";
 
 const CHART_COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ];
 
 export default function Page() {
@@ -131,6 +132,24 @@ export default function Page() {
 
   return (
     <div className="grid flex-1 items-start gap-6 min-w-0 overflow-hidden">
+      {/* Portada: logo grande e imponente */}
+      <div className="relative flex flex-col items-center overflow-hidden rounded-2xl border bg-[var(--cg-cream)] px-6 py-10 text-center sm:py-14">
+        <Image
+          src="/brand/logo-principal.png"
+          alt="Cárnicos Gustavo"
+          width={520}
+          height={300}
+          priority
+          className="h-auto w-[clamp(220px,46vw,460px)] object-contain drop-shadow-sm"
+        />
+        <p className="mt-5 font-display text-xl tracking-[0.06em] text-foreground sm:text-2xl">
+          CENTRO DE DISTRIBUCIÓN
+        </p>
+        <p className="mt-1 max-w-md text-sm text-muted-foreground">
+          Plataforma de gestión integral · inteligencia iAntonella
+        </p>
+      </div>
+
       {/* Toggle ocultar montos */}
       <div className="flex justify-end -mb-2">
         <Button variant="outline" size="sm" onClick={toggleHide}>
@@ -354,7 +373,7 @@ function ProfitMarginChart({
   const chartConfig = {
     margin: {
       label: t("marginPercent"),
-      color: "hsl(var(--chart-1))",
+      color: "var(--chart-1)",
     },
   } satisfies ChartConfig;
 
@@ -398,8 +417,8 @@ function ProfitMarginChart({
                     key={`cell-${i}`}
                     fill={
                       entry.margin >= 0
-                        ? "hsl(var(--chart-2))"
-                        : "hsl(var(--chart-5))"
+                        ? "var(--chart-2)"
+                        : "var(--chart-5)"
                     }
                   />
                 ))}
@@ -425,7 +444,7 @@ function CashFlowChart({
   const chartConfig = {
     amount: {
       label: t("cashFlow"),
-      color: "hsl(var(--chart-3))",
+      color: "var(--chart-3)",
     },
   } satisfies ChartConfig;
 
