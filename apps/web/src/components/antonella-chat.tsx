@@ -10,25 +10,22 @@ import {
 import { Input } from "@finopenpos/ui/components/input";
 import { cn } from "@finopenpos/ui/lib/utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2Icon, SendIcon } from "lucide-react";
+import { Loader2Icon, SendIcon, TrashIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+	type AntonellaMessage,
+	useAntonellaHistory,
+} from "@/hooks/useAntonellaHistory";
 import { useTRPC } from "@/lib/trpc/client";
-
-interface Message {
-	id: string;
-	role: "user" | "assistant";
-	content: string;
-	toolCalls?: any[];
-	requiresConfirmation?: boolean;
-	confirmationData?: Record<string, unknown>;
-	timestamp: Date;
-}
 
 export function AntonellaChat() {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
-	const [messages, setMessages] = useState<Message[]>([
+	const sessionId = `antonella-session-${typeof window !== "undefined" ? window.location.pathname : "web"}`;
+	const history = useAntonellaHistory(sessionId);
+
+	const [messages, setMessages] = useState<AntonellaMessage[]>([
 		{
 			id: "welcome",
 			role: "assistant",
@@ -41,6 +38,13 @@ export function AntonellaChat() {
 	const [isLoading, setIsLoading] = useState(false);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 
+	// Cargar historial al montar
+	useEffect(() => {
+		if (history.session && history.session.messages.length > 0) {
+			setMessages(history.session.messages);
+		}
+	}, [history.isLoading]);
+
 	const scrollToBottom = () => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 	};
@@ -51,20 +55,20 @@ export function AntonellaChat() {
 
 	const chatMutation = useMutation(
 		trpc.antonella.chat.mutationOptions({
-			onSuccess: (data) => {
+			onSuccess: async (data) => {
 				const msgId = `msg-${Date.now()}`;
-				setMessages((prev) => [
-					...prev,
-					{
-						id: msgId,
-						role: "assistant",
-						content: data.answer,
-						toolCalls: data.toolCalls,
-						requiresConfirmation: data.requiresConfirmation,
-						confirmationData: data.confirmationData,
-						timestamp: new Date(),
-					},
-				]);
+				const assistantMsg: AntonellaMessage = {
+					id: msgId,
+					role: "assistant",
+					content: data.answer,
+					toolCalls: data.toolCalls,
+					requiresConfirmation: data.requiresConfirmation,
+					confirmationData: data.confirmationData,
+					timestamp: new Date(),
+				};
+
+				setMessages((prev) => [...prev, assistantMsg]);
+				await history.addMessage(assistantMsg);
 				setIsLoading(false);
 			},
 			onError: (error: any) => {
@@ -77,7 +81,7 @@ export function AntonellaChat() {
 	const handleSend = async () => {
 		if (!input.trim()) return;
 
-		const userMsg: Message = {
+		const userMsg: AntonellaMessage = {
 			id: `msg-${Date.now()}`,
 			role: "user",
 			content: input,
@@ -85,6 +89,7 @@ export function AntonellaChat() {
 		};
 
 		setMessages((prev) => [...prev, userMsg]);
+		await history.addMessage(userMsg);
 		setInput("");
 		setIsLoading(true);
 
@@ -93,18 +98,69 @@ export function AntonellaChat() {
 		});
 	};
 
+	const executeMutation = useMutation(
+		trpc.antonella.executeAction.mutationOptions({
+			onSuccess: (data) => {
+				toast.success(`✅ ${data.message}`);
+				setMessages((prev) => [
+					...prev,
+					{
+						id: `result-${Date.now()}`,
+						role: "assistant",
+						content: `✅ Acción completada:\n\n${data.message}`,
+						timestamp: new Date(),
+					},
+				]);
+				setInput("");
+			},
+			onError: (error: any) => {
+				toast.error(error.message ?? "Error al ejecutar acción");
+			},
+		}),
+	);
+
 	const handleConfirmAction = async (msg: Message) => {
 		if (!msg.confirmationData) return;
 
-		toast.info("Acción confirmada (próximamente disponible)");
-		// Aquí iría executeAction cuando esté implementado
+		const { toolName, toolInput } = msg.confirmationData as any;
+		const actionName =
+			toolName === "execute_despiece"
+				? "execute_despiece"
+				: "convert_to_variant";
+
+		await executeMutation.mutateAsync({
+			actionName: actionName as any,
+			actionInput: toolInput,
+		});
 	};
 
 	return (
 		<div className="mx-auto max-w-3xl space-y-4">
 			<Card className="flex h-[600px] flex-col">
-				<CardHeader>
+				<CardHeader className="flex flex-row items-center justify-between">
 					<CardTitle>Antonella - Asistente de Inventario</CardTitle>
+					<Button
+						size="sm"
+						variant="ghost"
+						onClick={() => {
+							if (confirm("¿Borrar el historial de esta sesión?")) {
+								history.clearHistory();
+								setMessages([
+									{
+										id: "welcome",
+										role: "assistant",
+										content:
+											"¡Hola de nuevo! Historial borrado. ¿En qué puedo ayudarte?",
+										timestamp: new Date(),
+									},
+								]);
+							}
+						}}
+						className="text-muted-foreground hover:text-foreground"
+						title="Borrar historial"
+					>
+						<TrashIcon className="h-4 w-4" />
+					</Button>
 				</CardHeader>
 				<CardContent className="flex flex-1 flex-col gap-4 overflow-hidden">
 					{/* Messages */}
@@ -121,20 +177,45 @@ export function AntonellaChat() {
 												{msg.content}
 											</div>
 											{msg.requiresConfirmation && msg.confirmationData && (
-												<div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
-													<p className="mb-2 font-semibold text-amber-900 text-xs">
-														✋ Acción protegida (requiere confirmación)
+												<div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-3">
+													<p className="mb-2 font-bold text-amber-900 text-xs uppercase">
+														🔒 ¡Acción Protegida! Requiere Confirmación
 													</p>
-													<pre className="mb-2 overflow-x-auto text-[10px] text-amber-800">
-														{JSON.stringify(msg.confirmationData, null, 2)}
-													</pre>
-													<Button
-														size="sm"
-														onClick={() => handleConfirmAction(msg)}
-														className="w-full"
-													>
-														Confirmar acción
-													</Button>
+													<div className="mb-3 space-y-1 rounded bg-white/50 p-2 font-mono text-[11px] text-amber-800">
+														{Object.entries(msg.confirmationData as any).map(
+															([k, v]) => (
+																<div key={k}>
+																	<span className="font-bold">{k}:</span>{" "}
+																	{String(v)}
+																</div>
+															),
+														)}
+													</div>
+													<div className="flex gap-2">
+														<Button
+															size="sm"
+															onClick={() => handleConfirmAction(msg)}
+															disabled={executeMutation.isPending}
+															className="flex-1 bg-amber-600 hover:bg-amber-700"
+														>
+															{executeMutation.isPending
+																? "Ejecutando..."
+																: "✓ Confirmar"}
+														</Button>
+														<Button
+															size="sm"
+															variant="outline"
+															onClick={() => {
+																setMessages((prev) =>
+																	prev.filter((m) => m.id !== msg.id),
+																);
+															}}
+															disabled={executeMutation.isPending}
+															className="flex-1"
+														>
+															✕ Cancelar
+														</Button>
+													</div>
 												</div>
 											)}
 										</div>

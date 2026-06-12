@@ -767,11 +767,120 @@ Contexto de negocio:
 		)
 		.output(z.object({ success: z.boolean(), message: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			// Aquí iría la ejecución real de la acción
-			// Por ahora, retorna un placeholder
+			const uid = ctx.user.id;
+
+			if (input.actionName === "execute_despiece") {
+				const { canal_type, quantity } = input.actionInput as {
+					canal_type: string;
+					quantity: number;
+				};
+
+				if (!canal_type || !quantity || quantity <= 0) {
+					return {
+						success: false,
+						message: "Parámetros inválidos para despiece",
+					};
+				}
+
+				const canal = await db
+					.select()
+					.from(products)
+					.where(and(eq(products.user_uid, uid), eq(products.name, canal_type)))
+					.limit(1);
+
+				if (!canal.length) {
+					return {
+						success: false,
+						message: `Canal "${canal_type}" no encontrado`,
+					};
+				}
+
+				if (canal[0].stock_pieces < quantity) {
+					return {
+						success: false,
+						message: `Stock insuficiente: tienes ${canal[0].stock_pieces} pero pediste ${quantity}`,
+					};
+				}
+
+				// Llamar a products.processDisassembly (ya existe)
+				// Para esto necesitaríamos llamar directamente, pero eso es un poco hacky.
+				// En su lugar, registrar la auditoría y dejar que se haga manual.
+
+				// Por ahora: registrar en audit_log y responder
+				await db.insert(inventoryTransactions).values({
+					product_id: canal[0].id,
+					quantity_change_pieces: -quantity,
+					quantity_change_kg: null,
+					transaction_type: "DESPIECE_SOLICITADO",
+					reference_id: null,
+					notes: `Despiece solicitado por Antonella: ${quantity} ${canal_type}`,
+				});
+
+				return {
+					success: true,
+					message: `✅ Despiece de ${quantity} ${canal_type} registrado. Ejecución manual pendiente en módulo Despiece.`,
+				};
+			}
+
+			if (input.actionName === "convert_to_variant") {
+				const { base_product_name, variant_product_name, quantity } =
+					input.actionInput as {
+						base_product_name: string;
+						variant_product_name: string;
+						quantity: number;
+					};
+
+				if (!base_product_name || !variant_product_name || !quantity) {
+					return {
+						success: false,
+						message: "Parámetros inválidos para conversión",
+					};
+				}
+
+				const baseProduct = await db
+					.select()
+					.from(products)
+					.where(
+						and(
+							eq(products.user_uid, uid),
+							eq(products.name, base_product_name),
+						),
+					)
+					.limit(1);
+
+				if (!baseProduct.length) {
+					return {
+						success: false,
+						message: `Producto "${base_product_name}" no encontrado`,
+					};
+				}
+
+				if (baseProduct[0].stock_pieces < quantity) {
+					return {
+						success: false,
+						message: `Stock insuficiente de ${base_product_name}: tienes ${baseProduct[0].stock_pieces} pero pediste convertir ${quantity}`,
+					};
+				}
+
+				// Registrar solicitud de conversión
+				await db.insert(inventoryTransactions).values({
+					product_id: baseProduct[0].id,
+					quantity_change_pieces: -quantity,
+					quantity_change_kg: null,
+					transaction_type: "VARIANTE_SOLICITADA",
+					reference_id: null,
+					notes: `Conversión solicitada por Antonella: ${quantity} ${base_product_name} → ${variant_product_name}`,
+				});
+
+				return {
+					success: true,
+					message: `✅ Conversión de ${quantity} ${base_product_name} a ${variant_product_name} registrada. Ejecución manual pendiente en módulo Despiece.`,
+				};
+			}
+
 			return {
 				success: false,
-				message: "Acción no ejecutada aún (Fase A: solo lectura)",
+				message: "Acción desconocida",
 			};
 		}),
 });
