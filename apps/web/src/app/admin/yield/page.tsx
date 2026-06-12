@@ -11,6 +11,8 @@ import { cn } from "@finopenpos/ui/lib/utils";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { AiSuggestBar } from "@/components/antonella-ai-kit";
+import { useAntonella } from "@/components/antonella-dock";
 
 type Row = {
 	productName: string;
@@ -38,6 +40,7 @@ const fmt = (n: number) => `${n.toFixed(2)} kg`;
 
 export default function YieldPage() {
 	const trpc = useTRPC();
+	const antonella = useAntonella();
 	const queryClient = useQueryClient();
 
 	const [numCanales, setNumCanales] = useState("");
@@ -314,6 +317,21 @@ export default function YieldPage() {
 					{createMutation.isPending ? "Guardando…" : "Guardar hoja"}
 				</Button>
 			</div>
+
+			{/* iAntonella: estimar pesos faltantes desde las recetas */}
+			<AiSuggestBar
+				tone="sugerencia"
+				title="Estimar pesos del día"
+				text="Puedo estimar los pesos de las piezas que aún no capturaste, usando las recetas y el peso del canal. Tú confirmas cada valor."
+				primary="Estimar pesos faltantes"
+				onPrimary={() =>
+					antonella.ask(
+						"Estima los pesos de las piezas del despiece de hoy desde las recetas y dime el rendimiento esperado.",
+					)
+				}
+				secondary="Abrir iAntonella"
+				onSecondary={() => antonella.open()}
+			/>
 
 			{/* Comparativa por proveedor */}
 			{providerStats && providerStats.length > 0 && (
