@@ -4,10 +4,10 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import {
+	channelPurchases,
 	inventoryTransactions,
 	products,
 	productTransformations,
-	channelPurchases,
 } from "@/lib/db/schema";
 import {
 	adminProcedure,
@@ -43,7 +43,10 @@ const productSchema = z.object({
 	is_sellable_by_weight: z.boolean(),
 	default_sale_unit: z.string(),
 	price_per_piece: z.union([z.number(), z.string()]).nullable(),
-	avg_weight_per_piece_kg: z.union([z.number(), z.string()]).nullable().optional(),
+	avg_weight_per_piece_kg: z
+		.union([z.number(), z.string()])
+		.nullable()
+		.optional(),
 	created_at: z.date().nullable(),
 	updated_at: z.date().nullable(),
 });
@@ -173,7 +176,9 @@ export const productsRouter = router({
 			// es hijo en varias recetas (ej. CABEZA hija de 3 canales). Deduplicamos
 			// por id, conservando la primera fila.
 			const seen = new Set<number>();
-			const unique: Array<(typeof rows)[number] & { parent_product_ids: number[] }> = [];
+			const unique: Array<
+				(typeof rows)[number] & { parent_product_ids: number[] }
+			> = [];
 			for (const p of rows) {
 				if (seen.has(p.id)) continue;
 				seen.add(p.id);
@@ -255,7 +260,9 @@ export const productsRouter = router({
 					.join(" | ");
 				throw new TRPCError({
 					code: "INTERNAL_SERVER_ERROR",
-					message: message ? `Error creando producto: ${message}` : "Error creando producto",
+					message: message
+						? `Error creando producto: ${message}`
+						: "Error creando producto",
 				});
 			}
 		}),
@@ -308,7 +315,8 @@ export const productsRouter = router({
 				updated_at: new Date(),
 			};
 
-			if (in_stock !== undefined) updateData.in_stock = String(Math.round(in_stock));
+			if (in_stock !== undefined)
+				updateData.in_stock = String(Math.round(in_stock));
 			if (stock_kg !== undefined) updateData.stock_kg = stock_kg.toFixed(3);
 			if (price_per_kg !== undefined)
 				updateData.price_per_kg = price_per_kg.toFixed(2);
@@ -339,7 +347,10 @@ export const productsRouter = router({
 				.update(products)
 				.set({ category, updated_at: new Date() })
 				.where(
-					and(eq(products.id, input.productId), eq(products.user_uid, ctx.user.id)),
+					and(
+						eq(products.id, input.productId),
+						eq(products.user_uid, ctx.user.id),
+					),
 				);
 			return { success: true };
 		}),
@@ -445,7 +456,10 @@ export const productsRouter = router({
 					}
 
 					const nextPieces = parent.stock_pieces - quantityToProcess;
-					const nextWeighedPieces = Math.min(parent.weighed_pieces ?? 0, nextPieces);
+					const nextWeighedPieces = Math.min(
+						parent.weighed_pieces ?? 0,
+						nextPieces,
+					);
 					await tx
 						.update(products)
 						.set({
@@ -516,7 +530,8 @@ export const productsRouter = router({
 
 				const effectiveRecipes = (() => {
 					const base = recipes.filter((r) => r.transformation_type === "BASE");
-					if (selectedType === "BASE") return Array.from(dedupeByChild(base).values());
+					if (selectedType === "BASE")
+						return Array.from(dedupeByChild(base).values());
 					const specific = recipes.filter(
 						(r) => r.transformation_type === selectedType,
 					);
@@ -651,6 +666,120 @@ export const productsRouter = router({
 			});
 		}),
 
+	// Convierte N piezas del producto base a una VARIANTE (especificación de
+	// presentación): JAMON → JAMON S/H, etc. Mueve stock base→variante con el
+	// ratio de peso de la receta (S/H 90% pierde el hueso). No bloquea por
+	// stock (regla del negocio: se compensa al despiezar).
+	convertToVariant: almacenProcedure
+		.input(
+			z.object({
+				baseProductId: z.number(),
+				variantProductId: z.number(),
+				pieces: z.number().int().positive(),
+			}),
+		)
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ ctx, input }) => {
+			const uid = ctx.user.id;
+			return await db.transaction(async (tx) => {
+				const [t] = await tx
+					.select({
+						ratio: productTransformations.yield_weight_ratio,
+					})
+					.from(productTransformations)
+					.where(
+						and(
+							eq(productTransformations.parent_product_id, input.baseProductId),
+							eq(
+								productTransformations.child_product_id,
+								input.variantProductId,
+							),
+							eq(productTransformations.is_variant, true),
+							eq(productTransformations.is_active, true),
+						),
+					)
+					.limit(1);
+				if (!t) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "No hay una variante activa configurada para esa pieza",
+					});
+				}
+				const ratio = Number(t.ratio) || 1;
+
+				const [base] = await tx
+					.select()
+					.from(products)
+					.where(
+						and(
+							eq(products.id, input.baseProductId),
+							eq(products.user_uid, uid),
+						),
+					)
+					.limit(1);
+				const [variant] = await tx
+					.select()
+					.from(products)
+					.where(
+						and(
+							eq(products.id, input.variantProductId),
+							eq(products.user_uid, uid),
+						),
+					)
+					.limit(1);
+				if (!base || !variant) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Producto base o variante no encontrado",
+					});
+				}
+
+				// Peso por pieza del base: real (stock) o el promedio configurado
+				const baseAvg =
+					base.stock_pieces > 0
+						? Number(base.stock_kg) / base.stock_pieces
+						: Number(base.avg_weight_per_piece_kg ?? 0);
+				const kgBase = input.pieces * baseAvg;
+				const kgVariant = kgBase * ratio;
+
+				await tx
+					.update(products)
+					.set({
+						stock_pieces: base.stock_pieces - input.pieces,
+						stock_kg: (Number(base.stock_kg) - kgBase).toFixed(3),
+					})
+					.where(eq(products.id, base.id));
+				await tx
+					.update(products)
+					.set({
+						stock_pieces: variant.stock_pieces + input.pieces,
+						stock_kg: (Number(variant.stock_kg) + kgVariant).toFixed(3),
+					})
+					.where(eq(products.id, variant.id));
+
+				await tx.insert(inventoryTransactions).values([
+					{
+						product_id: base.id,
+						quantity_change_pieces: -input.pieces,
+						quantity_change_kg: kgBase !== 0 ? (-kgBase).toFixed(3) : null,
+						transaction_type: "VARIANTE",
+						reference_id: variant.id,
+						notes: `Salida: ${input.pieces} pz de ${base.name} → ${variant.name}`,
+					},
+					{
+						product_id: variant.id,
+						quantity_change_pieces: input.pieces,
+						quantity_change_kg: kgVariant !== 0 ? kgVariant.toFixed(3) : null,
+						transaction_type: "VARIANTE",
+						reference_id: base.id,
+						notes: `Entrada: ${input.pieces} pz como ${variant.name} (desde ${base.name})`,
+					},
+				]);
+
+				return { success: true };
+			});
+		}),
+
 	processDisassemblyPipeline: almacenProcedure
 		.input(
 			z.object({
@@ -712,7 +841,8 @@ export const productsRouter = router({
 					selectedType: string,
 				) => {
 					const base = rows.filter((r) => r.transformation_type === "BASE");
-					if (selectedType === "BASE") return Array.from(dedupeByChild(base).values());
+					if (selectedType === "BASE")
+						return Array.from(dedupeByChild(base).values());
 					const specific = rows.filter(
 						(r) => r.transformation_type === selectedType,
 					);
@@ -767,7 +897,10 @@ export const productsRouter = router({
 					}
 
 					const nextPieces = parent.stock_pieces - args.quantityToProcess;
-					const nextWeighedPieces = Math.min(parent.weighed_pieces ?? 0, nextPieces);
+					const nextWeighedPieces = Math.min(
+						parent.weighed_pieces ?? 0,
+						nextPieces,
+					);
 					await tx
 						.update(products)
 						.set({
@@ -1172,46 +1305,44 @@ export const productsRouter = router({
 
 	// Mapa de disponibilidad: por producto, stock directo y si es derivable de
 	// una pieza padre con stock (vía despiece).
-	availabilityMap: protectedProcedure
-		.input(z.void())
-		.query(async ({ ctx }) => {
-			const uid = ctx.user.id;
-			const prods = await db
-				.select({
-					id: products.id,
-					stock_pieces: products.stock_pieces,
-					stock_kg: products.stock_kg,
-				})
-				.from(products)
-				.where(eq(products.user_uid, uid));
+	availabilityMap: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
+		const uid = ctx.user.id;
+		const prods = await db
+			.select({
+				id: products.id,
+				stock_pieces: products.stock_pieces,
+				stock_kg: products.stock_kg,
+			})
+			.from(products)
+			.where(eq(products.user_uid, uid));
 
-			const trans = await db
-				.select({
-					child: productTransformations.child_product_id,
-					parent: productTransformations.parent_product_id,
-				})
-				.from(productTransformations)
-				.where(eq(productTransformations.is_active, true));
+		const trans = await db
+			.select({
+				child: productTransformations.child_product_id,
+				parent: productTransformations.parent_product_id,
+			})
+			.from(productTransformations)
+			.where(eq(productTransformations.is_active, true));
 
-			// Padres con stock (piezas o kg)
-			const inStock = new Set(
-				prods
-					.filter((p) => p.stock_pieces > 0 || Number(p.stock_kg) > 0)
-					.map((p) => p.id),
-			);
-			// Hijos derivables (su padre tiene stock)
-			const derivable = new Set<number>();
-			for (const t of trans) {
-				if (inStock.has(t.parent)) derivable.add(t.child);
-			}
+		// Padres con stock (piezas o kg)
+		const inStock = new Set(
+			prods
+				.filter((p) => p.stock_pieces > 0 || Number(p.stock_kg) > 0)
+				.map((p) => p.id),
+		);
+		// Hijos derivables (su padre tiene stock)
+		const derivable = new Set<number>();
+		for (const t of trans) {
+			if (inStock.has(t.parent)) derivable.add(t.child);
+		}
 
-			return prods.map((p) => ({
-				productId: p.id,
-				stockPieces: p.stock_pieces,
-				stockKg: Number(p.stock_kg),
-				derivable: derivable.has(p.id),
-			}));
-		}),
+		return prods.map((p) => ({
+			productId: p.id,
+			stockPieces: p.stock_pieces,
+			stockKg: Number(p.stock_kg),
+			derivable: derivable.has(p.id),
+		}));
+	}),
 
 	getTransformations: protectedProcedure
 		.meta({
@@ -1296,8 +1427,11 @@ export const productsRouter = router({
 			};
 
 			const base = rows.filter((r) => r.transformation_type === "BASE");
-			if (selectedType === "BASE") return Array.from(dedupeByChild(base).values());
-			const specific = rows.filter((r) => r.transformation_type === selectedType);
+			if (selectedType === "BASE")
+				return Array.from(dedupeByChild(base).values());
+			const specific = rows.filter(
+				(r) => r.transformation_type === selectedType,
+			);
 			const baseMap = dedupeByChild(base);
 			const specMap = dedupeByChild(specific);
 			for (const [k, v] of specMap) baseMap.set(k, v);
@@ -1361,7 +1495,10 @@ export const productsRouter = router({
 						),
 					);
 
-				const scoreCanalSpecific = (name: string, kind: "US" | "MX_LOMO" | "MX_ESP") => {
+				const scoreCanalSpecific = (
+					name: string,
+					kind: "US" | "MX_LOMO" | "MX_ESP",
+				) => {
 					const n = normalizeProductName(name);
 					if (kind === "US") {
 						if (n.includes("canal americano")) return 0;
@@ -1370,16 +1507,46 @@ export const productsRouter = router({
 						return 999;
 					}
 					if (kind === "MX_LOMO") {
-						if (n.includes("canal nacional lado lomo") || n.includes("canal nacional lomo")) return 0;
-						if (n.includes("nacional") && n.includes("lomo") && n.includes("canal")) return 1;
-						if (n.includes("nacional") && n.includes("canal") && !n.includes("americano") && !n.includes("espilomo")) return 2;
+						if (
+							n.includes("canal nacional lado lomo") ||
+							n.includes("canal nacional lomo")
+						)
+							return 0;
+						if (
+							n.includes("nacional") &&
+							n.includes("lomo") &&
+							n.includes("canal")
+						)
+							return 1;
+						if (
+							n.includes("nacional") &&
+							n.includes("canal") &&
+							!n.includes("americano") &&
+							!n.includes("espilomo")
+						)
+							return 2;
 						if (n === "canal") return 3;
 						return 999;
 					}
 					if (kind === "MX_ESP") {
-						if (n.includes("canal nacional lado espilomo") || n.includes("canal nacional espilomo")) return 0;
-						if (n.includes("nacional") && n.includes("espilomo") && n.includes("canal")) return 1;
-						if (n.includes("nacional") && n.includes("canal") && !n.includes("americano") && !n.includes("lomo")) return 2;
+						if (
+							n.includes("canal nacional lado espilomo") ||
+							n.includes("canal nacional espilomo")
+						)
+							return 0;
+						if (
+							n.includes("nacional") &&
+							n.includes("espilomo") &&
+							n.includes("canal")
+						)
+							return 1;
+						if (
+							n.includes("nacional") &&
+							n.includes("canal") &&
+							!n.includes("americano") &&
+							!n.includes("lomo")
+						)
+							return 2;
 						if (n === "canal") return 3;
 						return 999;
 					}
@@ -1388,10 +1555,10 @@ export const productsRouter = router({
 
 				const pick = (kind: "US" | "MX_LOMO" | "MX_ESP") => {
 					const scored = canalCandidates
-						.map(p => ({ p, score: scoreCanalSpecific(p.name, kind) }))
-						.filter(x => x.score < 999)
+						.map((p) => ({ p, score: scoreCanalSpecific(p.name, kind) }))
+						.filter((x) => x.score < 999)
 						.sort((a, b) => a.score - b.score || a.p.id - b.p.id);
-					
+
 					return scored[0]?.p ?? null;
 				};
 
@@ -1402,19 +1569,22 @@ export const productsRouter = router({
 				if (mediasAmericano > 0 && !canalUs) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
-						message: "No se encontró el producto CANAL. Por favor, asegúrese de que el producto 'CANAL' esté registrado como producto padre.",
+						message:
+							"No se encontró el producto CANAL. Por favor, asegúrese de que el producto 'CANAL' esté registrado como producto padre.",
 					});
 				}
 				if (mediasNacionalLomo > 0 && !canalMxLomo) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
-						message: "No se encontró el producto CANAL. Por favor, asegúrese de que el producto 'CANAL' esté registrado como producto padre.",
+						message:
+							"No se encontró el producto CANAL. Por favor, asegúrese de que el producto 'CANAL' esté registrado como producto padre.",
 					});
 				}
 				if (mediasNacionalEspilomo > 0 && !canalMxEsp) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
-						message: "No se encontró el producto CANAL. Por favor, asegúrese de que el producto 'CANAL' esté registrado como producto padre.",
+						message:
+							"No se encontró el producto CANAL. Por favor, asegúrese de que el producto 'CANAL' esté registrado como producto padre.",
 					});
 				}
 

@@ -372,9 +372,8 @@ export default function DespiecePage() {
 														cur === p.childId ? null : p.childId,
 													)
 												}
-												subRecipes={subRecipes.filter(
-													(s) => s.parentId === p.childId,
-												)}
+												allSubRecipes={subRecipes}
+												onChanged={invalidate}
 											/>
 										))}
 									</div>
@@ -397,6 +396,8 @@ type SubRecipe = {
 	pieces: number;
 	ratio: number;
 	isVariant: boolean;
+	childStockPieces: number;
+	childStockKg: number;
 };
 
 type PieceInfo = {
@@ -422,7 +423,8 @@ function PieceCard({
 	accent,
 	expanded,
 	onToggle,
-	subRecipes,
+	allSubRecipes,
+	onChanged,
 }: {
 	piece: PieceInfo;
 	demandKg: number;
@@ -432,12 +434,21 @@ function PieceCard({
 	accent: string;
 	expanded: boolean;
 	onToggle: () => void;
-	subRecipes: SubRecipe[];
+	allSubRecipes: SubRecipe[];
+	onChanged: () => void;
 }) {
 	const producePieces = qty * p.pieces;
 	const produceKg = qty * canalAvgWeight * p.ratio;
 	const covers = p.demand > 0 && producePieces >= p.demand;
 	const missing = Math.max(0, p.demand - p.childStockPieces);
+
+	// Hijos directos de esta pieza: variantes (especificación del mismo corte)
+	// vs sub-despiece (la pieza se corta en otras)
+	const direct = allSubRecipes.filter((s) => s.parentId === p.childId);
+	const directVariants = direct.filter((s) => s.isVariant);
+	const directCuts = direct.filter((s) => !s.isVariant);
+	const variantsOf = (productId: number) =>
+		allSubRecipes.filter((s) => s.parentId === productId && s.isVariant);
 
 	if (!expanded) {
 		return (
@@ -608,12 +619,36 @@ function PieceCard({
 				</div>
 			)}
 
-			{/* Sub-despieces / estilos de esta pieza */}
+			{/* Variantes directas de esta pieza (especificaciones del mismo corte) */}
+			{directVariants.length > 0 && (
+				<div className="border-t bg-purple-50/40 px-4 py-3">
+					<p className="font-semibold text-[11px] text-purple-700 uppercase tracking-wide">
+						Variantes de {p.childName} — produce con tu especificación
+					</p>
+					<p className="text-[11px] text-muted-foreground">
+						Convierte piezas de {p.childName} (stock: {p.childStockPieces} pz) a
+						la presentación pedida.
+					</p>
+					<div className="mt-1.5 space-y-1">
+						{directVariants.map((v) => (
+							<VariantRow
+								key={`${v.parentId}:${v.childId}`}
+								variant={v}
+								baseProductId={p.childId}
+								baseName={p.childName}
+								onChanged={onChanged}
+							/>
+						))}
+					</div>
+				</div>
+			)}
+
+			{/* Sub-despiece (la pieza se corta en otras) con sus variantes anidadas */}
 			<div className="border-t bg-muted/30 px-4 py-3">
 				<p className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wide">
 					Sub-despiece de {p.childName}
 				</p>
-				{subRecipes.length === 0 ? (
+				{directCuts.length === 0 && directVariants.length === 0 ? (
 					<p className="mt-1 text-muted-foreground text-xs">
 						Esta es una pieza final (no se despieza a su vez). Puedes cambiarlo
 						en el{" "}
@@ -626,30 +661,125 @@ function PieceCard({
 						</Link>
 						.
 					</p>
+				) : directCuts.length === 0 ? (
+					<p className="mt-1 text-muted-foreground text-xs">
+						No se corta en otras piezas (solo tiene variantes, arriba).
+					</p>
 				) : (
-					<div className="mt-1.5 grid gap-1 sm:grid-cols-2">
-						{subRecipes.map((s) => (
-							<div
-								key={`${s.parentId}:${s.childId}`}
-								className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-xs"
-							>
-								<span className="text-primary">└</span>
-								<span className="min-w-0 flex-1 truncate font-medium">
-									{s.childName}
-								</span>
-								{s.isVariant && (
-									<span className="rounded bg-purple-100 px-1 font-bold text-[9px] text-purple-700">
-										VARIANTE
-									</span>
-								)}
-								<span className="shrink-0 text-muted-foreground">
-									{s.pieces} pz · {(s.ratio * 100).toFixed(0)}%
-								</span>
-							</div>
-						))}
+					<div className="mt-1.5 space-y-1.5">
+						{directCuts.map((s) => {
+							const nested = variantsOf(s.childId);
+							return (
+								<div
+									key={`${s.parentId}:${s.childId}`}
+									className="rounded-md border bg-background"
+								>
+									<div className="flex items-center gap-2 px-2 py-1.5 text-xs">
+										<span className="text-primary">└</span>
+										<span className="min-w-0 flex-1 truncate font-medium">
+											{s.childName}
+										</span>
+										<span className="shrink-0 text-muted-foreground">
+											stock {s.childStockPieces} pz
+										</span>
+										<span className="shrink-0 text-muted-foreground">
+											{s.pieces} pz · {(s.ratio * 100).toFixed(0)}%
+										</span>
+									</div>
+									{nested.length > 0 && (
+										<div className="space-y-1 border-t bg-purple-50/40 px-2 py-1.5">
+											<p className="font-semibold text-[10px] text-purple-700 uppercase">
+												Variantes de {s.childName} (stock base:{" "}
+												{s.childStockPieces} pz)
+											</p>
+											{nested.map((v) => (
+												<VariantRow
+													key={`${v.parentId}:${v.childId}`}
+													variant={v}
+													baseProductId={s.childId}
+													baseName={s.childName}
+													onChanged={onChanged}
+												/>
+											))}
+										</div>
+									)}
+								</div>
+							);
+						})}
 					</div>
 				)}
 			</div>
+		</div>
+	);
+}
+
+// Renglón de variante: nombre, stock, cuántas producir con esa especificación
+function VariantRow({
+	variant: v,
+	baseProductId,
+	baseName,
+	onChanged,
+}: {
+	variant: SubRecipe;
+	baseProductId: number;
+	baseName: string;
+	onChanged: () => void;
+}) {
+	const trpc = useTRPC();
+	const [qty, setQty] = useState("");
+
+	const convertMut = useMutation(
+		trpc.products.convertToVariant.mutationOptions({
+			onSuccess: () => {
+				toast.success(
+					`${qty} pz de ${baseName} producidas como ${v.childName}`,
+				);
+				setQty("");
+				onChanged();
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error al convertir"),
+		}),
+	);
+
+	const n = Number.parseInt(qty, 10) || 0;
+	return (
+		<div className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-xs">
+			<span className="rounded bg-purple-100 px-1 font-bold text-[9px] text-purple-700">
+				VAR
+			</span>
+			<span className="min-w-0 flex-1 truncate font-medium">{v.childName}</span>
+			<span
+				className="shrink-0 text-muted-foreground"
+				title="Stock actual de esta variante"
+			>
+				stock {v.childStockPieces} pz
+			</span>
+			<span className="shrink-0 text-muted-foreground">
+				{(v.ratio * 100).toFixed(0)}%
+			</span>
+			<input
+				type="number"
+				min="1"
+				value={qty}
+				onChange={(e) => setQty(e.target.value)}
+				placeholder="pz"
+				className="h-7 w-14 rounded-md border bg-background px-1.5 text-center text-xs"
+			/>
+			<Button
+				size="sm"
+				variant="outline"
+				className="h-7 px-2 text-[11px]"
+				disabled={n <= 0 || convertMut.isPending}
+				onClick={() =>
+					convertMut.mutate({
+						baseProductId,
+						variantProductId: v.childId,
+						pieces: n,
+					})
+				}
+			>
+				{convertMut.isPending ? "…" : "Producir"}
+			</Button>
 		</div>
 	);
 }
