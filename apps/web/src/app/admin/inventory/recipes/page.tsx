@@ -1200,12 +1200,34 @@ export default function RecipesPage({
 							<DropdownMenuItem
 								className="text-red-600 focus:text-red-600"
 								onClick={() => {
-									if (
-										window.confirm(
-											`¿Eliminar "${p.name}"? Úsalo si está repetido. Esta acción no se puede deshacer.`,
+									const usado = styles.length > 0 || parents.length > 0;
+									const esCanal = p.is_parent_product === true;
+									// Doble confirmación para canales / piezas en uso (evita
+									// borrar accidentalmente un canal y romper el despiece).
+									if (esCanal || usado) {
+										const tipo = esCanal
+											? "un CANAL (de él salen muchas piezas)"
+											: "una pieza usada en recetas";
+										if (
+											!window.confirm(
+												`⚠️ "${p.name}" es ${tipo}. Si lo eliminas se BORRAN sus recetas y se rompe el despiece. ¿Seguro? (normalmente NO se borra un canal)`,
+											)
 										)
-									)
-										deleteProductMut.mutate({ id: p.id });
+											return;
+										if (
+											window.prompt(
+												`Para confirmar, escribe ELIMINAR para borrar "${p.name}":`,
+											) !== "ELIMINAR"
+										)
+											return;
+									} else if (
+										!window.confirm(
+											`¿Eliminar "${p.name}"? Úsalo solo si está repetido. No se puede deshacer.`,
+										)
+									) {
+										return;
+									}
+									deleteProductMut.mutate({ id: p.id });
 								}}
 							>
 								<TrashIcon className="mr-2 h-4 w-4" />
@@ -1496,6 +1518,24 @@ export default function RecipesPage({
 							</div>
 							{styleCard(focused, true)}
 						</>
+					) : boardStyles.length === 0 ? (
+						<div className="rounded-xl border border-dashed bg-card p-8 text-center">
+							<p className="font-semibold text-sm">
+								No hay recetas de canal todavía
+							</p>
+							<p className="mx-auto mt-1 max-w-md text-muted-foreground text-xs">
+								El tablero muestra una tarjeta por estilo de canal (Americano,
+								Nacional Lomo…). Aún no hay ninguna. Crea una con{" "}
+								<b>Nueva receta</b> (elige un producto CANAL como padre) o{" "}
+								<b>Importa</b> un configurador.
+							</p>
+							<div className="mt-3 flex justify-center gap-2">
+								<Button size="sm" onClick={openCreate}>
+									<PlusCircle className="mr-2 h-4 w-4" />
+									Nueva receta
+								</Button>
+							</div>
+						</div>
 					) : (
 						<div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
 							{boardStyles.map((s) => styleCard(s, false))}
