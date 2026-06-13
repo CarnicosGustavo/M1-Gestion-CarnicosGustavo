@@ -168,10 +168,11 @@ export const yieldsRouter = router({
 		}),
 
 	// Verificación CEDIS de un día: por proveedor, peso canal×canal o total.
+	// Devuelve también el total pesado del día (para la reconciliación del Lote).
 	cedisDay: protectedProcedure
 		.input(z.object({ date: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const rows = await db
+			const rowsRaw = await db
 				.select()
 				.from(channelPurchases)
 				.where(
@@ -181,7 +182,8 @@ export const yieldsRouter = router({
 					),
 				)
 				.orderBy(channelPurchases.id);
-			return rows
+
+			const rows = rowsRaw
 				.filter((r) => (r.supplier ?? "").trim().length > 0)
 				.map((r) => {
 					const enPieKg = Number(r.total_kg) || 0;
@@ -196,6 +198,8 @@ export const yieldsRouter = router({
 					return {
 						id: r.id,
 						supplier: r.supplier ?? "",
+						americano: r.qty_americano ?? 0,
+						nacional: r.qty_nacional ?? 0,
 						unidades: (r.qty_americano ?? 0) + (r.qty_nacional ?? 0),
 						enPieKg,
 						costo: enPieKg * precio,
@@ -208,6 +212,20 @@ export const yieldsRouter = router({
 						},
 					};
 				});
+
+			// Total pesado del día: kg producido/pesado (PRODUCCION/PESAJE positivos)
+			const weighed = (await db.execute(sql`
+				SELECT COALESCE(SUM(quantity_change_kg),0) AS kg
+				FROM inventory_transactions it
+				JOIN products p ON p.id = it.product_id
+				WHERE p.user_uid = ${ctx.user.id}
+				  AND it.created_at::date = ${input.date}
+				  AND it.transaction_type IN ('PRODUCCION','PESAJE')
+				  AND COALESCE(it.quantity_change_kg,0) > 0
+			`)) as unknown as { kg: string | number }[];
+			const weighedKg = Number(weighed[0]?.kg ?? 0) || 0;
+
+			return { rows, weighedKg };
 		}),
 
 	// Agrega un proveedor al día directamente desde CEDIS (sin pasar por la

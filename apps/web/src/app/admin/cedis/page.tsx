@@ -2,9 +2,24 @@
 
 import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@finopenpos/ui/components/table";
 import { cn } from "@finopenpos/ui/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusIcon, SaveIcon, ScaleIcon, XIcon } from "lucide-react";
+import {
+	AlertTriangleIcon,
+	CheckIcon,
+	PlusIcon,
+	SaveIcon,
+	ScaleIcon,
+	XIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -15,6 +30,8 @@ type Mode = "canal" | "total";
 interface SupState {
 	id: number;
 	supplier: string;
+	americano: number;
+	nacional: number;
 	enPieKg: number;
 	costo: number;
 	mode: Mode;
@@ -43,17 +60,20 @@ export default function CedisPage() {
 	const [date, setDate] = useState(todayISO());
 
 	const dayOpts = trpc.yields.cedisDay.queryOptions({ date });
-	const { data: dayRows } = useQuery(dayOpts);
+	const { data: dayData } = useQuery(dayOpts);
+	const weighedKg = dayData?.weighedKg ?? 0;
 
 	const [sups, setSups] = useState<SupState[]>([]);
 
 	// Carga el estado local desde el servidor al cambiar de día
 	useEffect(() => {
-		if (!dayRows) return;
+		if (!dayData) return;
 		setSups(
-			dayRows.map((r) => ({
+			dayData.rows.map((r) => ({
 				id: r.id,
 				supplier: r.supplier,
+				americano: r.americano,
+				nacional: r.nacional,
 				enPieKg: r.enPieKg,
 				costo: r.costo,
 				mode: r.detail.mode as Mode,
@@ -63,7 +83,7 @@ export default function CedisPage() {
 				totalCanales: r.detail.totalCanales,
 			})),
 		);
-	}, [dayRows]);
+	}, [dayData]);
 
 	const saveMut = useMutation(
 		trpc.yields.saveCedis.mutationOptions({
@@ -231,6 +251,132 @@ export default function CedisPage() {
 					Agregar proveedor
 				</Button>
 			</div>
+
+			{/* Lote del día: composición + valor/canal + reconciliación */}
+			{sups.length > 0 && (
+				<LoteDelDia sups={sups} totalKg={totals.kg} weighedKg={weighedKg} />
+			)}
+		</div>
+	);
+}
+
+function LoteDelDia({
+	sups,
+	totalKg,
+	weighedKg,
+}: {
+	sups: SupState[];
+	totalKg: number;
+	weighedKg: number;
+}) {
+	const totA = sups.reduce((s, x) => s + x.americano, 0);
+	const totN = sups.reduce((s, x) => s + x.nacional, 0);
+	const totCanales = totA + totN;
+	const pesoCanal = totCanales > 0 ? totalKg / totCanales : 0;
+
+	const dif = weighedKg - totalKg;
+	const ok = totalKg > 0 && Math.abs(dif) / totalKg < 0.02;
+
+	return (
+		<div className="space-y-2 rounded-xl border bg-card p-4">
+			<div className="flex flex-wrap items-end justify-between gap-2">
+				<h2 className="font-bold text-base">Lote del día</h2>
+				<p className="text-muted-foreground text-xs">
+					Composición por tipo de canal y valor por canal. El peso real sale de
+					la verificación de arriba.
+				</p>
+			</div>
+			<div className="overflow-x-auto">
+				<Table>
+					<TableHeader>
+						<TableRow className="bg-muted/50">
+							<TableHead className="min-w-[140px]">Proveedor</TableHead>
+							<TableHead className="text-center">Americano</TableHead>
+							<TableHead className="text-center">Nacional</TableHead>
+							<TableHead className="text-center">Canales</TableHead>
+							<TableHead className="text-center">kg peso canal</TableHead>
+							<TableHead
+								className="text-center"
+								title="costo de la compra ÷ canales"
+							>
+								valor / canal
+							</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{sups.map((s) => {
+							const canales = s.americano + s.nacional;
+							const kg = supKg(s);
+							const valorCanal = canales > 0 ? s.costo / canales : 0;
+							return (
+								<TableRow key={s.id}>
+									<TableCell className="font-medium">{s.supplier}</TableCell>
+									<TableCell className="text-center">
+										{s.americano || "—"}
+									</TableCell>
+									<TableCell className="text-center">
+										{s.nacional || "—"}
+									</TableCell>
+									<TableCell className="text-center font-semibold">
+										{canales}
+									</TableCell>
+									<TableCell className="text-center font-mono text-xs">
+										{kg > 0 ? fmt(kg, 1) : "—"}
+									</TableCell>
+									<TableCell className="text-center font-mono text-xs">
+										{valorCanal > 0 ? `$${fmt(valorCanal, 0)}` : "—"}
+									</TableCell>
+								</TableRow>
+							);
+						})}
+						<TableRow className="bg-muted/30 font-semibold">
+							<TableCell>Total</TableCell>
+							<TableCell className="text-center">{totA}</TableCell>
+							<TableCell className="text-center">{totN}</TableCell>
+							<TableCell className="text-center">{totCanales}</TableCell>
+							<TableCell className="text-center font-mono text-xs">
+								{fmt(totalKg, 0)} kg
+							</TableCell>
+							<TableCell className="text-center font-mono text-xs text-muted-foreground">
+								{pesoCanal > 0 ? `${fmt(pesoCanal, 1)} kg/canal` : "—"}
+							</TableCell>
+						</TableRow>
+					</TableBody>
+				</Table>
+			</div>
+
+			{totalKg > 0 && weighedKg > 0 && (
+				<div
+					className={cn(
+						"flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm",
+						ok
+							? "border-[var(--cg-green)]/30 bg-[var(--cg-green-wash)]"
+							: "border-[var(--cg-amber)]/40 bg-[var(--cg-amber-wash)]",
+					)}
+				>
+					{ok ? (
+						<CheckIcon className="h-4 w-4 text-[var(--cg-green)]" />
+					) : (
+						<AlertTriangleIcon className="h-4 w-4 text-[var(--cg-amber)]" />
+					)}
+					<span>
+						Peso canal <b>{fmt(totalKg, 0)} kg</b> vs piezas pesadas{" "}
+						<b>{fmt(weighedKg, 0)} kg</b>
+					</span>
+					<span
+						className={cn(
+							"rounded-full px-2 py-0.5 font-bold text-white text-xs",
+							ok ? "bg-[var(--cg-green)]" : "bg-[var(--cg-amber)]",
+						)}
+					>
+						{ok
+							? "cuadra"
+							: dif < 0
+								? `faltan ${fmt(Math.abs(dif), 0)} kg por pesar`
+								: `sobran ${fmt(dif, 0)} kg`}
+					</span>
+				</div>
+			)}
 		</div>
 	);
 }
