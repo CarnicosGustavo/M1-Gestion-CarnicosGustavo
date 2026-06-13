@@ -46,6 +46,15 @@ import Image from "next/image";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "next-intl";
+import { authClient } from "@/lib/auth-client";
+
+/** Saludo según la hora del día (mismo tono que el prototipo: "Buen día, …"). */
+function greetingForNow(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Buen día";
+  if (h < 19) return "Buenas tardes";
+  return "Buenas noches";
+}
 
 const CHART_COLORS = [
   "var(--chart-1)",
@@ -62,6 +71,16 @@ export default function Page() {
   );
   const t = useTranslations("dashboard");
   const locale = useLocale();
+
+  // Sesión: para el saludo personalizado del hero.
+  const { data: session } = authClient.useSession();
+
+  // Resumen del día (en vivo, datos reales). Se cargan aparte y no bloquean el
+  // render del tablero; si fallan, simplemente no se muestra esa parte.
+  const { data: ordersData } = useQuery(trpc.orders.list.queryOptions());
+  const { data: accountsData } = useQuery(
+    trpc.collections.listAccounts.queryOptions()
+  );
 
   // Privacidad: por defecto SIEMPRE oculto al entrar. El usuario revela con el
   // botón (solo para la sesión actual; al recargar vuelve a ocultarse).
@@ -123,6 +142,37 @@ export default function Page() {
   }
 
   const profitIsPositive = data.totalProfit >= 0;
+  const margen =
+    data.totalRevenue > 0 ? (data.totalProfit / data.totalRevenue) * 100 : 0;
+
+  // --- Hero: saludo + resumen del día (del diseño PanelScreen) ---
+  const userName =
+    session?.user?.name?.trim().split(/\s+/)[0] ||
+    session?.user?.email?.split("@")[0] ||
+    "Gustavo";
+
+  const todayLabel = new Intl.DateTimeFormat(locale, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+  const todayCapitalized = todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1);
+
+  const pedidosEnCobro =
+    ordersData?.filter((o) => o.status === "LISTA_PARA_COBRO").length ?? 0;
+  const cuentasPorCobrar =
+    accountsData?.filter((a) => a.balance > 0).length ?? 0;
+
+  const summaryBits = [
+    todayCapitalized,
+    pedidosEnCobro > 0
+      ? `${pedidosEnCobro} ${pedidosEnCobro === 1 ? "pedido" : "pedidos"} en cola de cobro`
+      : null,
+    cuentasPorCobrar > 0
+      ? `${cuentasPorCobrar} ${cuentasPorCobrar === 1 ? "cuenta" : "cuentas"} por cobrar`
+      : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="relative min-h-[78vh]">
@@ -134,22 +184,35 @@ export default function Page() {
           hideAmounts && "pointer-events-none select-none blur-md"
         )}
       >
-        {/* Portada: logo grande e imponente */}
-        <div className="relative flex flex-col items-center overflow-hidden rounded-2xl border bg-[var(--cg-cream)] px-6 py-10 text-center sm:py-14">
+        {/* Hero (del diseño PanelScreen): logo + saludo + resumen del día */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-4 overflow-hidden rounded-2xl border bg-[var(--cg-cream)] px-6 py-5 shadow-sm">
           <Image
             src="/brand/logo-principal.png"
             alt="Cárnicos Gustavo"
-            width={520}
-            height={300}
+            width={260}
+            height={150}
             priority
-            className="h-auto w-[clamp(220px,46vw,460px)] object-contain drop-shadow-sm"
+            className="h-28 w-auto shrink-0 object-contain drop-shadow-sm"
           />
-          <p className="mt-5 font-display text-xl tracking-[0.06em] text-foreground sm:text-2xl">
-            CENTRO DE DISTRIBUCIÓN
-          </p>
-          <p className="mt-1 max-w-md text-sm text-muted-foreground">
-            Plataforma de gestión integral · inteligencia iAntonella
-          </p>
+          <div className="min-w-[220px] flex-1">
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-primary">
+              Centro de Distribución
+            </p>
+            <h1 className="mt-2 font-display text-3xl leading-[0.95] tracking-[0.01em] text-foreground sm:text-4xl">
+              {greetingForNow()}, {userName}
+            </h1>
+            <p className="mt-2.5 max-w-prose text-sm text-muted-foreground">
+              {summaryBits.join("  ·  ")}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={toggleHide}
+            className="shrink-0 bg-[var(--cg-cream)]"
+          >
+            <EyeOffIcon className="mr-2 h-4 w-4" />
+            Ocultar montos
+          </Button>
         </div>
 
         {/* iAntonella — presencia inline */}
@@ -166,14 +229,6 @@ export default function Page() {
             ],
           }}
         />
-
-        {/* Botón ocultar datos (visible cuando ya se revelaron) */}
-        <div className="flex justify-end -mb-2">
-          <Button variant="outline" size="sm" onClick={toggleHide}>
-            <EyeOffIcon className="h-4 w-4 mr-2" />
-            Ocultar datos
-          </Button>
-        </div>
 
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -225,7 +280,7 @@ export default function Page() {
               {money(data.totalProfit)}
             </div>
             <p className="text-xs text-muted-foreground">
-              {t("profitDescription")}
+              {`Margen ${margen.toFixed(1)}%`}
             </p>
           </CardContent>
         </Card>
