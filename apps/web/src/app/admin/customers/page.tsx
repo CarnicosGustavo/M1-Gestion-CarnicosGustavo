@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod/v4";
 import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
-import { PlusCircle, FilePenIcon, TrashIcon, UsersIcon } from "lucide-react";
+import { PlusCircle, FilePenIcon, TrashIcon, UsersIcon, Wallet, HandCoins } from "lucide-react";
+import { cn } from "@finopenpos/ui/lib/utils";
 import { Button } from "@finopenpos/ui/components/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@finopenpos/ui/components/dialog";
 import { Input } from "@finopenpos/ui/components/input";
@@ -27,7 +28,7 @@ export default function CustomersPage() {
   const trpc = useTRPC();
   const { data: customers = [], isLoading, error } = useQuery(trpc.customers.list.queryOptions());
   const { data: accounts = [] } = useQuery(trpc.collections.listAccounts.queryOptions()) as {
-    data: { customerId: number; balance: number }[];
+    data: { customerId: number; balance: number; creditLimit: number; termsDays: number }[];
   };
   const t = useTranslations("customers");
   const tc = useTranslations("common");
@@ -36,6 +37,14 @@ export default function CustomersPage() {
   const balanceByCustomer = useMemo(() => {
     const m = new Map<number, number>();
     for (const a of accounts) m.set(a.customerId, a.balance);
+    return m;
+  }, [accounts]);
+
+  // Mapa cliente → límite de crédito (para precargar al editar)
+  const creditByCustomer = useMemo(() => {
+    const m = new Map<number, { creditLimit: number; termsDays: number }>();
+    for (const a of accounts)
+      m.set(a.customerId, { creditLimit: a.creditLimit, termsDays: a.termsDays });
     return m;
   }, [accounts]);
 
@@ -149,6 +158,8 @@ export default function CustomersPage() {
       address: "",
       notes: "",
       status: "active" as "active" | "inactive",
+      sale_type: "contado" as "contado" | "credito",
+      credit_limit: "",
     },
     validators: {
       onSubmit: ({ value }) => {
@@ -170,10 +181,15 @@ export default function CustomersPage() {
         notes: value.notes || undefined,
         status: value.status,
       };
+      // Crédito: solo se envía el límite si el cliente es a crédito.
+      const credit =
+        value.sale_type === "credito"
+          ? { credit_limit: Number.parseFloat(value.credit_limit || "0") || 0 }
+          : {};
       if (isEditing) {
-        updateMutation.mutate({ id: editingId, ...payload });
+        updateMutation.mutate({ id: editingId, ...payload, ...credit });
       } else {
-        createMutation.mutate(payload);
+        createMutation.mutate({ ...payload, ...credit });
       }
     },
   });
@@ -205,6 +221,10 @@ export default function CustomersPage() {
     form.setFieldValue("address", (c as any).address ?? "");
     form.setFieldValue("notes", (c as any).notes ?? "");
     form.setFieldValue("status", (c.status ?? "active") as "active" | "inactive");
+    const cred = creditByCustomer.get(c.id);
+    const hasCredit = !!cred && cred.creditLimit > 0;
+    form.setFieldValue("sale_type", hasCredit ? "credito" : "contado");
+    form.setFieldValue("credit_limit", hasCredit ? String(cred?.creditLimit) : "");
     setIsDialogOpen(true);
   };
 
@@ -338,6 +358,71 @@ export default function CustomersPage() {
                   </div>
                 )}
               </form.Field>
+
+              {/* Tipo de venta + límite de crédito — del diseño (NuevoClienteModal) */}
+              <form.Field name="sale_type">
+                {(field) => (
+                  <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+                    <Label>Tipo de venta</Label>
+                    <div className="col-span-3 flex gap-2">
+                      {([
+                        ["contado", "Contado", Wallet],
+                        ["credito", "Crédito", HandCoins],
+                      ] as const).map(([id, lab, Ic]) => {
+                        const on = field.state.value === id;
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => field.handleChange(id)}
+                            className={cn(
+                              "flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-bold transition-colors",
+                              on
+                                ? "border-primary bg-[var(--cg-red-wash)] text-primary"
+                                : "border-border text-foreground hover:bg-muted",
+                            )}
+                          >
+                            <Ic className="h-4 w-4" />
+                            {lab}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </form.Field>
+              <form.Subscribe selector={(s) => s.values.sale_type}>
+                {(saleType) =>
+                  saleType === "credito" ? (
+                    <form.Field name="credit_limit">
+                      {(field) => (
+                        <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+                          <Label htmlFor="credit_limit">Límite de crédito</Label>
+                          <div className="col-span-3">
+                            <div className="relative">
+                              <Input
+                                id="credit_limit"
+                                type="number"
+                                min="0"
+                                value={field.state.value}
+                                onChange={(e) => field.handleChange(e.target.value)}
+                                placeholder="0"
+                                className="pr-12"
+                              />
+                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">
+                                MXN
+                              </span>
+                            </div>
+                            <p className="mt-1.5 text-xs text-muted-foreground">
+                              iAntonella te avisará al acercarse al límite o al vencer un saldo.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </form.Field>
+                  ) : null
+                }
+              </form.Subscribe>
             </div>
             <DialogFooter>
               <Button variant="secondary" onClick={() => setIsDialogOpen(false)}>{tc("cancel")}</Button>
