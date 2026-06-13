@@ -16,6 +16,13 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@finopenpos/ui/components/dropdown-menu";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import {
@@ -35,7 +42,10 @@ import {
 	FilePenIcon,
 	InfoIcon,
 	MaximizeIcon,
+	MoreVerticalIcon,
 	PlusCircle,
+	TrashIcon,
+	TruckIcon,
 	UploadIcon,
 	XCircleIcon,
 } from "lucide-react";
@@ -424,6 +434,18 @@ export default function RecipesPage({
 				});
 			},
 			onError: (e: any) => toast.error(e.message ?? "Error"),
+		}),
+	);
+
+	const deleteProductMut = useMutation(
+		trpc.products.delete.mutationOptions({
+			onSuccess: () => {
+				toast.success("Producto eliminado");
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.list.queryKey(),
+				});
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error al eliminar"),
 		}),
 	);
 
@@ -1048,6 +1070,47 @@ export default function RecipesPage({
 								{Number(p.avg_weight_per_piece_kg)}kg
 							</span>
 						)}
+					{/* Menú: marcar como proveedor o eliminar (si está repetido) */}
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<button
+								type="button"
+								className="shrink-0 rounded p-0.5 text-muted-foreground/50 hover:bg-muted hover:text-foreground"
+								title="Opciones del producto"
+								onClick={(e) => e.stopPropagation()}
+							>
+								<MoreVerticalIcon className="h-3.5 w-3.5" />
+							</button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end" className="w-52">
+							<DropdownMenuItem
+								onClick={() =>
+									classifyOrphanMut.mutate({
+										productId: p.id,
+										action: "purchased",
+									})
+								}
+							>
+								<TruckIcon className="mr-2 h-4 w-4" />
+								Marcar como proveedor
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem
+								className="text-red-600 focus:text-red-600"
+								onClick={() => {
+									if (
+										window.confirm(
+											`¿Eliminar "${p.name}"? Úsalo si está repetido. Esta acción no se puede deshacer.`,
+										)
+									)
+										deleteProductMut.mutate({ id: p.id });
+								}}
+							>
+								<TrashIcon className="mr-2 h-4 w-4" />
+								Eliminar producto
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
 				</div>
 				{(styles.length > 0 || parents.length > 0 || orphan || isSupplier) && (
 					<div className="mt-0.5 flex flex-wrap gap-0.5">
@@ -1544,692 +1607,701 @@ export default function RecipesPage({
 					<div className="flex flex-wrap items-center justify-between gap-2">
 						<div className="flex items-center gap-2 text-muted-foreground">
 							<BookOpenIcon className="h-5 w-5" />
-						{configurator ? (
-							<span className="font-bold text-base text-foreground">
-								Configurador de Despiece
-							</span>
-						) : null}
-						<span className="text-sm">{filteredRecipes.length} recetas</span>
-						{duplicateGroupsCount > 0 ? (
-							<span className="text-amber-700 text-xs">
-								{duplicateGroupsCount} grupo(s) duplicado(s)
-							</span>
-						) : null}
-						{/* Indicador de autoguardado en vivo */}
-						<span
-							className={cn(
-								"flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-[11px]",
-								saving
-									? "bg-amber-50 text-amber-700"
-									: "bg-green-50 text-green-700",
-							)}
-							title="Los cambios se guardan solos en la base de datos"
-						>
+							{configurator ? (
+								<span className="font-bold text-base text-foreground">
+									Configurador de Despiece
+								</span>
+							) : null}
+							<span className="text-sm">{filteredRecipes.length} recetas</span>
+							{duplicateGroupsCount > 0 ? (
+								<span className="text-amber-700 text-xs">
+									{duplicateGroupsCount} grupo(s) duplicado(s)
+								</span>
+							) : null}
+							{/* Indicador de autoguardado en vivo */}
 							<span
 								className={cn(
-									"h-1.5 w-1.5 rounded-full",
-									saving ? "bg-amber-500" : "bg-green-500",
+									"flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-[11px]",
+									saving
+										? "bg-amber-50 text-amber-700"
+										: "bg-green-50 text-green-700",
 								)}
-							/>
-							{saving ? "Guardando…" : "Guardado"}
-						</span>
-						<button
-							type="button"
-							onClick={() => setShowHelp((v) => !v)}
-							className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-							title="Qué es una receta y por qué es el núcleo del sistema"
-						>
-							<InfoIcon className="h-3.5 w-3.5" />
-							{showHelp ? "Ocultar ayuda" : "¿Qué es esto?"}
-						</button>
-					</div>
-					<div className="flex items-center gap-2">
-						{!configurator && (
-							<>
-								<div className="inline-flex overflow-hidden rounded-lg border">
-									{(["table", "board", "map"] as const).map((v) => (
-										<button
-											key={v}
-											type="button"
-											onClick={() => setViewMode(v)}
-											className={cn(
-												"px-3 py-1.5 font-semibold text-xs transition-colors",
-												viewMode === v
-													? "bg-primary text-primary-foreground"
-													: "bg-background text-muted-foreground hover:bg-muted",
-											)}
-										>
-											{v === "table"
-												? "Tabla"
-												: v === "board"
-													? "Tablero"
-													: "Mapa"}
-										</button>
-									))}
-								</div>
-								<Button
-									size="sm"
-									variant="outline"
-									onClick={() =>
-										window.open("/admin/configurador", "_blank", "noopener")
-									}
-									title="Abre el configurador a pantalla completa en otra ventana"
-								>
-									<MaximizeIcon className="mr-2 h-4 w-4" />
-									Configurador
-								</Button>
-							</>
-						)}
-						<Button
-							size="sm"
-							variant="outline"
-							disabled={importMutation.isPending}
-							onClick={() => importFileRef.current?.click()}
-							title="Importa el JSON exportado por el Configurador Visual de Despiece"
-						>
-							<UploadIcon className="mr-2 h-4 w-4" />
-							{importMutation.isPending ? "Importando…" : "Importar"}
-						</Button>
-						<input
-							ref={importFileRef}
-							type="file"
-							accept=".json,application/json"
-							className="hidden"
-							onChange={(e) => {
-								const f = e.target.files?.[0];
-								if (f) handleImportFile(f);
-								e.target.value = "";
-							}}
-						/>
-						<Button size="sm" onClick={openCreate}>
-							<PlusCircle className="mr-2 h-4 w-4" />
-							Nueva receta
-						</Button>
-					</div>
-				</div>
-			</CardHeader>
-
-			{showHelp && (
-				<CardContent className="pt-0">
-					<div className="overflow-hidden rounded-xl border bg-gradient-to-br from-primary/5 to-transparent">
-						<div className="border-b bg-muted/40 px-4 py-3">
-							<h3 className="flex items-center gap-2 font-bold text-sm">
-								<BookOpenIcon className="h-4 w-4 text-primary" />
-								Las recetas son el corazón del sistema
-							</h3>
-							<p className="mt-1 text-muted-foreground text-xs leading-relaxed">
-								Una <strong>receta</strong> define cómo se{" "}
-								<strong>despieza un canal</strong> en sus piezas y{" "}
-								<strong>qué porcentaje del peso</strong> es cada una. Es el dato
-								medular: a partir de aquí el sistema calcula todo lo demás. Si la
-								receta está bien configurada, el resto funciona solo.
-							</p>
-							<p className="mt-2 rounded-md bg-background/70 px-2 py-1.5 text-[11px] text-muted-foreground leading-relaxed">
-								<strong>¿Canal completo o media canal?</strong> Cada tarjeta
-								indica si la receta se configura sobre el{" "}
-								<span className="font-semibold text-blue-700">
-									🐷 canal completo
-								</span>{" "}
-								(el cerdo entero, ≈105 kg) o sobre una{" "}
-								<span className="font-semibold text-amber-700">
-									½ media canal
-								</span>{" "}
-								(un solo lado, ≈52.5 kg). El <strong>“Peso del canal”</strong> y
-								los % de las piezas siempre se entienden sobre esa base, así que
-								todos los kg que captures deben ser de la misma unidad.
-							</p>
+								title="Los cambios se guardan solos en la base de datos"
+							>
+								<span
+									className={cn(
+										"h-1.5 w-1.5 rounded-full",
+										saving ? "bg-amber-500" : "bg-green-500",
+									)}
+								/>
+								{saving ? "Guardando…" : "Guardado"}
+							</span>
+							<button
+								type="button"
+								onClick={() => setShowHelp((v) => !v)}
+								className="flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+								title="Qué es una receta y por qué es el núcleo del sistema"
+							>
+								<InfoIcon className="h-3.5 w-3.5" />
+								{showHelp ? "Ocultar ayuda" : "¿Qué es esto?"}
+							</button>
 						</div>
-
-						{/* Flujo: de la receta sale todo */}
-						<div className="grid gap-3 p-4 md:grid-cols-[auto_1fr] md:items-center">
-							<div className="flex items-center justify-center gap-1 rounded-lg border bg-background px-3 py-2 text-center">
-								<div>
-									<div className="font-bold text-sm">🐷 CANAL</div>
-									<div className="text-[11px] text-muted-foreground">
-										se despieza en piezas
-										<br />
-										con su % de peso
+						<div className="flex items-center gap-2">
+							{!configurator && (
+								<>
+									<div className="inline-flex overflow-hidden rounded-lg border">
+										{(["table", "board", "map"] as const).map((v) => (
+											<button
+												key={v}
+												type="button"
+												onClick={() => setViewMode(v)}
+												className={cn(
+													"px-3 py-1.5 font-semibold text-xs transition-colors",
+													viewMode === v
+														? "bg-primary text-primary-foreground"
+														: "bg-background text-muted-foreground hover:bg-muted",
+												)}
+											>
+												{v === "table"
+													? "Tabla"
+													: v === "board"
+														? "Tablero"
+														: "Mapa"}
+											</button>
+										))}
 									</div>
-								</div>
-								<span className="px-2 text-2xl text-muted-foreground">→</span>
-							</div>
-							<div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-								{[
-									{
-										icon: "✂️",
-										t: "Despiece",
-										d: "Guía el corte: qué piezas y cuántas salen de cada canal.",
-									},
-									{
-										icon: "📦",
-										t: "Proyección de pedidos",
-										d: "Estima piezas y kg disponibles según lo que vas a despiezar.",
-									},
-									{
-										icon: "📊",
-										t: "Rendimiento",
-										d: "Compara el % estimado contra el peso real pesado del día.",
-									},
-									{
-										icon: "💲",
-										t: "Precio sugerido",
-										d: "Base para calcular el costo y precio de cada pieza.",
-									},
-								].map((x) => (
-									<div
-										key={x.t}
-										className="rounded-lg border bg-background p-2.5"
+									<Button
+										size="sm"
+										variant="outline"
+										onClick={() =>
+											window.open("/admin/configurador", "_blank", "noopener")
+										}
+										title="Abre el configurador a pantalla completa en otra ventana"
 									>
-										<div className="text-base">{x.icon}</div>
-										<div className="mt-0.5 font-semibold text-xs">{x.t}</div>
-										<div className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
-											{x.d}
+										<MaximizeIcon className="mr-2 h-4 w-4" />
+										Configurador
+									</Button>
+								</>
+							)}
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={importMutation.isPending}
+								onClick={() => importFileRef.current?.click()}
+								title="Importa el JSON exportado por el Configurador Visual de Despiece"
+							>
+								<UploadIcon className="mr-2 h-4 w-4" />
+								{importMutation.isPending ? "Importando…" : "Importar"}
+							</Button>
+							<input
+								ref={importFileRef}
+								type="file"
+								accept=".json,application/json"
+								className="hidden"
+								onChange={(e) => {
+									const f = e.target.files?.[0];
+									if (f) handleImportFile(f);
+									e.target.value = "";
+								}}
+							/>
+							<Button size="sm" onClick={openCreate}>
+								<PlusCircle className="mr-2 h-4 w-4" />
+								Nueva receta
+							</Button>
+						</div>
+					</div>
+				</CardHeader>
+
+				{showHelp && (
+					<CardContent className="pt-0">
+						<div className="overflow-hidden rounded-xl border bg-gradient-to-br from-primary/5 to-transparent">
+							<div className="border-b bg-muted/40 px-4 py-3">
+								<h3 className="flex items-center gap-2 font-bold text-sm">
+									<BookOpenIcon className="h-4 w-4 text-primary" />
+									Las recetas son el corazón del sistema
+								</h3>
+								<p className="mt-1 text-muted-foreground text-xs leading-relaxed">
+									Una <strong>receta</strong> define cómo se{" "}
+									<strong>despieza un canal</strong> en sus piezas y{" "}
+									<strong>qué porcentaje del peso</strong> es cada una. Es el
+									dato medular: a partir de aquí el sistema calcula todo lo
+									demás. Si la receta está bien configurada, el resto funciona
+									solo.
+								</p>
+								<p className="mt-2 rounded-md bg-background/70 px-2 py-1.5 text-[11px] text-muted-foreground leading-relaxed">
+									<strong>¿Canal completo o media canal?</strong> Cada tarjeta
+									indica si la receta se configura sobre el{" "}
+									<span className="font-semibold text-blue-700">
+										🐷 canal completo
+									</span>{" "}
+									(el cerdo entero, ≈105 kg) o sobre una{" "}
+									<span className="font-semibold text-amber-700">
+										½ media canal
+									</span>{" "}
+									(un solo lado, ≈52.5 kg). El <strong>“Peso del canal”</strong>{" "}
+									y los % de las piezas siempre se entienden sobre esa base, así
+									que todos los kg que captures deben ser de la misma unidad.
+								</p>
+							</div>
+
+							{/* Flujo: de la receta sale todo */}
+							<div className="grid gap-3 p-4 md:grid-cols-[auto_1fr] md:items-center">
+								<div className="flex items-center justify-center gap-1 rounded-lg border bg-background px-3 py-2 text-center">
+									<div>
+										<div className="font-bold text-sm">🐷 CANAL</div>
+										<div className="text-[11px] text-muted-foreground">
+											se despieza en piezas
+											<br />
+											con su % de peso
 										</div>
 									</div>
-								))}
-							</div>
-						</div>
-
-						{/* Las 3 vistas son la misma información */}
-						<div className="border-t bg-muted/30 px-4 py-3">
-							<p className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wide">
-								Tres formas de ver la misma información
-							</p>
-							<div className="mt-1.5 grid gap-2 text-xs sm:grid-cols-3">
-								<div>
-									<span className="font-semibold">📋 Tabla</span> — lista
-									editable, fila por fila. Buena para revisar y filtrar.
+									<span className="px-2 text-2xl text-muted-foreground">→</span>
 								</div>
-								<div>
-									<span className="font-semibold">🗂️ Tablero / Configurador</span>{" "}
-									— visual, capturas en kg y arrastras piezas. La forma más
-									intuitiva.
-								</div>
-								<div>
-									<span className="font-semibold">🌳 Mapa</span> — árbol de
-									despiece (padre → hijos) para ver la jerarquía completa.
-								</div>
-							</div>
-							<p className="mt-2 text-[11px] text-muted-foreground">
-								Las tres leen y guardan en la <strong>misma tabla</strong> de
-								recetas: lo que cambias en una se refleja en las otras al
-								instante.
-							</p>
-						</div>
-					</div>
-				</CardContent>
-			)}
-
-			<CardContent className="p-0">
-				{viewMode === "board" ? (
-					<p className="text-muted-foreground text-sm">
-						Tablero de recetas: cada tarjeta es un estilo de canal (1er nivel) o
-						una pieza con sub-despiece (2º nivel). El % es la parte del peso del
-						padre; Σ es la suma. Toca una pieza para editar su receta.
-					</p>
-				) : viewMode === "map" ? (
-					<div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-						<div className="space-y-1">
-							<Label>Estilo (Mapa)</Label>
-							<Select value={mapStyle} onValueChange={setMapStyle}>
-								<SelectTrigger>
-									<SelectValue placeholder="Selecciona" />
-								</SelectTrigger>
-								<SelectContent>
-									{mapTypes.map((t) => (
-										<SelectItem key={t} value={t}>
-											{t}
-										</SelectItem>
+								<div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+									{[
+										{
+											icon: "✂️",
+											t: "Despiece",
+											d: "Guía el corte: qué piezas y cuántas salen de cada canal.",
+										},
+										{
+											icon: "📦",
+											t: "Proyección de pedidos",
+											d: "Estima piezas y kg disponibles según lo que vas a despiezar.",
+										},
+										{
+											icon: "📊",
+											t: "Rendimiento",
+											d: "Compara el % estimado contra el peso real pesado del día.",
+										},
+										{
+											icon: "💲",
+											t: "Precio sugerido",
+											d: "Base para calcular el costo y precio de cada pieza.",
+										},
+									].map((x) => (
+										<div
+											key={x.t}
+											className="rounded-lg border bg-background p-2.5"
+										>
+											<div className="text-base">{x.icon}</div>
+											<div className="mt-0.5 font-semibold text-xs">{x.t}</div>
+											<div className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
+												{x.d}
+											</div>
+										</div>
 									))}
-								</SelectContent>
-							</Select>
-						</div>
-						<div className="md:col-span-2">
-							<div className="text-muted-foreground text-sm">
-								Organigrama jerárquico desde CANAL. Suma rendimientos duplicados
-								y muestra la receta efectiva (BASE + estilo).
-							</div>
-						</div>
-					</div>
-				) : (
-					<>
-						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-							<div className="space-y-1">
-								<Label>Buscar</Label>
-								<Input
-									value={search}
-									onChange={(e) => setSearch(e.target.value)}
-									placeholder="Buscar padre/hijo…"
-								/>
+								</div>
 							</div>
 
+							{/* Las 3 vistas son la misma información */}
+							<div className="border-t bg-muted/30 px-4 py-3">
+								<p className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wide">
+									Tres formas de ver la misma información
+								</p>
+								<div className="mt-1.5 grid gap-2 text-xs sm:grid-cols-3">
+									<div>
+										<span className="font-semibold">📋 Tabla</span> — lista
+										editable, fila por fila. Buena para revisar y filtrar.
+									</div>
+									<div>
+										<span className="font-semibold">
+											🗂️ Tablero / Configurador
+										</span>{" "}
+										— visual, capturas en kg y arrastras piezas. La forma más
+										intuitiva.
+									</div>
+									<div>
+										<span className="font-semibold">🌳 Mapa</span> — árbol de
+										despiece (padre → hijos) para ver la jerarquía completa.
+									</div>
+								</div>
+								<p className="mt-2 text-[11px] text-muted-foreground">
+									Las tres leen y guardan en la <strong>misma tabla</strong> de
+									recetas: lo que cambias en una se refleja en las otras al
+									instante.
+								</p>
+							</div>
+						</div>
+					</CardContent>
+				)}
+
+				<CardContent className="p-0">
+					{viewMode === "board" ? (
+						<p className="text-muted-foreground text-sm">
+							Tablero de recetas: cada tarjeta es un estilo de canal (1er nivel)
+							o una pieza con sub-despiece (2º nivel). El % es la parte del peso
+							del padre; Σ es la suma. Toca una pieza para editar su receta.
+						</p>
+					) : viewMode === "map" ? (
+						<div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 							<div className="space-y-1">
-								<Label>Padre</Label>
-								<Select value={parentFilter} onValueChange={setParentFilter}>
+								<Label>Estilo (Mapa)</Label>
+								<Select value={mapStyle} onValueChange={setMapStyle}>
 									<SelectTrigger>
-										<SelectValue placeholder="Selecciona padre" />
+										<SelectValue placeholder="Selecciona" />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="all">Todos</SelectItem>
-										{parentProducts.map((p: Product) => (
-											<SelectItem key={p.id} value={String(p.id)}>
-												{p.name}
+										{mapTypes.map((t) => (
+											<SelectItem key={t} value={t}>
+												{t}
 											</SelectItem>
 										))}
 									</SelectContent>
 								</Select>
 							</div>
+							<div className="md:col-span-2">
+								<div className="text-muted-foreground text-sm">
+									Organigrama jerárquico desde CANAL. Suma rendimientos
+									duplicados y muestra la receta efectiva (BASE + estilo).
+								</div>
+							</div>
+						</div>
+					) : (
+						<>
+							<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+								<div className="space-y-1">
+									<Label>Buscar</Label>
+									<Input
+										value={search}
+										onChange={(e) => setSearch(e.target.value)}
+										placeholder="Buscar padre/hijo…"
+									/>
+								</div>
 
-							<div className="space-y-1">
-								<Label>Estilo</Label>
-								<div className="flex flex-wrap gap-2">
-									{(
-										[
-											"all",
-											"BASE",
-											"AMERICANO",
-											"NACIONAL_LOMO",
-											"NACIONAL_ESPILOMO",
-											"POLINESIO",
-										] as const
-									).map((v) => (
+								<div className="space-y-1">
+									<Label>Padre</Label>
+									<Select value={parentFilter} onValueChange={setParentFilter}>
+										<SelectTrigger>
+											<SelectValue placeholder="Selecciona padre" />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="all">Todos</SelectItem>
+											{parentProducts.map((p: Product) => (
+												<SelectItem key={p.id} value={String(p.id)}>
+													{p.name}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+
+								<div className="space-y-1">
+									<Label>Estilo</Label>
+									<div className="flex flex-wrap gap-2">
+										{(
+											[
+												"all",
+												"BASE",
+												"AMERICANO",
+												"NACIONAL_LOMO",
+												"NACIONAL_ESPILOMO",
+												"POLINESIO",
+											] as const
+										).map((v) => (
+											<Button
+												key={v}
+												type="button"
+												size="sm"
+												variant={typeFilter === v ? "default" : "outline"}
+												onClick={() => setTypeFilter(v)}
+											>
+												{v === "all"
+													? "Todos"
+													: v.replace("NACIONAL_", "").replace("_", " ")}
+											</Button>
+										))}
+									</div>
+								</div>
+
+								<div className="space-y-1">
+									<Label>Estado</Label>
+									<div className="flex gap-2">
 										<Button
-											key={v}
 											type="button"
 											size="sm"
-											variant={typeFilter === v ? "default" : "outline"}
-											onClick={() => setTypeFilter(v)}
+											variant={
+												statusFilter === "active" ? "default" : "outline"
+											}
+											onClick={() => setStatusFilter("active")}
 										>
-											{v === "all"
-												? "Todos"
-												: v.replace("NACIONAL_", "").replace("_", " ")}
+											Activas
 										</Button>
-									))}
+										<Button
+											type="button"
+											size="sm"
+											variant={statusFilter === "all" ? "default" : "outline"}
+											onClick={() => setStatusFilter("all")}
+										>
+											Todas
+										</Button>
+									</div>
 								</div>
 							</div>
 
-							<div className="space-y-1">
-								<Label>Estado</Label>
-								<div className="flex gap-2">
-									<Button
-										type="button"
-										size="sm"
-										variant={statusFilter === "active" ? "default" : "outline"}
-										onClick={() => setStatusFilter("active")}
-									>
-										Activas
-									</Button>
-									<Button
-										type="button"
-										size="sm"
-										variant={statusFilter === "all" ? "default" : "outline"}
-										onClick={() => setStatusFilter("all")}
-									>
-										Todas
-									</Button>
-								</div>
+							<div className="mt-3 text-muted-foreground text-sm">
+								Configura el rendimiento de cada pieza. El sistema estima el
+								peso basándose en el porcentaje de rendimiento (%) configurado
+								por estilo de canal.
 							</div>
-						</div>
-
-						<div className="mt-3 text-muted-foreground text-sm">
-							Configura el rendimiento de cada pieza. El sistema estima el peso
-							basándose en el porcentaje de rendimiento (%) configurado por
-							estilo de canal.
-						</div>
-					</>
-				)}
-			</CardContent>
-
-			{/* Banner de huérfanos: redundante con la paleta del Tablero, así que
-			    solo se muestra en las vistas Tabla/Mapa. */}
-			{viewMode !== "board" && productsWithoutRecipe.length > 0 && (
-				<CardContent className="pt-0">
-					<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 text-xs">
-						<span className="font-bold">
-							{productsWithoutRecipe.length} producto(s) sin receta
-						</span>{" "}
-						(no salen de ningún despiece ni se despiezan). Es normal para piezas
-						finales. Arrastra un producto sobre la tabla:{" "}
-						<strong>sobre un PADRE</strong> → será hijo de ese padre (mismo
-						estilo); <strong>sobre un HIJO</strong> → saldrá del despiece de esa
-						pieza (2º nivel, receta BASE).
-						<div className="mt-1 flex flex-wrap gap-1">
-							{productsWithoutRecipe.map((p) => (
-								<span
-									key={p.id}
-									draggable
-									onDragStart={(e) => {
-										setDraggedChild({ id: p.id, name: p.name });
-										e.dataTransfer.effectAllowed = "copy";
-										// Necesario para que el arrastre inicie en Firefox/Chrome.
-										e.dataTransfer.setData("text/plain", String(p.id));
-									}}
-									onDragEnd={clearDrag}
-									className="cursor-grab rounded bg-amber-100 px-1.5 py-0.5 font-medium hover:bg-amber-200 active:cursor-grabbing"
-									title="Arrástrame sobre un PADRE (será su hijo) o sobre un HIJO (saldrá de su despiece, 2º nivel)"
-								>
-									{p.name}
-								</span>
-							))}
-						</div>
-						{/* Zonas de drop alternativas */}
-						<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-							<div
-								onDragOver={(e) => e.preventDefault()}
-								onDrop={(e) => {
-									e.preventDefault();
-									if (draggedChild)
-										classifyOrphanMut.mutate({
-											productId: draggedChild.id,
-											action: "purchased",
-										});
-									clearDrag();
-								}}
-								className={cn(
-									"rounded-lg border-2 border-dashed p-3 text-center font-semibold text-xs transition-colors",
-									draggedChild
-										? "border-green-400 bg-green-50 text-green-800"
-										: "border-border text-muted-foreground",
-								)}
-							>
-								📦 Producto de proveedor (compra)
-								<div className="font-normal">
-									Manteca, lomo ahumado, chicharrón…
-								</div>
-							</div>
-							<div
-								onDragOver={(e) => e.preventDefault()}
-								onDrop={(e) => {
-									e.preventDefault();
-									if (draggedChild)
-										classifyOrphanMut.mutate({
-											productId: draggedChild.id,
-											action: "duplicate",
-										});
-									clearDrag();
-								}}
-								className={cn(
-									"rounded-lg border-2 border-dashed p-3 text-center font-semibold text-xs transition-colors",
-									draggedChild
-										? "border-red-400 bg-red-50 text-red-800"
-										: "border-border text-muted-foreground",
-								)}
-							>
-								🗑️ Repetido / duplicado
-								<div className="font-normal">
-									Ej. Máscara vs Máscara Completa
-								</div>
-							</div>
-						</div>
-					</div>
+						</>
+					)}
 				</CardContent>
-			)}
 
-			<CardContent className="p-0">
-				{viewMode === "map" ? (
-					<div className="rounded-md border p-4">{renderMapTree}</div>
-				) : viewMode === "board" ? (
-					renderBoard()
-				) : (
-					<DataTable
-						data={filteredRecipes}
-						columns={columns}
-						emptyMessage="No hay recetas"
-						emptyIcon={<BookOpenIcon className="h-8 w-8" />}
-						defaultSort={[{ id: "parent", desc: false }]}
-					/>
+				{/* Banner de huérfanos: redundante con la paleta del Tablero, así que
+			    solo se muestra en las vistas Tabla/Mapa. */}
+				{viewMode !== "board" && productsWithoutRecipe.length > 0 && (
+					<CardContent className="pt-0">
+						<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 text-xs">
+							<span className="font-bold">
+								{productsWithoutRecipe.length} producto(s) sin receta
+							</span>{" "}
+							(no salen de ningún despiece ni se despiezan). Es normal para
+							piezas finales. Arrastra un producto sobre la tabla:{" "}
+							<strong>sobre un PADRE</strong> → será hijo de ese padre (mismo
+							estilo); <strong>sobre un HIJO</strong> → saldrá del despiece de
+							esa pieza (2º nivel, receta BASE).
+							<div className="mt-1 flex flex-wrap gap-1">
+								{productsWithoutRecipe.map((p) => (
+									<span
+										key={p.id}
+										draggable
+										onDragStart={(e) => {
+											setDraggedChild({ id: p.id, name: p.name });
+											e.dataTransfer.effectAllowed = "copy";
+											// Necesario para que el arrastre inicie en Firefox/Chrome.
+											e.dataTransfer.setData("text/plain", String(p.id));
+										}}
+										onDragEnd={clearDrag}
+										className="cursor-grab rounded bg-amber-100 px-1.5 py-0.5 font-medium hover:bg-amber-200 active:cursor-grabbing"
+										title="Arrástrame sobre un PADRE (será su hijo) o sobre un HIJO (saldrá de su despiece, 2º nivel)"
+									>
+										{p.name}
+									</span>
+								))}
+							</div>
+							{/* Zonas de drop alternativas */}
+							<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+								<div
+									onDragOver={(e) => e.preventDefault()}
+									onDrop={(e) => {
+										e.preventDefault();
+										if (draggedChild)
+											classifyOrphanMut.mutate({
+												productId: draggedChild.id,
+												action: "purchased",
+											});
+										clearDrag();
+									}}
+									className={cn(
+										"rounded-lg border-2 border-dashed p-3 text-center font-semibold text-xs transition-colors",
+										draggedChild
+											? "border-green-400 bg-green-50 text-green-800"
+											: "border-border text-muted-foreground",
+									)}
+								>
+									📦 Producto de proveedor (compra)
+									<div className="font-normal">
+										Manteca, lomo ahumado, chicharrón…
+									</div>
+								</div>
+								<div
+									onDragOver={(e) => e.preventDefault()}
+									onDrop={(e) => {
+										e.preventDefault();
+										if (draggedChild)
+											classifyOrphanMut.mutate({
+												productId: draggedChild.id,
+												action: "duplicate",
+											});
+										clearDrag();
+									}}
+									className={cn(
+										"rounded-lg border-2 border-dashed p-3 text-center font-semibold text-xs transition-colors",
+										draggedChild
+											? "border-red-400 bg-red-50 text-red-800"
+											: "border-border text-muted-foreground",
+									)}
+								>
+									🗑️ Repetido / duplicado
+									<div className="font-normal">
+										Ej. Máscara vs Máscara Completa
+									</div>
+								</div>
+							</div>
+						</div>
+					</CardContent>
 				)}
-			</CardContent>
 
-			<Dialog
-				open={isDialogOpen}
-				onOpenChange={(open) => {
-					if (!open) setIsDialogOpen(false);
-				}}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>
-							{isEditing ? "Editar receta" : "Nueva receta"}
-						</DialogTitle>
-					</DialogHeader>
-					<div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-blue-900 text-xs leading-relaxed">
-						Una <strong>receta</strong> dice qué pieza (hijo) sale al despiezar
-						un producto (padre) y en qué proporción.
-						<br />• <strong>Piezas</strong>: cuántas salen de 1 padre (ej. 2
-						piernas por canal).
-						<br />• <strong>Rendimiento %</strong>: qué parte del peso del padre
-						es esta pieza. La suma de todas las piezas de un padre debería
-						acercarse a 100%.
-						<br />• <strong>Estilo</strong>: AMERICANO / NACIONAL_LOMO /
-						NACIONAL_ESPILOMO (despiece del canal) · BASE (despiece de una
-						pieza, ej. PIERNA→JAMÓN).
-					</div>
-					<form
-						onSubmit={(e) => {
-							e.preventDefault();
-							e.stopPropagation();
-							const v = form.state.values;
-							const parentId = Number(v.parentProductId) || 0;
-							let childId = Number(v.childProductId) || 0;
+				<CardContent className="p-0">
+					{viewMode === "map" ? (
+						<div className="rounded-md border p-4">{renderMapTree}</div>
+					) : viewMode === "board" ? (
+						renderBoard()
+					) : (
+						<DataTable
+							data={filteredRecipes}
+							columns={columns}
+							emptyMessage="No hay recetas"
+							emptyIcon={<BookOpenIcon className="h-8 w-8" />}
+							defaultSort={[{ id: "parent", desc: false }]}
+						/>
+					)}
+				</CardContent>
 
-							if (parentId <= 0) {
-								toast.error("Selecciona un producto padre");
-								return;
-							}
+				<Dialog
+					open={isDialogOpen}
+					onOpenChange={(open) => {
+						if (!open) setIsDialogOpen(false);
+					}}
+				>
+					<DialogContent>
+						<DialogHeader>
+							<DialogTitle>
+								{isEditing ? "Editar receta" : "Nueva receta"}
+							</DialogTitle>
+						</DialogHeader>
+						<div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-blue-900 text-xs leading-relaxed">
+							Una <strong>receta</strong> dice qué pieza (hijo) sale al
+							despiezar un producto (padre) y en qué proporción.
+							<br />• <strong>Piezas</strong>: cuántas salen de 1 padre (ej. 2
+							piernas por canal).
+							<br />• <strong>Rendimiento %</strong>: qué parte del peso del
+							padre es esta pieza. La suma de todas las piezas de un padre
+							debería acercarse a 100%.
+							<br />• <strong>Estilo</strong>: AMERICANO / NACIONAL_LOMO /
+							NACIONAL_ESPILOMO (despiece del canal) · BASE (despiece de una
+							pieza, ej. PIERNA→JAMÓN).
+						</div>
+						<form
+							onSubmit={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								const v = form.state.values;
+								const parentId = Number(v.parentProductId) || 0;
+								let childId = Number(v.childProductId) || 0;
 
-							if (childId <= 0) {
-								const guess = findBestProductByName(v.childName ?? "");
-								if (guess) {
-									childId = guess.id;
-									form.setFieldValue("childProductId", childId);
-									form.setFieldValue("childName", guess.name);
-									toast.success(`Hijo detectado: ${guess.name}`);
-								} else {
-									toast.error(
-										"Selecciona un producto hijo (o escribe el nombre exacto de un producto existente)",
-									);
+								if (parentId <= 0) {
+									toast.error("Selecciona un producto padre");
 									return;
 								}
-							}
 
-							form.handleSubmit();
-						}}
-					>
-						<div className="grid gap-4 py-4">
-							<form.Field name="parentProductId">
-								{(field) => (
-									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-										<Label className="sm:text-right">Padre</Label>
-										<Select
-											value={field.state.value ? String(field.state.value) : ""}
-											onValueChange={(value) =>
-												field.handleChange(Number(value))
-											}
-										>
-											<SelectTrigger className="col-span-3">
-												<SelectValue placeholder="Selecciona padre" />
-											</SelectTrigger>
-											<SelectContent className="max-h-72 overflow-y-auto">
-												{productOptions.map((p: Product) => (
-													<SelectItem key={p.id} value={String(p.id)}>
-														{p.name}
-														{!productsWithRecipe.has(p.id) && (
-															<span className="ml-2 text-[10px] text-amber-600">
-																(sin receta)
-															</span>
-														)}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									</div>
-								)}
-							</form.Field>
+								if (childId <= 0) {
+									const guess = findBestProductByName(v.childName ?? "");
+									if (guess) {
+										childId = guess.id;
+										form.setFieldValue("childProductId", childId);
+										form.setFieldValue("childName", guess.name);
+										toast.success(`Hijo detectado: ${guess.name}`);
+									} else {
+										toast.error(
+											"Selecciona un producto hijo (o escribe el nombre exacto de un producto existente)",
+										);
+										return;
+									}
+								}
 
-							<form.Field name="childProductId">
-								{(field) => (
-									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-										<Label className="sm:text-right">Hijo</Label>
-										<Select
-											value={field.state.value ? String(field.state.value) : ""}
-											onValueChange={(value) => {
-												const id = Number(value);
-												field.handleChange(id);
-												const p = allProducts.find((x) => x.id === id);
-												if (p) form.setFieldValue("childName", p.name);
-											}}
-										>
-											<SelectTrigger className="col-span-3">
-												<SelectValue placeholder="Selecciona hijo" />
-											</SelectTrigger>
-											<SelectContent className="max-h-72 overflow-y-auto">
-												{productOptions.map((p: Product) => (
-													<SelectItem key={p.id} value={String(p.id)}>
-														{p.name}
-														{!productsWithRecipe.has(p.id) && (
-															<span className="ml-2 text-[10px] text-amber-600">
-																(sin receta)
-															</span>
-														)}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									</div>
-								)}
-							</form.Field>
+								form.handleSubmit();
+							}}
+						>
+							<div className="grid gap-4 py-4">
+								<form.Field name="parentProductId">
+									{(field) => (
+										<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
+											<Label className="sm:text-right">Padre</Label>
+											<Select
+												value={
+													field.state.value ? String(field.state.value) : ""
+												}
+												onValueChange={(value) =>
+													field.handleChange(Number(value))
+												}
+											>
+												<SelectTrigger className="col-span-3">
+													<SelectValue placeholder="Selecciona padre" />
+												</SelectTrigger>
+												<SelectContent className="max-h-72 overflow-y-auto">
+													{productOptions.map((p: Product) => (
+														<SelectItem key={p.id} value={String(p.id)}>
+															{p.name}
+															{!productsWithRecipe.has(p.id) && (
+																<span className="ml-2 text-[10px] text-amber-600">
+																	(sin receta)
+																</span>
+															)}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										</div>
+									)}
+								</form.Field>
 
-							<form.Field name="childName">
-								{(field) => (
-									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-										<Label className="sm:text-right">Nombre hijo</Label>
-										<div className="col-span-3">
+								<form.Field name="childProductId">
+									{(field) => (
+										<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
+											<Label className="sm:text-right">Hijo</Label>
+											<Select
+												value={
+													field.state.value ? String(field.state.value) : ""
+												}
+												onValueChange={(value) => {
+													const id = Number(value);
+													field.handleChange(id);
+													const p = allProducts.find((x) => x.id === id);
+													if (p) form.setFieldValue("childName", p.name);
+												}}
+											>
+												<SelectTrigger className="col-span-3">
+													<SelectValue placeholder="Selecciona hijo" />
+												</SelectTrigger>
+												<SelectContent className="max-h-72 overflow-y-auto">
+													{productOptions.map((p: Product) => (
+														<SelectItem key={p.id} value={String(p.id)}>
+															{p.name}
+															{!productsWithRecipe.has(p.id) && (
+																<span className="ml-2 text-[10px] text-amber-600">
+																	(sin receta)
+																</span>
+															)}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										</div>
+									)}
+								</form.Field>
+
+								<form.Field name="childName">
+									{(field) => (
+										<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
+											<Label className="sm:text-right">Nombre hijo</Label>
+											<div className="col-span-3">
+												<Input
+													value={field.state.value}
+													onChange={(e) => field.handleChange(e.target.value)}
+													onBlur={field.handleBlur}
+													placeholder="Escribe para buscar (ej. Hueso / Pulpa de espaldilla)"
+													error={
+														field.state.meta.errors.length
+															? String(field.state.meta.errors[0])
+															: undefined
+													}
+												/>
+											</div>
+										</div>
+									)}
+								</form.Field>
+
+								<form.Field name="transformationType">
+									{(field) => (
+										<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
+											<Label className="sm:text-right">Estilo</Label>
 											<Input
+												className="col-span-3"
 												value={field.state.value}
 												onChange={(e) => field.handleChange(e.target.value)}
 												onBlur={field.handleBlur}
-												placeholder="Escribe para buscar (ej. Hueso / Pulpa de espaldilla)"
-												error={
-													field.state.meta.errors.length
-														? String(field.state.meta.errors[0])
-														: undefined
-												}
+												placeholder="Ej. BASE / NACIONAL / AMERICANO / POLINESIO / DESPIECE_ESPALDILLA"
 											/>
 										</div>
-									</div>
-								)}
-							</form.Field>
+									)}
+								</form.Field>
 
-							<form.Field name="transformationType">
-								{(field) => (
-									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-										<Label className="sm:text-right">Estilo</Label>
-										<Input
-											className="col-span-3"
-											value={field.state.value}
-											onChange={(e) => field.handleChange(e.target.value)}
-											onBlur={field.handleBlur}
-											placeholder="Ej. BASE / NACIONAL / AMERICANO / POLINESIO / DESPIECE_ESPALDILLA"
-										/>
-									</div>
-								)}
-							</form.Field>
-
-							<form.Field name="yieldQuantityPieces">
-								{(field) => (
-									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-										<Label className="sm:text-right">Piezas</Label>
-										<div className="col-span-3">
-											<Input
-												type="number"
-												step="0.5"
-												value={String(field.state.value)}
-												onChange={(e) =>
-													field.handleChange(Number(e.target.value))
-												}
-												onBlur={field.handleBlur}
-											/>
-											<div className="mt-1 text-[10px] text-muted-foreground">
-												Cuántas de esta pieza salen de 1 padre (ej. 2 piernas
-												por canal).
+								<form.Field name="yieldQuantityPieces">
+									{(field) => (
+										<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
+											<Label className="sm:text-right">Piezas</Label>
+											<div className="col-span-3">
+												<Input
+													type="number"
+													step="0.5"
+													value={String(field.state.value)}
+													onChange={(e) =>
+														field.handleChange(Number(e.target.value))
+													}
+													onBlur={field.handleBlur}
+												/>
+												<div className="mt-1 text-[10px] text-muted-foreground">
+													Cuántas de esta pieza salen de 1 padre (ej. 2 piernas
+													por canal).
+												</div>
 											</div>
 										</div>
-									</div>
-								)}
-							</form.Field>
+									)}
+								</form.Field>
 
-							<form.Field name="yieldWeightPercentage">
-								{(field) => (
-									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-										<Label className="font-semibold text-blue-600 sm:text-right">
-											% peso est.
-										</Label>
-										<div className="col-span-3 flex items-center gap-2">
-											<Input
-												type="number"
-												step="0.01"
-												value={String(field.state.value)}
-												onChange={(e) =>
-													field.handleChange(Number(e.target.value))
+								<form.Field name="yieldWeightPercentage">
+									{(field) => (
+										<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
+											<Label className="font-semibold text-blue-600 sm:text-right">
+												% peso est.
+											</Label>
+											<div className="col-span-3 flex items-center gap-2">
+												<Input
+													type="number"
+													step="0.01"
+													value={String(field.state.value)}
+													onChange={(e) =>
+														field.handleChange(Number(e.target.value))
+													}
+													onBlur={field.handleBlur}
+													placeholder="Ej. 15.5"
+												/>
+												<span className="text-muted-foreground text-sm">%</span>
+											</div>
+											<div className="col-span-3 col-start-2 text-[10px] text-muted-foreground">
+												% del peso del padre que representa esta pieza
+												(composición, no rendimiento de valor).
+											</div>
+										</div>
+									)}
+								</form.Field>
+
+								<form.Field name="isActive">
+									{(field) => (
+										<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
+											<Label className="sm:text-right">Activa</Label>
+											<Select
+												value={field.state.value ? "true" : "false"}
+												onValueChange={(value) =>
+													field.handleChange(value === "true")
 												}
-												onBlur={field.handleBlur}
-												placeholder="Ej. 15.5"
-											/>
-											<span className="text-muted-foreground text-sm">%</span>
+											>
+												<SelectTrigger className="col-span-3">
+													<SelectValue placeholder="Selecciona" />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="true">Sí</SelectItem>
+													<SelectItem value="false">No</SelectItem>
+												</SelectContent>
+											</Select>
 										</div>
-										<div className="col-span-3 col-start-2 text-[10px] text-muted-foreground">
-											% del peso del padre que representa esta pieza
-											(composición, no rendimiento de valor).
-										</div>
-									</div>
-								)}
-							</form.Field>
+									)}
+								</form.Field>
+							</div>
 
-							<form.Field name="isActive">
-								{(field) => (
-									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
-										<Label className="sm:text-right">Activa</Label>
-										<Select
-											value={field.state.value ? "true" : "false"}
-											onValueChange={(value) =>
-												field.handleChange(value === "true")
-											}
+							<DialogFooter>
+								<Button
+									variant="secondary"
+									onClick={() => setIsDialogOpen(false)}
+								>
+									{tc("cancel")}
+								</Button>
+								<form.Subscribe selector={(state) => state.isSubmitting}>
+									{(isSubmitting) => (
+										<Button
+											type="submit"
+											disabled={isSubmitting || upsertMutation.isPending}
 										>
-											<SelectTrigger className="col-span-3">
-												<SelectValue placeholder="Selecciona" />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="true">Sí</SelectItem>
-												<SelectItem value="false">No</SelectItem>
-											</SelectContent>
-										</Select>
-									</div>
-								)}
-							</form.Field>
-						</div>
-
-						<DialogFooter>
-							<Button
-								variant="secondary"
-								onClick={() => setIsDialogOpen(false)}
-							>
-								{tc("cancel")}
-							</Button>
-							<form.Subscribe selector={(state) => state.isSubmitting}>
-								{(isSubmitting) => (
-									<Button
-										type="submit"
-										disabled={isSubmitting || upsertMutation.isPending}
-									>
-										{isEditing ? tc("update") : tc("create")}
-									</Button>
-								)}
-							</form.Subscribe>
-						</DialogFooter>
-					</form>
-				</DialogContent>
-			</Dialog>
+											{isEditing ? tc("update") : tc("create")}
+										</Button>
+									)}
+								</form.Subscribe>
+							</DialogFooter>
+						</form>
+					</DialogContent>
+				</Dialog>
 			</Card>
 		</div>
 	);
