@@ -449,6 +449,20 @@ export default function RecipesPage({
 		}),
 	);
 
+	const createProductMut = useMutation(
+		trpc.products.create.mutationOptions({
+			onSuccess: () => {
+				toast.success("Producto creado");
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.list.queryKey(),
+				});
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error al crear"),
+		}),
+	);
+	const [newProdName, setNewProdName] = useState("");
+	const [newProdCat, setNewProdCat] = useState("Otros");
+
 	const mapTypes = useMemo(() => {
 		const types = new Set<string>();
 		for (const r of mapRecipes) types.add(r.transformation_type);
@@ -1309,6 +1323,57 @@ export default function RecipesPage({
 									</div>
 								);
 							})}
+						</div>
+						{/* Crear producto nuevo */}
+						<div className="space-y-1.5 border-t p-2.5">
+							<div className="font-bold text-[10px] text-muted-foreground uppercase tracking-wide">
+								Crear producto
+							</div>
+							<Input
+								value={newProdName}
+								onChange={(e) => setNewProdName(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && newProdName.trim()) {
+										createProductMut.mutate({
+											name: newProdName.trim().toUpperCase(),
+											category: newProdCat,
+											is_parent_product: newProdCat === "Canales",
+										});
+										setNewProdName("");
+									}
+								}}
+								placeholder="Nombre del producto…"
+								className="h-7 text-xs"
+							/>
+							<div className="flex gap-1.5">
+								<select
+									value={newProdCat}
+									onChange={(e) => setNewProdCat(e.target.value)}
+									className="h-7 flex-1 rounded-md border bg-background px-1.5 text-xs"
+								>
+									{PALETTE_ORDER.map((c) => (
+										<option key={c} value={c}>
+											{c}
+										</option>
+									))}
+								</select>
+								<Button
+									size="sm"
+									variant="outline"
+									className="h-7 px-2 text-[11px]"
+									disabled={!newProdName.trim() || createProductMut.isPending}
+									onClick={() => {
+										createProductMut.mutate({
+											name: newProdName.trim().toUpperCase(),
+											category: newProdCat,
+											is_parent_product: newProdCat === "Canales",
+										});
+										setNewProdName("");
+									}}
+								>
+									Crear
+								</Button>
+							</div>
 						</div>
 					</div>
 				</aside>
