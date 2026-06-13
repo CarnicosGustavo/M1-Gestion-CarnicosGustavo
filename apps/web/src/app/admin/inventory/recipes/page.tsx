@@ -722,8 +722,18 @@ export default function RecipesPage({
 					)}
 				>
 					<span
-						className="shrink-0 cursor-default select-none text-[10px] text-muted-foreground/30 group-hover:text-muted-foreground/60"
-						title="Arrastra una pieza de la paleta sobre este renglón para ramificarla"
+						draggable
+						onDragStart={(e) => {
+							setDraggedChild({
+								id: r.child_product_id,
+								name: r.childProduct.name,
+							});
+							e.dataTransfer.effectAllowed = "copy";
+							e.dataTransfer.setData("text/plain", String(r.child_product_id));
+						}}
+						onDragEnd={clearDrag}
+						className="shrink-0 cursor-grab select-none text-[10px] text-muted-foreground/40 active:cursor-grabbing group-hover:text-muted-foreground/70"
+						title={`Arrastra ${r.childProduct.name} a un estilo/padre o a otra pieza para ramificarla`}
 					>
 						⠿
 					</span>
@@ -1888,9 +1898,12 @@ export default function RecipesPage({
 								<span
 									key={p.id}
 									draggable
-									onDragStart={() =>
-										setDraggedChild({ id: p.id, name: p.name })
-									}
+									onDragStart={(e) => {
+										setDraggedChild({ id: p.id, name: p.name });
+										e.dataTransfer.effectAllowed = "copy";
+										// Necesario para que el arrastre inicie en Firefox/Chrome.
+										e.dataTransfer.setData("text/plain", String(p.id));
+									}}
 									onDragEnd={clearDrag}
 									className="cursor-grab rounded bg-amber-100 px-1.5 py-0.5 font-medium hover:bg-amber-200 active:cursor-grabbing"
 									title="Arrástrame sobre un PADRE (será su hijo) o sobre un HIJO (saldrá de su despiece, 2º nivel)"
