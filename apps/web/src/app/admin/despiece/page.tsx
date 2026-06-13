@@ -20,6 +20,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AntonellaSlot } from "@/components/antonella-slot";
+import { DespiecePlanCard } from "@/components/despiece-plan-card";
 import { useTRPC } from "@/lib/trpc/client";
 
 type Tab = "despiezar" | "recetas";
@@ -214,6 +215,9 @@ export default function DespiecePage() {
 									}
 						}
 					/>
+
+					{/* iAntonella: plan de despiece sugerido (calcula y ejecuta) */}
+					<DespiecePlanCard onDone={invalidate} />
 
 					{/* Cards de canales disponibles */}
 					{canales.length === 0 ? (

@@ -503,6 +503,138 @@ export const yieldsRouter = router({
 		return { canales, recipes, subRecipes, demandByProduct };
 	}),
 
+	// Plan de despiece sugerido por iAntonella: a partir de los pedidos abiertos,
+	// calcula cuántos canales de cada tipo conviene despiezar para cubrir la
+	// demanda (descontando el stock ya despiezado) y qué piezas se generarían.
+	suggestDespiecePlan: protectedProcedure
+		.input(z.void())
+		.output(
+			z.object({
+				hasDemand: z.boolean(),
+				totalCanals: z.number(),
+				plan: z.array(
+					z.object({
+						canalProductId: z.number(),
+						canalName: z.string(),
+						type: z.string(),
+						quantity: z.number(),
+						generates: z.array(
+							z.object({
+								name: z.string(),
+								pieces: z.number(),
+								kg: z.number(),
+							}),
+						),
+					}),
+				),
+			}),
+		)
+		.query(async () => {
+			// Canales raíz con stock
+			const canalRows = await db
+				.select({
+					id: products.id,
+					name: products.name,
+					stock: products.stock_pieces,
+					avg: products.avg_weight_per_piece_kg,
+				})
+				.from(products)
+				.where(
+					and(
+						eq(products.is_parent_product, true),
+						ilike(products.name, "CANAL%"),
+					),
+				)
+				.orderBy(products.name);
+			const canalIds = canalRows.map((c) => c.id);
+			if (canalIds.length === 0)
+				return { hasDemand: false, totalCanals: 0, plan: [] };
+
+			const prods = await db
+				.select({
+					id: products.id,
+					name: products.name,
+					avg: products.avg_weight_per_piece_kg,
+					stockPieces: products.stock_pieces,
+				})
+				.from(products);
+			const prodMap = new Map(prods.map((p) => [p.id, p]));
+
+			const recRows = await db
+				.select({
+					parentId: productTransformations.parent_product_id,
+					childId: productTransformations.child_product_id,
+					pieces: productTransformations.yield_quantity_pieces,
+					ratio: productTransformations.yield_weight_ratio,
+					type: productTransformations.transformation_type,
+				})
+				.from(productTransformations)
+				.where(eq(productTransformations.is_active, true));
+			const canalIdSet = new Set(canalIds);
+
+			// Demanda viva por pieza
+			const demandRows = (await db.execute(sql`
+				SELECT oi.product_id AS pid,
+				       COALESCE(SUM(oi.quantity_pieces),0)::int AS pieces
+				FROM order_items oi
+				JOIN orders o ON o.id = oi.order_id
+				WHERE oi.product_id IS NOT NULL
+				  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
+				  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO')
+				GROUP BY oi.product_id
+			`)) as unknown as { pid: number; pieces: number }[];
+			const demand = new Map<number, number>();
+			for (const r of demandRows) demand.set(Number(r.pid), Number(r.pieces) || 0);
+			const hasDemand = [...demand.values()].some((v) => v > 0);
+
+			const plan: {
+				canalProductId: number;
+				canalName: string;
+				type: string;
+				quantity: number;
+				generates: { name: string; pieces: number; kg: number }[];
+			}[] = [];
+
+			for (const canal of canalRows) {
+				const canalRecipes = recRows.filter((r) => r.parentId === canal.id);
+				if (canalRecipes.length === 0) continue;
+				const type = canalRecipes.find((r) => r.type)?.type ?? "";
+
+				// Canales necesarios = máx sobre las piezas con demanda no cubierta
+				let need = 0;
+				for (const r of canalRecipes) {
+					const pzPerCanal = Number(r.pieces) || 0;
+					if (pzPerCanal <= 0) continue;
+					const dem = demand.get(r.childId) ?? 0;
+					if (dem <= 0) continue;
+					const stock = prodMap.get(r.childId)?.stockPieces ?? 0;
+					const missing = Math.max(0, dem - stock);
+					if (missing <= 0) continue;
+					need = Math.max(need, Math.ceil(missing / pzPerCanal));
+				}
+				const quantity = Math.min(need, canal.stock ?? 0);
+				if (quantity <= 0) continue;
+
+				const avgW = Number(canal.avg ?? 0);
+				const generates = canalRecipes.map((r) => ({
+					name: prodMap.get(r.childId)?.name ?? `#${r.childId}`,
+					pieces: quantity * (Number(r.pieces) || 0),
+					kg: quantity * avgW * (Number(r.ratio) || 0),
+				}));
+
+				plan.push({
+					canalProductId: canal.id,
+					canalName: canal.name,
+					type,
+					quantity,
+					generates,
+				});
+			}
+
+			const totalCanals = plan.reduce((s, p) => s + p.quantity, 0);
+			return { hasDemand, totalCanals, plan };
+		}),
+
 	// Proyecta las piezas resultado del despiece de N canales.
 	// Cascada recursiva por yield_weight_ratio: 1er nivel (canal → padres)
 	// y 2º nivel (BASE: padre → piezas finales). Devuelve árbol + hojas.
