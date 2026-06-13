@@ -464,6 +464,8 @@ export default function RecipesPage({
 	);
 	const [newProdName, setNewProdName] = useState("");
 	const [newProdCat, setNewProdCat] = useState("Otros");
+	// Producto seleccionado para abrir su ficha (ProductCard)
+	const [selProdId, setSelProdId] = useState<number | null>(null);
 
 	// Exportar las recetas activas a JSON o SQL (descarga en el navegador)
 	const downloadFile = (name: string, content: string, type: string) => {
@@ -1157,9 +1159,14 @@ export default function RecipesPage({
 							background: CAT_COLORS[p.category ?? "Otros"] ?? "#64748b",
 						}}
 					/>
-					<span className="min-w-0 flex-1 truncate font-semibold text-xs">
+					<button
+						type="button"
+						onClick={() => setSelProdId(p.id)}
+						className="min-w-0 flex-1 truncate text-left font-semibold text-xs hover:underline"
+						title="Ver ficha del producto"
+					>
 						{p.name}
-					</span>
+					</button>
 					{p.avg_weight_per_piece_kg != null &&
 						Number(p.avg_weight_per_piece_kg) > 0 && (
 							<span className="shrink-0 text-[9px] text-muted-foreground">
@@ -1789,8 +1796,256 @@ export default function RecipesPage({
 		upsertMutation.isPending ||
 		setActiveMutation.isPending;
 
+	// ───── Ficha del producto (modal): dónde sale, %, piezas, acciones ─────
+	const ProductCard = ({ productId }: { productId: number }) => {
+		const prod = mapProductById.get(productId);
+		if (!prod) return null;
+		const uses = mapRecipes.filter((r) => r.child_product_id === productId);
+		const prov = prod.category === "Compra";
+		const usedTypes = new Set(uses.map((u) => u.parent_product_id));
+		const stylesWithout = boardStyles.filter((s) => !usedTypes.has(s.parentId));
+
+		return (
+			<Dialog open onOpenChange={(o) => !o && setSelProdId(null)}>
+				<DialogContent className="max-h-[88vh] max-w-xl overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle className="flex items-center gap-2">
+							<span
+								className="h-3 w-3 rounded-full"
+								style={{
+									background: CAT_COLORS[prod.category ?? "Otros"] ?? "#64748b",
+								}}
+							/>
+							{prod.name}
+						</DialogTitle>
+						<p className="text-muted-foreground text-xs">
+							{prod.category ?? "Otros"} ·{" "}
+							{prov
+								? "producto de proveedor"
+								: uses.length > 0
+									? `en ${uses.length} receta(s)`
+									: "sin ubicar"}
+						</p>
+					</DialogHeader>
+
+					{prov && (
+						<div className="flex items-center gap-2 rounded-lg bg-[var(--cg-green-wash)] px-3 py-2.5 text-xs">
+							<TruckIcon className="h-4 w-4 text-[var(--cg-green)]" />
+							Este producto <b>no depende del despiece</b> de un canal: entra por
+							compra a proveedor.
+						</div>
+					)}
+
+					{/* Sale de estos canales / padres */}
+					<div className="space-y-2">
+						<p className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wide">
+							Sale de estas recetas
+						</p>
+						{uses.length === 0 && (
+							<p className="text-muted-foreground text-xs">
+								Todavía no está en ninguna receta. Agrégalo a un canal abajo o
+								márcalo como producto de proveedor.
+							</p>
+						)}
+						{uses.map((u) => {
+							const isKid = u.transformation_type === "BASE";
+							const canalW = Number(u.parentProduct.avg_weight ?? 0) || 0;
+							const ratio = Number(u.yield_weight_ratio);
+							const kg = canalW > 0 ? ratio * canalW : 0;
+							const pieces = Number(u.yield_quantity_pieces);
+							return (
+								<div key={u.id} className="rounded-lg border p-2.5">
+									<div className="mb-2 flex flex-wrap items-center gap-2">
+										<span
+											className="rounded border px-1.5 py-0.5 font-bold text-[9px]"
+											style={{
+												color: accentFor(u.transformation_type),
+												borderColor: accentFor(u.transformation_type),
+											}}
+										>
+											{u.transformation_type}
+										</span>
+										{isKid && (
+											<span className="rounded bg-muted px-1.5 py-0.5 font-bold text-[9px] text-muted-foreground">
+												de {u.parentProduct.name}
+											</span>
+										)}
+										<span
+											className={cn(
+												"ml-auto font-bold font-mono text-xs",
+												u.is_variant ? "text-amber-700" : "text-blue-600",
+											)}
+										>
+											{(ratio * 100).toFixed(1)}%
+										</span>
+									</div>
+									<div className="flex flex-wrap items-center gap-3 text-xs">
+										<span className="text-muted-foreground">Piezas</span>
+										<div className="flex items-center overflow-hidden rounded-md border">
+											<button
+												type="button"
+												className="px-2 py-0.5 hover:bg-muted"
+												onClick={() =>
+													quickUpdateMut.mutate({
+														id: u.id,
+														yieldQuantityPieces: Math.max(0, pieces - 1),
+													})
+												}
+											>
+												−
+											</button>
+											<span className="min-w-[1.6rem] text-center font-bold font-mono">
+												{pieces}
+											</span>
+											<button
+												type="button"
+												className="px-2 py-0.5 hover:bg-muted"
+												onClick={() =>
+													quickUpdateMut.mutate({
+														id: u.id,
+														yieldQuantityPieces: pieces + 1,
+													})
+												}
+											>
+												+
+											</button>
+										</div>
+										<span className="text-muted-foreground">Peso</span>
+										<div className="flex items-center gap-1">
+											<Input
+												key={`${u.id}:${kg.toFixed(2)}`}
+												type="number"
+												step="0.01"
+												defaultValue={kg > 0 ? kg.toFixed(2) : ""}
+												placeholder="kg"
+												disabled={canalW <= 0}
+												className="h-7 w-20 text-right text-xs"
+												onBlur={(e) => {
+													const n = Number.parseFloat(e.target.value) || 0;
+													if (canalW > 0)
+														quickUpdateMut.mutate({
+															id: u.id,
+															yieldWeightRatio: n / canalW,
+														});
+												}}
+												onKeyDown={(e) =>
+													e.key === "Enter" &&
+													(e.target as HTMLInputElement).blur()
+												}
+											/>
+											<span className="text-[10px] text-muted-foreground">kg</span>
+										</div>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+
+					{/* Despiezar este producto (agregar sub-pieza) */}
+					<div className="space-y-1.5">
+						<p className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wide">
+							Despiezar {prod.name} (agregar sub-piezas)
+						</p>
+						<Combobox
+							noSelect
+							placeholder="+ Agregar sub-pieza…"
+							className="h-8 w-full max-w-xs text-xs"
+							items={productOptions
+								.filter((p) => p.id !== productId)
+								.map((p) => ({ id: p.id, name: p.name }))}
+							onSelect={(id) => {
+								const p = mapProductById.get(Number(id));
+								if (p && Number(id) !== productId)
+									dropCreate(productId, "BASE", { id: p.id, name: p.name });
+							}}
+						/>
+					</div>
+
+					{/* Agregar a un canal donde no está */}
+					{stylesWithout.length > 0 && (
+						<div className="space-y-1.5">
+							<p className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wide">
+								Agregar a un canal
+							</p>
+							<Combobox
+								noSelect
+								placeholder="Agregar a un canal…"
+								className="h-8 w-full max-w-xs text-xs"
+								items={stylesWithout.map((s) => ({
+									id: s.parentId,
+									name: s.type,
+								}))}
+								onSelect={(parentId) => {
+									const s = stylesWithout.find(
+										(x) => x.parentId === Number(parentId),
+									);
+									if (s)
+										dropCreate(s.parentId, s.type, {
+											id: productId,
+											name: prod.name,
+										});
+								}}
+							/>
+						</div>
+					)}
+
+					{/* Acciones */}
+					<div className="flex flex-wrap items-center gap-2 border-t pt-3">
+						<Button
+							variant="outline"
+							size="sm"
+							className={cn(
+								prov &&
+									"border-[var(--cg-green)] text-[var(--cg-green)]",
+							)}
+							onClick={() =>
+								classifyOrphanMut.mutate({ productId, action: "purchased" })
+							}
+						>
+							<TruckIcon className="mr-1.5 h-4 w-4" />
+							{prov ? "Es producto de proveedor" : "Marcar como proveedor"}
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							className="ml-auto border-red-300 text-red-600 hover:bg-red-50"
+							onClick={() => {
+								const usado = uses.length > 0;
+								const esCanal = prod.is_parent_product === true;
+								if (esCanal || usado) {
+									if (
+										!window.confirm(
+											`⚠️ "${prod.name}" ${esCanal ? "es un CANAL" : "está en recetas"}. Eliminarlo BORRA sus recetas. ¿Seguro?`,
+										)
+									)
+										return;
+									if (
+										window.prompt(
+											`Escribe ELIMINAR para borrar "${prod.name}":`,
+										) !== "ELIMINAR"
+									)
+										return;
+								} else if (
+									!window.confirm(`¿Borrar "${prod.name}"?`)
+								) {
+									return;
+								}
+								deleteProductMut.mutate({ id: productId });
+								setSelProdId(null);
+							}}
+						>
+							<TrashIcon className="mr-1.5 h-4 w-4" />
+							Borrar producto
+						</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
+		);
+	};
+
 	return (
 		<div className="space-y-4">
+			{selProdId != null && <ProductCard productId={selProdId} />}
 			{!configurator && (
 				<AntonellaSlot
 					data={{
