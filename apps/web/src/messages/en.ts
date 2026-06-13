@@ -57,6 +57,7 @@ const messages = {
 		settings: "Settings",
 		support: "Support",
 		logout: "Logout",
+		designSystem: "Design System",
 	},
 	login: {
 		title: "Welcome back",

@@ -59,6 +59,7 @@ const messages: Messages = {
 		settings: "Configurações",
 		support: "Suporte",
 		logout: "Sair",
+		designSystem: "Sistema de Design",
 	},
 	login: {
 		title: "Bem-vindo de volta",
