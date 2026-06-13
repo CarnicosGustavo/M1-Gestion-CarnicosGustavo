@@ -336,6 +336,9 @@ export const customers = pgTable("customers", {
 	status: varchar("status", { length: 20 }),
 	address: text("address"),
 	notes: text("notes"),
+	// Lista de precios asignada (del diseño): los precios del cliente caen a esta
+	// lista cuando no hay un precio propio del cliente para el producto.
+	price_list_id: integer("price_list_id"),
 	created_at: timestamp("created_at").defaultNow(),
 });
 

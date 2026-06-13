@@ -30,6 +30,9 @@ export default function CustomersPage() {
   const { data: accounts = [] } = useQuery(trpc.collections.listAccounts.queryOptions()) as {
     data: { customerId: number; balance: number; creditLimit: number; termsDays: number }[];
   };
+  const { data: priceLists = [] } = useQuery(
+    trpc.inventory.priceListsList.queryOptions(),
+  );
   const t = useTranslations("customers");
   const tc = useTranslations("common");
 
@@ -160,6 +163,7 @@ export default function CustomersPage() {
       status: "active" as "active" | "inactive",
       sale_type: "contado" as "contado" | "credito",
       credit_limit: "",
+      price_list_id: "none",
     },
     validators: {
       onSubmit: ({ value }) => {
@@ -180,6 +184,10 @@ export default function CustomersPage() {
         address: value.address || undefined,
         notes: value.notes || undefined,
         status: value.status,
+        price_list_id:
+          value.price_list_id && value.price_list_id !== "none"
+            ? Number(value.price_list_id)
+            : null,
       };
       // Crédito: solo se envía el límite si el cliente es a crédito.
       const credit =
@@ -225,6 +233,10 @@ export default function CustomersPage() {
     const hasCredit = !!cred && cred.creditLimit > 0;
     form.setFieldValue("sale_type", hasCredit ? "credito" : "contado");
     form.setFieldValue("credit_limit", hasCredit ? String(cred?.creditLimit) : "");
+    form.setFieldValue(
+      "price_list_id",
+      c.price_list_id != null ? String(c.price_list_id) : "none",
+    );
     setIsDialogOpen(true);
   };
 
@@ -354,6 +366,31 @@ export default function CustomersPage() {
                     <Select value={field.state.value} onValueChange={(value) => field.handleChange(value as "active" | "inactive")}>
                       <SelectTrigger id="status" className="col-span-3"><SelectValue placeholder={t("selectStatus")} /></SelectTrigger>
                       <SelectContent><SelectItem value="active">{tc("active")}</SelectItem><SelectItem value="inactive">{tc("inactive")}</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </form.Field>
+
+              {/* Lista de precios — del diseño (NuevoClienteModal) */}
+              <form.Field name="price_list_id">
+                {(field) => (
+                  <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+                    <Label htmlFor="price_list_id">Lista de precios</Label>
+                    <Select
+                      value={field.state.value}
+                      onValueChange={(v) => field.handleChange(v)}
+                    >
+                      <SelectTrigger id="price_list_id" className="col-span-3">
+                        <SelectValue placeholder="Sin lista (precios base)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin lista (precios base)</SelectItem>
+                        {priceLists.map((pl) => (
+                          <SelectItem key={pl.id} value={String(pl.id)}>
+                            {pl.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
                     </Select>
                   </div>
                 )}

@@ -21,6 +21,7 @@ const customerSchema = z.object({
   address: z.string().nullable(),
   notes: z.string().nullable(),
   status: z.string().nullable(),
+  price_list_id: z.number().nullable(),
   user_uid: z.string().nullable(),
   created_at: z.date().nullable(),
 });
@@ -51,6 +52,8 @@ export const customersRouter = router({
         address: z.string().optional(),
         notes: z.string().optional(),
         status: z.enum(["active", "inactive"]).optional(),
+        // Lista de precios asignada (del diseño)
+        price_list_id: z.number().nullable().optional(),
         // Crédito (del diseño): si se define un límite, se crea su cuenta de crédito.
         credit_limit: z.number().nonnegative().optional(),
         terms_days: z.number().int().nonnegative().optional(),
@@ -87,6 +90,8 @@ export const customersRouter = router({
         address: z.string().optional(),
         notes: z.string().optional(),
         status: z.enum(["active", "inactive"]).optional(),
+        // Lista de precios asignada (del diseño)
+        price_list_id: z.number().nullable().optional(),
         // Crédito (del diseño): upsert de la cuenta de crédito si se define límite.
         credit_limit: z.number().nonnegative().optional(),
         terms_days: z.number().int().nonnegative().optional(),
