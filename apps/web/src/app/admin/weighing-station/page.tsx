@@ -358,6 +358,19 @@ export default function WeighingStationPage() {
 		}
 	};
 
+	// Teclado numérico en pantalla (del diseño PesajeModal): toca para capturar
+	// el peso sin teclado físico, útil en tablet junto a la báscula.
+	const tapKey = (k: string) =>
+		setActualWeight((v) =>
+			k === "←"
+				? v.slice(0, -1)
+				: k === "." && v.includes(".")
+					? v
+					: v.length < 6
+						? v + k
+						: v,
+		);
+
 	const batchProduct = useMemo(
 		() => products.find((p) => p.id === batchProductId) ?? null,
 		[products, batchProductId],
@@ -642,6 +655,22 @@ export default function WeighingStationPage() {
 											</button>
 										</div>
 									</div>
+									{/* Lectura grande de peso neto — del diseño (PesajeModal) */}
+									<div className="mb-3 rounded-2xl bg-[var(--cg-chrome)] px-4 py-4 text-center">
+										<div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--cg-chrome-fg)]/55">
+											Peso neto
+										</div>
+										<div className="font-display text-6xl leading-none text-[var(--cg-chrome-fg)]">
+											{netKg.toFixed(2)}
+											<span className="ml-2 align-baseline text-2xl font-semibold text-[var(--cg-chrome-fg)]/60">
+												kg
+											</span>
+										</div>
+										<div className="mt-2 font-mono text-xs text-[var(--cg-chrome-fg)]/50">
+											bruto {grossKg.toFixed(2)} − tara {tareKg.toFixed(2)}
+										</div>
+									</div>
+
 									<div className="relative">
 										<Input
 											ref={weightInputRef}
@@ -660,6 +689,22 @@ export default function WeighingStationPage() {
 										<div className="absolute right-5 top-1/2 -translate-y-1/2 text-3xl font-bold text-muted-foreground pointer-events-none">
 											kg
 										</div>
+									</div>
+
+									{/* Teclado numérico en pantalla — del diseño (PesajeModal) */}
+									<div className="mt-3 grid grid-cols-3 gap-2">
+										{["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "←"].map(
+											(k) => (
+												<button
+													key={k}
+													type="button"
+													onClick={() => tapKey(k)}
+													className="rounded-xl border border-border bg-card py-3 font-mono text-xl font-bold text-foreground transition-colors hover:bg-muted"
+												>
+													{k}
+												</button>
+											),
+										)}
 									</div>
 								</div>
 
