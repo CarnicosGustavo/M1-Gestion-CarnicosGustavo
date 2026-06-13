@@ -1401,6 +1401,128 @@ export const antonicellaRouter = router({
 			};
 		}),
 
+	// ── Notificaciones internas (iAntonella vigilando el negocio) ──
+	// Detecta condiciones reales y devuelve avisos para mostrar en el dashboard.
+	notifications: protectedProcedure
+		.input(z.void())
+		.output(
+			z.object({
+				items: z.array(
+					z.object({
+						id: z.string(),
+						tone: z.enum(["alerta", "aviso", "sugerencia", "ok"]),
+						title: z.string(),
+						text: z.string(),
+						href: z.string(),
+						ask: z.string().optional(),
+					}),
+				),
+			}),
+		)
+		.query(async ({ ctx }) => {
+			const uid = ctx.user.id;
+			const items: {
+				id: string;
+				tone: "alerta" | "aviso" | "sugerencia" | "ok";
+				title: string;
+				text: string;
+				href: string;
+				ask?: string;
+			}[] = [];
+
+			// 1) Cobranza vencida (saldo con días de antigüedad)
+			const overdue = (await db.execute(sql`
+				SELECT count(DISTINCT cust.id) AS n,
+				       COALESCE(SUM(charges.total - COALESCE(pays.total,0)),0) AS saldo
+				FROM customers cust
+				JOIN (
+				  SELECT customer_id, SUM(amount) AS total, MIN(created_at) AS first_at
+				  FROM credit_charges GROUP BY customer_id
+				) charges ON charges.customer_id = cust.id
+				LEFT JOIN (
+				  SELECT customer_id, SUM(amount) AS total FROM credit_payments GROUP BY customer_id
+				) pays ON pays.customer_id = cust.id
+				WHERE cust.user_uid = ${uid}
+				  AND (charges.total - COALESCE(pays.total,0)) > 0.5
+			`)) as unknown as { n: number; saldo: string | number }[];
+			const overdueN = Number(overdue[0]?.n ?? 0);
+			const overdueSaldo = Number(overdue[0]?.saldo ?? 0);
+			if (overdueN > 0) {
+				items.push({
+					id: "cobranza",
+					tone: overdueSaldo > 2000 ? "alerta" : "aviso",
+					title: "Cobranza pendiente",
+					text: `${overdueN} cliente(s) con saldo por cobrar ($${overdueSaldo.toLocaleString("es-MX", { maximumFractionDigits: 0 })}).`,
+					href: "/admin/collections",
+					ask: "¿Qué clientes debo priorizar en cobranza?",
+				});
+			}
+
+			// 2) Pedidos por pesar
+			const weigh = (await db.execute(sql`
+				SELECT count(DISTINCT o.id) AS n
+				FROM orders o JOIN order_items oi ON oi.order_id = o.id
+				WHERE o.user_uid = ${uid}
+				  AND o.status NOT IN ('cancelled','COMPLETADA','COBRADA','ENTREGADA')
+				  AND oi.status IN ('PENDIENTE_PESAJE','PENDING')
+			`)) as unknown as { n: number }[];
+			const weighN = Number(weigh[0]?.n ?? 0);
+			if (weighN > 0) {
+				items.push({
+					id: "pesaje",
+					tone: "aviso",
+					title: "Pedidos por pesar",
+					text: `${weighN} pedido(s) esperan pesaje antes de cobrar.`,
+					href: "/admin/weighing-station",
+				});
+			}
+
+			// 3) Demanda no cubierta → sugerir despiece
+			const demand = (await db.execute(sql`
+				SELECT COALESCE(SUM(oi.quantity_pieces),0)::int AS pz
+				FROM order_items oi JOIN orders o ON o.id = oi.order_id
+				WHERE o.user_uid = ${uid}
+				  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
+				  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO')
+			`)) as unknown as { pz: number }[];
+			const demandPz = Number(demand[0]?.pz ?? 0);
+			if (demandPz > 0) {
+				items.push({
+					id: "despiece",
+					tone: "sugerencia",
+					title: "Despiece sugerido",
+					text: `Hay ${demandPz} piezas pedidas por producir. Puedo calcular y ejecutar el despiece.`,
+					href: "/admin/despiece",
+					ask: "¿Qué conviene despiezar hoy?",
+				});
+			}
+
+			// 4) Merma alta en alguna receta de canal
+			const merma = (await db.execute(sql`
+				SELECT parent.name AS canal,
+				       ROUND((1 - SUM(pt.yield_weight_ratio))::numeric * 100, 1) AS merma
+				FROM product_transformations pt
+				JOIN products parent ON parent.id = pt.parent_product_id
+				WHERE parent.user_uid = ${uid} AND pt.is_active
+				  AND pt.transformation_type <> 'BASE' AND pt.is_variant = false
+				GROUP BY parent.name
+				HAVING (1 - SUM(pt.yield_weight_ratio)) > 0.12
+				ORDER BY merma DESC LIMIT 1
+			`)) as unknown as { canal: string; merma: string | number }[];
+			if (merma[0]) {
+				items.push({
+					id: "merma",
+					tone: "alerta",
+					title: "Revisa el cierre de pesos",
+					text: `El ${merma[0].canal} tiene ${Number(merma[0].merma).toFixed(1)}% de merma en su receta (alto). Falta capturar el kg de alguna pieza.`,
+					href: "/admin/inventory/recipes",
+					ask: "¿Qué piezas faltan por capturar?",
+				});
+			}
+
+			return { items };
+		}),
+
 	// ── Configuración de Antonella ──
 
 	// Lista las herramientas integradas con su metadata (para la UI)

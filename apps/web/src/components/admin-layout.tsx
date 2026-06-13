@@ -51,6 +51,7 @@ import { useId, useState } from "react";
 import { logout } from "@/app/login/actions";
 import { cn } from "@finopenpos/ui/lib/utils";
 import { AntonellaProvider } from "@/components/antonella-dock";
+import { NotificationBell } from "@/components/notification-bell";
 import { RouteAntonellaSlot } from "@/components/antonella-route-slot";
 import { type Palette, useTheme } from "@/components/theme-provider";
 import { CLIENT_NAME } from "@/lib/constants";
@@ -284,6 +285,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 				</Link>
 
 				<div className="flex items-center gap-2.5 justify-self-end">
+					<NotificationBell />
 					<ThemeControl />
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
