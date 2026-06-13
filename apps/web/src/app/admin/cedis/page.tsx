@@ -4,7 +4,7 @@ import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
 import { cn } from "@finopenpos/ui/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { SaveIcon, ScaleIcon, XIcon } from "lucide-react";
+import { PlusIcon, SaveIcon, ScaleIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -74,6 +74,23 @@ export default function CedisPage() {
 			onError: (e: any) => toast.error(e.message ?? "Error al guardar"),
 		}),
 	);
+
+	const [newSupplier, setNewSupplier] = useState("");
+	const addSupplierMut = useMutation(
+		trpc.yields.addCedisSupplier.mutationOptions({
+			onSuccess: () => {
+				toast.success("Proveedor agregado");
+				setNewSupplier("");
+				queryClient.invalidateQueries({ queryKey: dayOpts.queryKey });
+			},
+			onError: (e: any) => toast.error(e.message ?? "Error"),
+		}),
+	);
+	const addSupplier = () => {
+		const name = newSupplier.trim();
+		if (!name) return;
+		addSupplierMut.mutate({ date, supplier: name });
+	};
 
 	const patch = (id: number, p: Partial<SupState>) =>
 		setSups((arr) => arr.map((s) => (s.id === id ? { ...s, ...p } : s)));
@@ -178,23 +195,42 @@ export default function CedisPage() {
 			{/* Proveedores */}
 			{sups.length === 0 ? (
 				<div className="rounded-xl border bg-card p-8 text-center text-muted-foreground text-sm">
-					No hay proveedores para este día. Captúralos primero en la{" "}
+					No hay proveedores para este día. Agrégalos aquí abajo o captúralos en
+					la{" "}
 					<Link href="/admin/purchase" className="font-medium text-primary underline">
 						Compra del día
-					</Link>
-					.
+					</Link>{" "}
+					(así también se calcula la merma).
 				</div>
 			) : (
 				<div className="space-y-3">
 					{sups.map((s) => (
-						<SupplierCard
-							key={s.id}
-							s={s}
-							onPatch={(p) => patch(s.id, p)}
-						/>
+						<SupplierCard key={s.id} s={s} onPatch={(p) => patch(s.id, p)} />
 					))}
 				</div>
 			)}
+
+			{/* Agregar proveedor directo en CEDIS */}
+			<div className="flex items-center gap-2 rounded-xl border border-dashed p-3">
+				<Input
+					value={newSupplier}
+					onChange={(e) => setNewSupplier(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") addSupplier();
+					}}
+					placeholder="Nombre del proveedor (ej. Maldonado)"
+					className="h-9 max-w-xs"
+				/>
+				<Button
+					variant="outline"
+					size="sm"
+					onClick={addSupplier}
+					disabled={!newSupplier.trim() || addSupplierMut.isPending}
+				>
+					<PlusIcon className="mr-1.5 h-4 w-4" />
+					Agregar proveedor
+				</Button>
+			</div>
 		</div>
 	);
 }

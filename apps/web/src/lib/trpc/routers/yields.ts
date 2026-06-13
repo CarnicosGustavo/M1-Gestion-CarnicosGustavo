@@ -210,6 +210,24 @@ export const yieldsRouter = router({
 				});
 		}),
 
+	// Agrega un proveedor al día directamente desde CEDIS (sin pasar por la
+	// Compra del día). Crea un renglón de channel_purchases con solo el nombre;
+	// el peso en pie (para la merma) se completa luego en la Compra del día.
+	addCedisSupplier: protectedProcedure
+		.input(z.object({ date: z.string(), supplier: z.string().min(1) }))
+		.output(z.object({ id: z.number() }))
+		.mutation(async ({ ctx, input }) => {
+			const [row] = await db
+				.insert(channelPurchases)
+				.values({
+					supplier: input.supplier.trim(),
+					purchase_date: input.date,
+					user_uid: ctx.user.id,
+				})
+				.returning({ id: channelPurchases.id });
+			return { id: row.id };
+		}),
+
 	// Guarda la verificación CEDIS: calcula verified_canales/_kg y persiste detalle.
 	saveCedis: protectedProcedure
 		.input(
