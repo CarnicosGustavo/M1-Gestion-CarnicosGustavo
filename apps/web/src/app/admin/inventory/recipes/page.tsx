@@ -39,6 +39,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	BookOpenIcon,
 	CheckCircleIcon,
+	DownloadIcon,
 	FilePenIcon,
 	InfoIcon,
 	MaximizeIcon,
@@ -462,6 +463,47 @@ export default function RecipesPage({
 	);
 	const [newProdName, setNewProdName] = useState("");
 	const [newProdCat, setNewProdCat] = useState("Otros");
+
+	// Exportar las recetas activas a JSON o SQL (descarga en el navegador)
+	const downloadFile = (name: string, content: string, type: string) => {
+		const blob = new Blob([content], { type });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = name;
+		a.click();
+		URL.revokeObjectURL(url);
+	};
+	const exportJson = () => {
+		const data = mapRecipes.map((r) => ({
+			padre: r.parentProduct.name,
+			hijo: r.childProduct.name,
+			estilo: r.transformation_type,
+			piezas: Number(r.yield_quantity_pieces),
+			ratio: Number(r.yield_weight_ratio),
+			variante: r.is_variant === true,
+		}));
+		downloadFile(
+			"recetas.json",
+			JSON.stringify(data, null, 2),
+			"application/json",
+		);
+		toast.success(`Exportadas ${data.length} recetas (JSON)`);
+	};
+	const exportSql = () => {
+		const esc = (s: string) => s.replace(/'/g, "''");
+		const lines = [
+			"-- Recetas (product_transformations) — Cárnicos Gustavo",
+			"-- Re-ejecuta tras verificar los IDs de producto en destino.",
+			"",
+			...mapRecipes.map(
+				(r) =>
+					`INSERT INTO product_transformations (parent_product_id, child_product_id, transformation_type, yield_quantity_pieces, yield_weight_ratio, is_variant, is_active) VALUES (${r.parent_product_id}, ${r.child_product_id}, '${esc(r.transformation_type)}', ${Number(r.yield_quantity_pieces)}, ${Number(r.yield_weight_ratio)}, ${r.is_variant === true}, true);  -- ${esc(r.parentProduct.name)} -> ${esc(r.childProduct.name)}`,
+			),
+		];
+		downloadFile("recetas.sql", lines.join("\n"), "text/plain");
+		toast.success(`Exportadas ${mapRecipes.length} recetas (SQL)`);
+	};
 
 	const mapTypes = useMemo(() => {
 		const types = new Set<string>();
@@ -1748,6 +1790,26 @@ export default function RecipesPage({
 									</Button>
 								</>
 							)}
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<Button
+										size="sm"
+										variant="outline"
+										title="Exporta las recetas a un archivo"
+									>
+										<DownloadIcon className="mr-2 h-4 w-4" />
+										Exportar
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end">
+									<DropdownMenuItem onClick={exportJson}>
+										Exportar JSON
+									</DropdownMenuItem>
+									<DropdownMenuItem onClick={exportSql}>
+										Exportar SQL
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
 							<Button
 								size="sm"
 								variant="outline"
