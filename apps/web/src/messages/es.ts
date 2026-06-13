@@ -59,6 +59,7 @@ const messages = {
 		coldInventory: "Inventario Frío",
 		collections: "Cobranza",
 		cedis: "Verificación CEDIS",
+		cierre: "Cierre del día",
 		antonella: "iAntonella",
 		adminPanel: "Panel de administración",
 		openMenu: "Abrir menú",

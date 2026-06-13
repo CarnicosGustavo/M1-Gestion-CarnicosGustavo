@@ -19,6 +19,7 @@ import {
 	BanknoteIcon,
 	BookOpenIcon,
 	BotIcon,
+	ClipboardCheckIcon,
 	ClipboardListIcon,
 	CreditCardIcon,
 	DollarSignIcon,
@@ -75,6 +76,7 @@ interface NavItem {
 		| "collections"
 		| "checkout"
 		| "cedis"
+		| "cierre"
 		| "antonella";
 	icon: LucideIcon;
 }
@@ -93,6 +95,7 @@ const opNav: NavItem[] = [
 	},
 	{ href: "/admin/checkout", labelKey: "checkout", icon: BanknoteIcon },
 	{ href: "/admin/yield", labelKey: "yield", icon: ClipboardListIcon },
+	{ href: "/admin/cierre", labelKey: "cierre", icon: ClipboardCheckIcon },
 	{ href: "/admin/collections", labelKey: "collections", icon: HandCoinsIcon },
 	{ href: "/admin/customers", labelKey: "customers", icon: UsersIcon },
 	{ href: "/admin/pos", labelKey: "pos", icon: ShoppingCartIcon },

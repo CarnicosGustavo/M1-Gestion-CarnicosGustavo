@@ -383,6 +383,66 @@ export const yieldsRouter = router({
 		);
 	}),
 
+	// Cierre del día: por producto, Entró (producido) − Salió (vendido) = Quedó.
+	//  - Entró: producción del día (DESPIECE/PRODUCCION/PESAJE, piezas/kg positivos)
+	//  - Salió: ventas del día (VENTA, en valor absoluto)
+	cierre: protectedProcedure
+		.input(z.object({ date: z.string() }))
+		.output(
+			z.object({
+				rows: z.array(
+					z.object({
+						productId: z.number(),
+						name: z.string(),
+						category: z.string().nullable(),
+						entroPz: z.number(),
+						entroKg: z.number(),
+						salioPz: z.number(),
+						salioKg: z.number(),
+					}),
+				),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			const res = (await db.execute(sql`
+				SELECT p.id AS pid, p.name, p.category,
+					COALESCE(SUM(CASE WHEN it.transaction_type IN ('DESPIECE','PRODUCCION','PESAJE') AND it.quantity_change_pieces > 0 THEN it.quantity_change_pieces ELSE 0 END),0)::int AS entro_pz,
+					COALESCE(SUM(CASE WHEN it.transaction_type IN ('DESPIECE','PRODUCCION','PESAJE') AND COALESCE(it.quantity_change_kg,0) > 0 THEN it.quantity_change_kg ELSE 0 END),0) AS entro_kg,
+					COALESCE(SUM(CASE WHEN it.transaction_type = 'VENTA' THEN -it.quantity_change_pieces ELSE 0 END),0)::int AS salio_pz,
+					COALESCE(SUM(CASE WHEN it.transaction_type = 'VENTA' THEN -COALESCE(it.quantity_change_kg,0) ELSE 0 END),0) AS salio_kg
+				FROM inventory_transactions it
+				JOIN products p ON p.id = it.product_id
+				WHERE p.user_uid = ${ctx.user.id}
+				  AND it.created_at::date = ${input.date}
+				GROUP BY p.id, p.name, p.category
+				ORDER BY p.name
+			`)) as unknown as {
+				pid: number;
+				name: string;
+				category: string | null;
+				entro_pz: number;
+				entro_kg: string | number;
+				salio_pz: number;
+				salio_kg: string | number;
+			}[];
+
+			const rows = res
+				.map((r) => ({
+					productId: Number(r.pid),
+					name: r.name,
+					category: r.category,
+					entroPz: Number(r.entro_pz) || 0,
+					entroKg: Number(r.entro_kg) || 0,
+					salioPz: Number(r.salio_pz) || 0,
+					salioKg: Number(r.salio_kg) || 0,
+				}))
+				.filter(
+					(r) =>
+						r.entroPz > 0 || r.entroKg > 0 || r.salioPz > 0 || r.salioKg > 0,
+				);
+			return { rows };
+		}),
+
 	// Calibra las recetas con los pesos reales pesados en un día: recalcula el
 	// yield_weight_ratio de cada transformación cuya pieza fue pesada ese día.
 	//  - Para piezas del canal (1er nivel): % = kg de la pieza / kg del canal.
