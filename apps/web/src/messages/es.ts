@@ -58,6 +58,8 @@ const messages = {
 		prices: "Precios",
 		coldInventory: "Inventario Frío",
 		collections: "Cobranza",
+		cedis: "Verificación CEDIS",
+		antonella: "iAntonella",
 		adminPanel: "Panel de administración",
 		openMenu: "Abrir menú",
 		myAccount: "Mi cuenta",

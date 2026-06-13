@@ -13,6 +13,7 @@ const SELF_MANAGED = new Set<string>([
 	"/admin/weighing-station",
 	"/admin/pos",
 	"/admin/yield",
+	"/admin/cedis",
 	"/admin/inventory/recipes",
 ]);
 

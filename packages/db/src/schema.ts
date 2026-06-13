@@ -178,6 +178,8 @@ export const channelPurchases = pgTable("channel_purchases", {
 	// Verificación al llegar al CEDIS (peso de canal real recibido)
 	verified_canales: integer("verified_canales"),
 	verified_kg: numeric("verified_kg", { precision: 12, scale: 3 }),
+	// Detalle de la verificación CEDIS: { mode, tara, weights[], totalKg, totalCanales }
+	cedis_detail: jsonb("cedis_detail"),
 	purchase_date: date("purchase_date").defaultNow(),
 	user_uid: varchar("user_uid", { length: 255 }),
 	created_at: timestamp("created_at").defaultNow(),

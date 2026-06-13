@@ -167,6 +167,99 @@ export const yieldsRouter = router({
 			}));
 		}),
 
+	// Verificación CEDIS de un día: por proveedor, peso canal×canal o total.
+	cedisDay: protectedProcedure
+		.input(z.object({ date: z.string() }))
+		.query(async ({ ctx, input }) => {
+			const rows = await db
+				.select()
+				.from(channelPurchases)
+				.where(
+					and(
+						eq(channelPurchases.user_uid, ctx.user.id),
+						eq(channelPurchases.purchase_date, input.date),
+					),
+				)
+				.orderBy(channelPurchases.id);
+			return rows
+				.filter((r) => (r.supplier ?? "").trim().length > 0)
+				.map((r) => {
+					const enPieKg = Number(r.total_kg) || 0;
+					const precio = r.price_per_kg != null ? Number(r.price_per_kg) : 0;
+					const detail = (r.cedis_detail as {
+						mode?: "canal" | "total";
+						tara?: number;
+						weights?: number[];
+						totalKg?: number;
+						totalCanales?: number;
+					} | null) ?? null;
+					return {
+						id: r.id,
+						supplier: r.supplier ?? "",
+						unidades: (r.qty_americano ?? 0) + (r.qty_nacional ?? 0),
+						enPieKg,
+						costo: enPieKg * precio,
+						detail: {
+							mode: detail?.mode ?? "canal",
+							tara: detail?.tara ?? 0,
+							weights: Array.isArray(detail?.weights) ? detail.weights : [],
+							totalKg: detail?.totalKg ?? 0,
+							totalCanales: detail?.totalCanales ?? 0,
+						},
+					};
+				});
+		}),
+
+	// Guarda la verificación CEDIS: calcula verified_canales/_kg y persiste detalle.
+	saveCedis: protectedProcedure
+		.input(
+			z.object({
+				rows: z.array(
+					z.object({
+						id: z.number(),
+						mode: z.enum(["canal", "total"]).default("canal"),
+						tara: z.number().min(0).default(0),
+						weights: z.array(z.number()).default([]),
+						totalKg: z.number().min(0).default(0),
+						totalCanales: z.number().int().min(0).default(0),
+					}),
+				),
+			}),
+		)
+		.output(z.object({ success: z.boolean(), count: z.number() }))
+		.mutation(async ({ ctx, input }) => {
+			let count = 0;
+			for (const r of input.rows) {
+				const verifCanales =
+					r.mode === "total" ? r.totalCanales : r.weights.length;
+				const verifKg =
+					r.mode === "total"
+						? r.totalKg
+						: r.weights.reduce((a, b) => a + (Number(b) || 0), 0);
+				await db
+					.update(channelPurchases)
+					.set({
+						verified_canales: verifCanales > 0 ? verifCanales : null,
+						verified_kg: verifKg > 0 ? verifKg.toFixed(3) : null,
+						cedis_detail: {
+							mode: r.mode,
+							tara: r.tara,
+							weights: r.weights,
+							totalKg: r.totalKg,
+							totalCanales: r.totalCanales,
+						},
+					})
+					.where(
+						and(
+							eq(channelPurchases.id, r.id),
+							eq(channelPurchases.user_uid, ctx.user.id),
+						),
+					);
+				count++;
+			}
+			return { success: true, count };
+		}),
+
 	// Guarda la compra en pie de un día: reemplaza los renglones de esa fecha
 	savePurchases: protectedProcedure
 		.input(

@@ -25,7 +25,14 @@ import {
 	TableRow,
 } from "@finopenpos/ui/components/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PiggyBankIcon, PlusIcon, SaveIcon, TrashIcon } from "lucide-react";
+import {
+	PiggyBankIcon,
+	PlusIcon,
+	SaveIcon,
+	ScaleIcon,
+	TrashIcon,
+} from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc/client";
@@ -442,103 +449,22 @@ export default function PurchaseDayPage() {
 				</CardContent>
 			</Card>
 
-			{/* Verificación en CEDIS (peso real recibido al llegar) */}
-			<Card>
-				<CardHeader className="pb-2">
-					<CardTitle className="text-base">Verificación en CEDIS</CardTitle>
-					<p className="text-muted-foreground text-xs">
-						Al llegar los canales, pésalos y registra lo realmente recibido. La
-						diferencia contra la compra es la merma.
-					</p>
-				</CardHeader>
-				<CardContent>
-					<div className="overflow-x-auto">
-						<Table>
-							<TableHeader>
-								<TableRow className="bg-muted/50">
-									<TableHead className="min-w-[150px]">Proveedor</TableHead>
-									<TableHead className="text-center">Comprado (kg)</TableHead>
-									<TableHead className="text-center">
-										Canales recibidos
-									</TableHead>
-									<TableHead className="text-center">Kg recibidos</TableHead>
-									<TableHead className="text-center">Merma</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{rows
-									.filter(
-										(r) =>
-											r.supplier.trim() || r.americano || r.nacional || r.kg,
-									)
-									.map((r) => {
-										const units = intval(r.americano) + intval(r.nacional);
-										const compradoKg = num(r.kg);
-										const recibido = num(r.verifKg);
-										const merma =
-											compradoKg > 0 && recibido > 0
-												? compradoKg - recibido
-												: 0;
-										const mermaPct =
-											compradoKg > 0 && recibido > 0
-												? (merma / compradoKg) * 100
-												: 0;
-										return (
-											<TableRow key={r.key}>
-												<TableCell className="font-medium">
-													{r.supplier || "—"}
-												</TableCell>
-												<TableCell className="text-center text-muted-foreground">
-													{compradoKg > 0 ? compradoKg.toFixed(0) : "—"}
-												</TableCell>
-												<TableCell>
-													<Input
-														type="number"
-														value={r.verifCanales}
-														onChange={(e) =>
-															patch(r.key, { verifCanales: e.target.value })
-														}
-														className="h-9 text-center"
-														placeholder={units > 0 ? String(units) : "0"}
-													/>
-												</TableCell>
-												<TableCell>
-													<Input
-														type="number"
-														step="0.001"
-														value={r.verifKg}
-														onChange={(e) =>
-															patch(r.key, { verifKg: e.target.value })
-														}
-														className="h-9 text-center"
-														placeholder="0"
-													/>
-												</TableCell>
-												<TableCell className="text-center font-medium text-sm">
-													{recibido > 0 && compradoKg > 0 ? (
-														<span
-															className={
-																merma > 0 ? "text-orange-600" : "text-green-600"
-															}
-														>
-															{merma > 0 ? "-" : "+"}
-															{Math.abs(merma).toFixed(1)} kg (
-															{mermaPct.toFixed(1)}%)
-														</span>
-													) : (
-														<span className="text-muted-foreground">—</span>
-													)}
-												</TableCell>
-											</TableRow>
-										);
-									})}
-							</TableBody>
-						</Table>
+			{/* Verificación en CEDIS — ahora en su propia pantalla */}
+			<Card className="border-primary/20 bg-primary/5">
+				<CardContent className="flex flex-wrap items-center justify-between gap-3 py-5">
+					<div className="flex items-start gap-3">
+						<ScaleIcon className="mt-0.5 h-5 w-5 text-primary" />
+						<div>
+							<p className="font-semibold text-sm">Verificación en CEDIS</p>
+							<p className="text-muted-foreground text-xs">
+								Al llegar los canales, pésalos canal por canal (con tara) para
+								calcular la merma y el precio real por kilo.
+							</p>
+						</div>
 					</div>
-					<p className="mt-3 text-[11px] text-muted-foreground">
-						Si registras los kg recibidos, el Rendimiento usa ese peso (real del
-						CEDIS) como base en lugar del comprado.
-					</p>
+					<Button asChild>
+						<Link href="/admin/cedis">Verificar en CEDIS →</Link>
+					</Button>
 				</CardContent>
 			</Card>
 		</div>

@@ -39,6 +39,7 @@ import {
 	SunIcon,
 	TagIcon,
 	UsersIcon,
+	WarehouseIcon,
 	XIcon,
 } from "lucide-react";
 import Image from "next/image";
@@ -73,6 +74,7 @@ interface NavItem {
 		| "coldInventory"
 		| "collections"
 		| "checkout"
+		| "cedis"
 		| "antonella";
 	icon: LucideIcon;
 }
@@ -81,6 +83,7 @@ interface NavItem {
 const opNav: NavItem[] = [
 	{ href: "/admin", labelKey: "dashboard", icon: LayoutDashboardIcon },
 	{ href: "/admin/purchase", labelKey: "purchase", icon: PiggyBankIcon },
+	{ href: "/admin/cedis", labelKey: "cedis", icon: WarehouseIcon },
 	{ href: "/admin/orders", labelKey: "orders", icon: ShoppingBagIcon },
 	{ href: "/admin/despiece", labelKey: "disassembly", icon: ScissorsIcon },
 	{
