@@ -151,7 +151,68 @@ function TopBar({ current, theme }) {
   );
 }
 
+/* -------- Pantalla de bloqueo (privacidad) — PIN 0000 -------- */
+function LockScreen({ onUnlock }) {
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState(false);
+  const tap = (k) => {
+    setErr(false);
+    if (k === "←") { setPin(p => p.slice(0, -1)); return; }
+    const next = (pin + k).slice(0, 4);
+    setPin(next);
+    if (next.length === 4) {
+      setTimeout(() => {
+        if (next === "0000") onUnlock();
+        else { setErr(true); setPin(""); }
+      }, 120);
+    }
+  };
+  useEffect(() => {
+    const onKey = (e) => {
+      if (/^[0-9]$/.test(e.key)) tap(e.key);
+      else if (e.key === "Backspace") tap("←");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:300, display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center", gap:18, padding:"20px", overflow:"auto",
+      background:`radial-gradient(120% 90% at 50% 0%, ${Ca.chrome2||Ca.chrome} 0%, ${Ca.chrome} 70%)` }}>
+      {/* logo */}
+      <div style={{ width:104, height:104, borderRadius:"50%", overflow:"hidden", background:Ca.cream, flexShrink:0,
+        boxShadow:"0 24px 60px -20px rgba(0,0,0,0.6)", backgroundImage:"url(assets/logo-principal.png)",
+        backgroundSize:"86%", backgroundRepeat:"no-repeat", backgroundPosition:"center" }} />
+      <div style={{ textAlign:"center" }}>
+        <div style={{ font:`400 24px/1.1 ${Fa.display}`, color:Ca.cream, letterSpacing:"0.02em", whiteSpace:"nowrap" }}>CÁRNICOS GUSTAVO</div>
+        <div style={{ font:`500 12.5px/1 ${Fa.ui}`, color:"rgba(241,231,214,0.55)", marginTop:8 }}>Ingresa tu PIN para entrar</div>
+      </div>
+      {/* dots */}
+      <div className={err?"cg-shake":""} style={{ display:"flex", gap:14 }}>
+        {[0,1,2,3].map(i=>(
+          <span key={i} style={{ width:14, height:14, borderRadius:"50%",
+            background: i<pin.length ? (err?Ca.red:Ca.cream) : "transparent",
+            border:`2px solid ${err?Ca.red:"rgba(241,231,214,0.4)"}`, transition:"background .15s" }} />
+        ))}
+      </div>
+      {/* keypad */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 66px)", gap:12, flexShrink:0 }}>
+        {["1","2","3","4","5","6","7","8","9","",  "0","←"].map((k,i)=> k==="" ?
+          <span key={i} /> :
+          <button key={i} onClick={()=>tap(k)} className="cg-lock-key" style={{ height:66, borderRadius:"50%",
+            border:`1px solid rgba(241,231,214,0.18)`, background:"rgba(241,231,214,0.06)", color:Ca.cream,
+            font:`400 24px/1 ${k==="←"?Fa.ui:Fa.display}`, cursor:"pointer", display:"grid", placeItems:"center" }}>
+            {k==="←" ? "⌫" : k}
+          </button>
+        )}
+      </div>
+      <div style={{ font:`500 11px/1 ${Fa.ui}`, color:"rgba(241,231,214,0.4)", flexShrink:0 }}>PIN de demostración: 0000</div>
+    </div>
+  );
+}
+
 function App() {
+  const [locked, setLocked] = useState(() => sessionStorage.getItem("cg_unlocked") !== "1");
   const [current, setCurrent] = useState("panel");
   const [chatOpen, setChatOpen] = useState(false);
   const [seed, setSeed] = useState(null);
@@ -194,10 +255,8 @@ function App() {
     recetas:  <RecetasScreen ai={ai} />,
     productos:<ProductosScreen ai={ai} />,
     precios:  <PreciosScreen ai={ai} />,
-    cold:     <ColdScreen ai={ai} />,
+    cold:     <ColdInventoryScreen ai={ai} />,
     caja:     <CajaScreen ai={ai} />,
-    payment:  <PaymentScreen ai={ai} />,
-    designsystem: <DesignSystemScreen ai={ai} />,
     config:   <ConfigScreen ai={ai} go={go} />,
     settings: <ConfigScreen ai={ai} go={go} />,
   };
@@ -206,15 +265,19 @@ function App() {
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100vh", background:Ca.bg }}>
-      <TopBar current={current} theme={theme} />
-      <div className="cg-body-row" style={{ display:"flex", flex:1, minHeight:0 }}>
-        <Rail current={current} go={go} />
-        <main className="cg-main" style={{ flex:1, overflowY:"auto", padding:"22px clamp(16px,3vw,32px) 90px" }}>
-          <div style={{ maxWidth:1180, margin:"0 auto" }}>{content}</div>
-        </main>
+      {locked && <LockScreen onUnlock={()=>{ sessionStorage.setItem("cg_unlocked","1"); setLocked(false); }} />}
+      <div style={{ filter: locked ? "blur(14px)" : "none", transition:"filter .4s ease",
+        display:"flex", flexDirection:"column", height:"100%", pointerEvents: locked?"none":"auto" }}>
+        <TopBar current={current} theme={theme} />
+        <div className="cg-body-row" style={{ display:"flex", flex:1, minHeight:0 }}>
+          <Rail current={current} go={go} />
+          <main className="cg-main" style={{ flex:1, overflowY:"auto", padding:"22px clamp(16px,3vw,32px) 90px" }}>
+            <div style={{ maxWidth:1180, margin:"0 auto" }}>{content}</div>
+          </main>
+        </div>
+        <AntonellaDock moduleId={current} pending={true} open={chatOpen} setOpen={setChatOpen}
+          seed={seed} onSeedConsumed={()=>setSeed(null)} />
       </div>
-      <AntonellaDock moduleId={current} pending={true} open={chatOpen} setOpen={setChatOpen}
-        seed={seed} onSeedConsumed={()=>setSeed(null)} />
     </div>
   );
 }

@@ -32,6 +32,17 @@
   .cg-rail-item { transition: background .15s ease, color .15s ease; }
   .cg-rail-item:hover { background: rgba(241,231,214,0.1); }
 
+  .cg-menu-item:hover { background: rgba(33,28,25,0.06); }
+  .cg-modal-in { animation: cgModalIn .26s cubic-bezier(.22,1,.36,1); }
+  @keyframes cgModalIn { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+  .cg-ctx-in { animation: cgCtxIn .3s cubic-bezier(.22,1,.36,1); }
+  @keyframes cgCtxIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  .cg-lock-key { transition: background .14s ease, transform .05s ease; }
+  .cg-lock-key:hover { background: rgba(241,231,214,0.14) !important; }
+  .cg-lock-key:active { transform: scale(0.94); }
+  .cg-shake { animation: cgShake .4s; }
+  @keyframes cgShake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-9px)} 40%,80%{transform:translateX(9px)} }
+
   /* tooltip de label en el rail */
   .cg-rail-label { position: absolute; left: 54px; top: 50%; transform: translateY(-50%) scale(0.96);
     background: #211C19; color: #F1E7D6; font: 600 12px/1 'Archivo', sans-serif; white-space: nowrap;
@@ -67,6 +78,10 @@
 <script type="text/babel" src="cg-ui.jsx"></script>
 <script type="text/babel" src="cg-antonella.jsx"></script>
 <script type="text/babel" src="cg-ai-kit.jsx"></script>
+<script type="text/babel" src="cg-cold.jsx"></script>
+<script type="text/babel" src="cg-secure-dashboard.jsx"></script>
+<script type="text/babel" src="cg-flows.jsx"></script>
+<script type="text/babel" src="cg-screens-prof.jsx"></script>
 <script type="text/babel" src="cg-screens-a.jsx"></script>
 <script type="text/babel" src="cg-screens-b.jsx"></script>
 <script type="text/babel" src="cg-screens-c.jsx"></script>

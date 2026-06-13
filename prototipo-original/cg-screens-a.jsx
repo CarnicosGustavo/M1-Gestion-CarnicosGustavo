@@ -12,7 +12,7 @@ const moneyk = (n) => "$" + n.toLocaleString("es-MX");
 /* helper: slot de Antonella conectado a la App */
 function Slot({ id, ai }) {
   const d = (A[id] || A.default).slot;
-  return <AntonellaSlot data={d} onChip={(t)=>ai.chip(t)} onOpen={()=>ai.open()} />;
+  return <AntonellaSlot data={d} onChip={(t)=>ai.chip(t)} onOpen={()=>ai.open()} onNav={(m)=>window.__cgGo&&window.__cgGo(m)} />;
 }
 
 /* ---------------- PANEL ---------------- */

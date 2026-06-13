@@ -53,17 +53,57 @@ const thBase = (align)=>({ textAlign:align, font:`700 11px/1 ${Fx.ui}`, letterSp
 /* ---------------- PEDIDOS ---------------- */
 function PedidosScreen({ ai }) {
   const [filtro, setFiltro] = useState("Todos");
-  const data = OPS.pedidos.filter(p=> filtro==="Todos" || p.estado===filtro);
+  const [nuevoPedido, setNuevoPedido] = useState(false);
+  const [pesaje, setPesaje] = useState(null);     // {n, pedido, precio} o null
+  const [extra, setExtra] = useState([]);          // pedidos creados en sesión
+  const base = OPS.pedidos;
+  const all = [...extra, ...base];
+  const data = all.filter(p=> filtro==="Todos" || p.estado===filtro);
+
+  const rowMenu = (p) => [
+    { label:"Ver detalle", icon:"eye", onClick:()=>ai.chip(`Abrir pedido #${p.id}`) },
+    { label:"Editar pedido", icon:"file-pen", onClick:()=>ai.chip(`Editar pedido #${p.id}`) },
+    ...(p.estado==="Por pesar" || p.estado==="Parcial"
+      ? [{ label:"Ir a Pesaje", icon:"scale", onClick:()=>setPesaje({ n:"PIERNA", pedido:`#${p.id}`, precio:70 }) }] : []),
+    ...(p.estado==="Lista para cobro"
+      ? [{ label:"Ir a Pesaje", icon:"scale", onClick:()=>setPesaje({ n:"PIERNA", pedido:`#${p.id}`, precio:70 }) }] : []),
+    { sep:true },
+    { label:"Imprimir ticket", icon:"printer", onClick:()=>ai.chip(`Imprimir ticket #${p.id}`) },
+    { label:"Duplicar", icon:"copy", onClick:()=>ai.chip(`Duplicar pedido #${p.id}`) },
+    { label:"Enviar por WhatsApp", icon:"message-circle", onClick:()=>ai.chip(`Enviar #${p.id} por WhatsApp`) },
+    { sep:true },
+    ...(p.estado!=="Cancelada" ? [{ label:"Cancelar pedido", icon:"ban", onClick:()=>ai.chip(`Cancelar #${p.id}`) }] : []),
+    { label:"Eliminar", icon:"trash-2", danger:true, onClick:()=>ai.chip(`Eliminar #${p.id}`) },
+  ];
+
   return (
     <div>
-      <ScreenHead title="Pedidos" desc="Listado central de pedidos del día. Crea, edita, imprime tickets y entra al detalle."
-        right={<Btn kind="primary" icon="plus">Nuevo pedido</Btn>} />
+      <ScreenHead title="Pedidos" desc="Listado central de pedidos del día. Crea, edita, pesa, imprime tickets y entra al detalle."
+        right={
+          <SplitButton kind="primary" icon="plus" onClick={()=>setNuevoPedido(true)}
+            items={[
+              { label:"Pedido mostrador", icon:"store", onClick:()=>setNuevoPedido(true) },
+              { label:"Pedido a crédito", icon:"hand-coins", onClick:()=>setNuevoPedido(true) },
+              { sep:true },
+              { label:"Pesar producto", icon:"scale", onClick:()=>setPesaje({ n:"PIERNA", pedido:"libre", precio:70 }) },
+              { label:"Importar pedidos (CSV)", icon:"upload", onClick:()=>ai.chip("Importar pedidos") },
+            ]}>
+            Nuevo pedido
+          </SplitButton>
+        } />
       <SlotC id="pedidos" ai={ai} />
       <Card pad={0} style={{ overflow:"hidden" }}>
         <div style={{ padding:16, borderBottom:`1px solid ${Cx.line}` }}>
           <SearchFilter placeholder="Buscar pedido o cliente…" value={filtro} onFilter={setFiltro}
             filters={["Todos","Pagada","Por pesar","Lista para cobro","Cancelada"]}
-            right={<Btn kind="outline" size="sm" icon="download">CSV</Btn>} />
+            right={
+              <Menu align="right" items={[
+                { label:"Exportar CSV", icon:"download", onClick:()=>ai.chip("Exportar pedidos CSV") },
+                { label:"Imprimir lista", icon:"printer", onClick:()=>ai.chip("Imprimir lista de pedidos") },
+                { label:"Ordenar por total", icon:"arrow-down-wide-narrow", onClick:()=>{} },
+                { label:"Ordenar por fecha", icon:"calendar", onClick:()=>{} },
+              ]} trigger={<Btn kind="outline" size="sm" icon="sliders-horizontal">Vista</Btn>} />
+            } />
         </div>
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", minWidth:680 }}>
@@ -83,11 +123,14 @@ function PedidosScreen({ ai }) {
                   <td style={{ padding:"13px 14px" }}><Badge tone={ESTADO_TONE[p.estado]}>{p.estado}</Badge></td>
                   <td style={{ padding:"13px 14px", font:`500 13px/1 ${Fx.mono}`, color:Cx.inkSoft }}>{p.fecha}</td>
                   <td style={{ padding:"13px 14px" }}>
-                    <div style={{ display:"flex", gap:7, justifyContent:"center" }}>
+                    <div style={{ display:"flex", gap:7, justifyContent:"center", alignItems:"center" }}>
                       <RowAct icon="eye" title="Ver detalle" />
-                      <RowAct icon="file-pen" title="Editar" />
-                      <RowAct icon="printer" title="Imprimir ticket" />
-                      <RowAct icon="trash-2" color={Cx.red} title="Eliminar" />
+                      {(p.estado==="Por pesar"||p.estado==="Parcial") &&
+                        <button title="Pesar" onClick={()=>setPesaje({ n:"PIERNA", pedido:`#${p.id}`, precio:70 })}
+                          style={{ width:34, height:34, borderRadius:8, border:`1px solid ${Cx.amber}`, background:Cx.amberWash,
+                            cursor:"pointer", display:"grid", placeItems:"center" }}>
+                          <Icon name="scale" size={15} color={Cx.amber} /></button>}
+                      <Kebab items={rowMenu(p)} />
                     </div>
                   </td>
                 </tr>
@@ -96,6 +139,13 @@ function PedidosScreen({ ai }) {
           </table>
         </div>
       </Card>
+
+      <NuevoPedidoModal open={nuevoPedido} onClose={()=>setNuevoPedido(false)}
+        onCreate={(o)=>{ const id = 360 + extra.length;
+          setExtra(arr => [{ id, cliente:o.cliente, total:o.total, items:o.items.length,
+            estado: o.items.some(x=>x.disp==="pesaje"||x.disp==="despiece")?"Por pesar":"Lista para cobro", fecha:"12/06" }, ...arr]); }} />
+      <PesajeModal open={!!pesaje} producto={pesaje} onClose={()=>setPesaje(null)}
+        onRegister={()=>{}} />
     </div>
   );
 }
@@ -103,11 +153,14 @@ function PedidosScreen({ ai }) {
 /* ---------------- CLIENTES ---------------- */
 function ClientesScreen({ ai }) {
   const [filtro, setFiltro] = useState("Todos");
-  const data = OPS.clientes.filter(c=> filtro==="Todos" || c.estado===filtro);
+  const [nuevo, setNuevo] = useState(false);
+  const [extra, setExtra] = useState([]);
+  const all = [...extra, ...OPS.clientes];
+  const data = all.filter(c=> filtro==="Todos" || c.estado===filtro);
   return (
     <div>
       <ScreenHead title="Clientes" desc="Lista maestra de carnicerías y negocios. Busca, da de alta y entra a la ficha 360°."
-        right={<Btn kind="primary" icon="user-plus">Agregar cliente</Btn>} />
+        right={<Btn kind="primary" icon="user-plus" onClick={()=>setNuevo(true)}>Agregar cliente</Btn>} />
       <SlotC id="clientes" ai={ai} />
       <Card pad={0} style={{ overflow:"hidden" }}>
         <div style={{ padding:16, borderBottom:`1px solid ${Cx.line}` }}>
@@ -133,10 +186,17 @@ function ClientesScreen({ ai }) {
                     color: c.saldo>0?Cx.red:Cx.inkFaint }}>{c.saldo>0?mny(c.saldo):"$0.00"}</td>
                   <td style={{ padding:"13px 14px" }}><Badge tone={c.estado==="Activo"?"green":"ghost"}>{c.estado}</Badge></td>
                   <td style={{ padding:"13px 14px" }}>
-                    <div style={{ display:"flex", gap:7, justifyContent:"center" }}>
+                    <div style={{ display:"flex", gap:7, justifyContent:"center", alignItems:"center" }}>
                       {c.tel && <RowAct icon="message-circle" color={Cx.green} title="WhatsApp" />}
-                      <RowAct icon="file-pen" title="Editar" />
-                      <RowAct icon="trash-2" color={Cx.red} title="Eliminar" />
+                      <Kebab items={[
+                        { label:"Ver ficha 360°", icon:"id-card", onClick:()=>ai.chip(`Ficha de ${c.nombre}`) },
+                        { label:"Nuevo pedido", icon:"plus", onClick:()=>ai.chip(`Nuevo pedido para ${c.nombre}`) },
+                        { label:"Editar cliente", icon:"file-pen", onClick:()=>ai.chip(`Editar ${c.nombre}`) },
+                        ...(c.tel ? [{ label:"WhatsApp", icon:"message-circle", onClick:()=>ai.chip(`WhatsApp a ${c.nombre}`) }] : []),
+                        { label:"Estado de cuenta", icon:"file-text", onClick:()=>ai.chip(`Estado de cuenta ${c.nombre}`) },
+                        { sep:true },
+                        { label:"Eliminar", icon:"trash-2", danger:true, onClick:()=>ai.chip(`Eliminar ${c.nombre}`) },
+                      ]} />
                     </div>
                   </td>
                 </tr>
@@ -145,6 +205,9 @@ function ClientesScreen({ ai }) {
           </table>
         </div>
       </Card>
+      <NuevoClienteModal open={nuevo} onClose={()=>setNuevo(false)}
+        onCreate={(c)=>{ const id = 100 + extra.length;
+          setExtra(arr => [{ id, nombre:c.nombre, tel:c.tel, saldo:0, estado:"Activo", pedidos:0, gastado:0 }, ...arr]); }} />
     </div>
   );
 }
@@ -192,10 +255,14 @@ function CobranzaScreen({ ai }) {
                     <td style={{ padding:"13px 14px", textAlign:"right", font:`700 13.5px/1 ${Fx.mono}`, color:Cx.red }}>{mny(c.saldo)}</td>
                     <td style={{ padding:"13px 14px" }}><Badge tone={tone}>{lab}</Badge></td>
                     <td style={{ padding:"13px 14px" }}>
-                      <div style={{ display:"flex", gap:7, justifyContent:"center" }}>
+                      <div style={{ display:"flex", gap:7, justifyContent:"center", alignItems:"center" }}>
                         <Btn kind="green" size="sm" icon="banknote">Abonar</Btn>
-                        <RowAct icon="file-text" title="Estado de cuenta" />
-                        <RowAct icon="message-circle" color={Cx.green} title="Recordar (WhatsApp)" />
+                        <Kebab items={[
+                          { label:"Registrar abono", icon:"banknote", onClick:()=>ai.chip(`Abono de ${c.cliente}`) },
+                          { label:"Estado de cuenta", icon:"file-text", onClick:()=>ai.chip(`Estado de cuenta ${c.cliente}`) },
+                          { label:"Recordatorio WhatsApp", icon:"message-circle", onClick:()=>ai.chip(`Recordar a ${c.cliente}`) },
+                          { label:"Ver pedidos a crédito", icon:"receipt-text", onClick:()=>ai.chip(`Pedidos a crédito de ${c.cliente}`) },
+                        ]} />
                       </div>
                     </td>
                   </tr>
