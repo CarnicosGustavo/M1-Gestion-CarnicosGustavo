@@ -597,7 +597,10 @@ export const inventoryRouter = router({
 				}
 
 				const [dup] = await tx
-					.select({ id: productTransformations.id })
+					.select({
+						id: productTransformations.id,
+						is_active: productTransformations.is_active,
+					})
 					.from(productTransformations)
 					.where(
 						and(
@@ -616,9 +619,31 @@ export const inventoryRouter = router({
 					.limit(1);
 
 				if (dup) {
+					// Si la receta ya existe pero está INACTIVA (resto de una
+					// configuración vieja), la reactivamos y actualizamos sus valores
+					// en vez de fallar — así una pieza se "configura igual" sin choques.
+					if (dup.is_active !== true && !input.id) {
+						const [reactivated] = await tx
+							.update(productTransformations)
+							.set({
+								yield_quantity_pieces: input.yieldQuantityPieces.toFixed(2),
+								yield_weight_ratio: input.yieldWeightRatio.toFixed(4),
+								is_active: true,
+								updated_at: new Date(),
+							})
+							.where(eq(productTransformations.id, dup.id))
+							.returning({ id: productTransformations.id });
+						if (!parentRow.is_parent_product) {
+							await tx
+								.update(products)
+								.set({ is_parent_product: true, updated_at: new Date() })
+								.where(eq(products.id, input.parentProductId));
+						}
+						return { success: true, id: reactivated.id };
+					}
 					throw new TRPCError({
 						code: "BAD_REQUEST",
-						message: "Ya existe una receta con este padre/hijo y estilo",
+						message: "Ya existe una receta activa con este padre/hijo y estilo",
 					});
 				}
 

@@ -75,9 +75,8 @@ export default function RecipesPage({
 	const tc = useTranslations("common");
 	const locale = useLocale();
 
-	const [viewMode, setViewMode] = useState<"table" | "map" | "board">(
-		configurator ? "board" : "table",
-	);
+	// El configurador abre siempre en vista Tablero (board) por defecto.
+	const [viewMode, setViewMode] = useState<"table" | "map" | "board">("board");
 	const [showHelp, setShowHelp] = useState(false);
 	// Abre la ayuda automáticamente la primera vez en este navegador.
 	useEffect(() => {
