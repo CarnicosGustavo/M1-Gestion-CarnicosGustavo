@@ -4,6 +4,7 @@ import { Badge } from "@finopenpos/ui/components/badge";
 import { Button } from "@finopenpos/ui/components/button";
 import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
 import { Combobox } from "@finopenpos/ui/components/combobox";
+import { AiLearned, AiSuggestBar } from "@/components/antonella-ai-kit";
 import {
 	type Column,
 	DataTable,
@@ -46,6 +47,7 @@ import {
 	MaximizeIcon,
 	MoreVerticalIcon,
 	PlusCircle,
+	SparklesIcon,
 	TrashIcon,
 	TruckIcon,
 	UploadIcon,
@@ -466,6 +468,8 @@ export default function RecipesPage({
 	const [newProdCat, setNewProdCat] = useState("Otros");
 	// Producto seleccionado para abrir su ficha (ProductCard)
 	const [selProdId, setSelProdId] = useState<number | null>(null);
+	// AiSuggestBar "estimar pesos de canales": pendiente / aplicado / descartado
+	const [aiBar, setAiBar] = useState<"show" | "done" | "off">("show");
 
 	// Exportar las recetas activas a JSON o SQL (descarga en el navegador)
 	const downloadFile = (name: string, content: string, type: string) => {
@@ -751,15 +755,18 @@ export default function RecipesPage({
 		);
 	};
 
-	// Peso de referencia editable de un producto ("pesa X kg")
+	// Peso de referencia editable de un producto ("pesa X kg").
+	// Si se pasa `estimate`, muestra el botón "Promedio" (iA) que lo aplica.
 	const RefWeightControl = ({
 		productId,
 		kg,
 		label,
+		estimate,
 	}: {
 		productId: number;
 		kg: number;
 		label: string;
+		estimate?: number;
 	}) => (
 		<label className="flex items-center gap-1 text-[11px] text-muted-foreground">
 			{label}
@@ -780,6 +787,22 @@ export default function RecipesPage({
 				}
 			/>
 			kg
+			{estimate != null && estimate > 0 && (
+				<button
+					type="button"
+					onClick={() =>
+						refWeightMut.mutate({
+							productId,
+							kg: Math.round(estimate * 100) / 100,
+						})
+					}
+					title={`Usar el promedio estimado de las piezas (${estimate.toFixed(1)} kg)`}
+					className="ml-1 inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-1.5 py-0.5 font-semibold text-[10px] text-primary hover:bg-primary/10"
+				>
+					<SparklesIcon className="h-2.5 w-2.5" />
+					Promedio
+				</button>
+			)}
 		</label>
 	);
 
@@ -1346,6 +1369,13 @@ export default function RecipesPage({
 								productId={s.parentId}
 								kg={s.canalW}
 								label="Peso del canal"
+								estimate={s.rows.reduce(
+									(sum, r) =>
+										sum +
+										(Number(r.childProduct.avg_weight ?? 0) || 0) *
+											(Number(r.yield_quantity_pieces) || 0),
+									0,
+								)}
 							/>
 							<Button
 								variant="outline"
@@ -2060,6 +2090,51 @@ export default function RecipesPage({
 					}}
 				/>
 			)}
+
+			{/* iAntonella — autoconfig: estimar el peso de los canales desde sus piezas */}
+			{aiBar === "show" && boardStyles.length > 0 && (
+				<AiSuggestBar
+					tone="sugerencia"
+					title="Estimar pesos de los canales"
+					text="Puedo estimar el peso de cada canal sumando el peso de sus piezas (las que tengan peso definido). Tú confirmas antes de aplicar y aprendo de tus ajustes."
+					primary="Aplicar estimación"
+					onPrimary={() => {
+						let applied = 0;
+						for (const s of boardStyles) {
+							const est = s.rows.reduce(
+								(sum, r) =>
+									sum +
+									(Number(r.childProduct.avg_weight ?? 0) || 0) *
+										(Number(r.yield_quantity_pieces) || 0),
+								0,
+							);
+							if (est > 0 && Math.abs(est - s.canalW) > 0.5) {
+								refWeightMut.mutate({
+									productId: s.parentId,
+									kg: Math.round(est * 100) / 100,
+								});
+								applied++;
+							}
+						}
+						toast.success(
+							applied > 0
+								? `Estimé el peso de ${applied} canal(es)`
+								: "Los pesos de los canales ya están al día",
+						);
+						setAiBar("done");
+					}}
+					secondary="Ahora no"
+					onSecondary={() => setAiBar("off")}
+					onDismiss={() => setAiBar("off")}
+				/>
+			)}
+			{aiBar === "done" && (
+				<AiLearned onUndo={() => setAiBar("show")}>
+					estimé el peso de los canales desde sus piezas. Revísalos y ajusta lo
+					que haga falta; los % se recalculan solos.
+				</AiLearned>
+			)}
+
 			<Card className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
 				<CardHeader className="p-0">
 					<div className="flex flex-wrap items-center justify-between gap-2">
