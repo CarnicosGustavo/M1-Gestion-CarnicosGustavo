@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { cn } from "@finopenpos/ui/lib/utils";
 import {
   Card,
   CardHeader,
@@ -62,18 +63,10 @@ export default function Page() {
   const t = useTranslations("dashboard");
   const locale = useLocale();
 
-  // Ocultar/mostrar montos (privacidad), recordado en el navegador
-  const [hideAmounts, setHideAmounts] = useState(false);
-  useEffect(() => {
-    setHideAmounts(localStorage.getItem("cg_hide_amounts") === "1");
-  }, []);
-  const toggleHide = () => {
-    setHideAmounts((v) => {
-      const next = !v;
-      localStorage.setItem("cg_hide_amounts", next ? "1" : "0");
-      return next;
-    });
-  };
+  // Privacidad: por defecto SIEMPRE oculto al entrar. El usuario revela con el
+  // botón (solo para la sesión actual; al recargar vuelve a ocultarse).
+  const [hideAmounts, setHideAmounts] = useState(true);
+  const toggleHide = () => setHideAmounts((v) => !v);
   const money = (val: number) =>
     hideAmounts ? "$ • • • •" : formatCurrency(val, locale);
 
@@ -132,56 +125,55 @@ export default function Page() {
   const profitIsPositive = data.totalProfit >= 0;
 
   return (
-    <div className="grid flex-1 items-start gap-6 min-w-0 overflow-hidden">
-      {/* Portada: logo grande e imponente */}
-      <div className="relative flex flex-col items-center overflow-hidden rounded-2xl border bg-[var(--cg-cream)] px-6 py-10 text-center sm:py-14">
-        <Image
-          src="/brand/logo-principal.png"
-          alt="Cárnicos Gustavo"
-          width={520}
-          height={300}
-          priority
-          className="h-auto w-[clamp(220px,46vw,460px)] object-contain drop-shadow-sm"
+    <div className="relative min-h-[78vh]">
+      {/* Contenido (se distorsiona cuando los datos están ocultos) */}
+      <div
+        aria-hidden={hideAmounts}
+        className={cn(
+          "grid flex-1 items-start gap-6 min-w-0 overflow-hidden transition",
+          hideAmounts && "pointer-events-none select-none blur-md"
+        )}
+      >
+        {/* Portada: logo grande e imponente */}
+        <div className="relative flex flex-col items-center overflow-hidden rounded-2xl border bg-[var(--cg-cream)] px-6 py-10 text-center sm:py-14">
+          <Image
+            src="/brand/logo-principal.png"
+            alt="Cárnicos Gustavo"
+            width={520}
+            height={300}
+            priority
+            className="h-auto w-[clamp(220px,46vw,460px)] object-contain drop-shadow-sm"
+          />
+          <p className="mt-5 font-display text-xl tracking-[0.06em] text-foreground sm:text-2xl">
+            CENTRO DE DISTRIBUCIÓN
+          </p>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            Plataforma de gestión integral · inteligencia iAntonella
+          </p>
+        </div>
+
+        {/* iAntonella — presencia inline */}
+        <AntonellaSlot
+          data={{
+            tone: "sugerencia",
+            titulo: "Resumen del día",
+            texto:
+              "Estoy vigilando inventario, despiece, pedidos y cobranza. Pregúntame qué conviene producir hoy o si el stock cubre los pedidos abiertos.",
+            acciones: [
+              "¿Qué conviene despiezar hoy?",
+              "¿Cubre mi stock los pedidos?",
+              "Resumen de cobranza",
+            ],
+          }}
         />
-        <p className="mt-5 font-display text-xl tracking-[0.06em] text-foreground sm:text-2xl">
-          CENTRO DE DISTRIBUCIÓN
-        </p>
-        <p className="mt-1 max-w-md text-sm text-muted-foreground">
-          Plataforma de gestión integral · inteligencia iAntonella
-        </p>
-      </div>
 
-      {/* iAntonella — presencia inline */}
-      <AntonellaSlot
-        data={{
-          tone: "sugerencia",
-          titulo: "Resumen del día",
-          texto:
-            "Estoy vigilando inventario, despiece, pedidos y cobranza. Pregúntame qué conviene producir hoy o si el stock cubre los pedidos abiertos.",
-          acciones: [
-            "¿Qué conviene despiezar hoy?",
-            "¿Cubre mi stock los pedidos?",
-            "Resumen de cobranza",
-          ],
-        }}
-      />
-
-      {/* Toggle ocultar montos */}
-      <div className="flex justify-end -mb-2">
-        <Button variant="outline" size="sm" onClick={toggleHide}>
-          {hideAmounts ? (
-            <>
-              <EyeIcon className="h-4 w-4 mr-2" />
-              Mostrar montos
-            </>
-          ) : (
-            <>
-              <EyeOffIcon className="h-4 w-4 mr-2" />
-              Ocultar montos
-            </>
-          )}
-        </Button>
-      </div>
+        {/* Botón ocultar datos (visible cuando ya se revelaron) */}
+        <div className="flex justify-end -mb-2">
+          <Button variant="outline" size="sm" onClick={toggleHide}>
+            <EyeOffIcon className="h-4 w-4 mr-2" />
+            Ocultar datos
+          </Button>
+        </div>
 
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -258,6 +250,28 @@ export default function Page() {
         <ProfitMarginChart data={data.profitMargin} />
         <CashFlowChart data={data.cashFlow} hideAmounts={hideAmounts} />
       </div>
+      </div>
+
+      {/* Velo de privacidad: logo grande nítido al centro */}
+      {hideAmounts && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-6 rounded-2xl bg-[var(--cg-cream)]/80 px-6 py-16 text-center backdrop-blur-[3px]">
+          <Image
+            src="/brand/logo-principal.png"
+            alt="Cárnicos Gustavo"
+            width={620}
+            height={360}
+            priority
+            className="h-auto w-[clamp(250px,52vw,520px)] object-contain drop-shadow-md"
+          />
+          <p className="font-display text-xl tracking-[0.08em] text-foreground sm:text-2xl">
+            DATOS OCULTOS POR PRIVACIDAD
+          </p>
+          <Button size="lg" onClick={toggleHide} className="rounded-full px-8">
+            <EyeIcon className="mr-2 h-5 w-5" />
+            Mostrar datos
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

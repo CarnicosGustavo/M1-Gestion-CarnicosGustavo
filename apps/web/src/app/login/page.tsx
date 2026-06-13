@@ -10,6 +10,7 @@ import { useRef } from "react";
 import { useTranslations } from "next-intl";
 import { CLIENT_NAME, DEMO_EMAIL, DEMO_PASSWORD, PROJECT_CREDIT } from "@/lib/constants";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 
 export default function LoginPage() {
   const emailRef = useRef<HTMLInputElement>(null);
@@ -28,6 +29,14 @@ export default function LoginPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-background">
       <div className="mx-auto w-full max-w-md space-y-6">
         <div className="flex flex-col items-center space-y-2">
+          <Image
+            src="/brand/logo-principal.png"
+            alt={CLIENT_NAME}
+            width={280}
+            height={160}
+            priority
+            className="mb-2 h-auto w-[clamp(160px,55vw,240px)] object-contain"
+          />
           <div className="text-center text-lg font-semibold">{CLIENT_NAME}</div>
           <h2 className="text-2xl font-bold">{t("title")}</h2>
           <p className="text-sm text-muted-foreground">

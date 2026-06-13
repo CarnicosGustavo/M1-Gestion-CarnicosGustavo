@@ -50,8 +50,8 @@ const TICKET_STYLE = `
 `;
 
 // Tabla de productos en monospace para matriz de puntos. Papel angosto: el
-// nombre va en su renglón (completo) y debajo CANT · PRECIO · IMPORTE alineados.
-const COL = { cant: 10, precio: 10, imp: 12 };
+// nombre va en su renglón (completo) y debajo PIEZAS · KILOS · PRECIO · TOTAL.
+const COL = { piezas: 6, kilos: 8, precio: 9, total: 11 };
 const padR = (s: string, n: number) =>
 	s.length >= n ? s : s + " ".repeat(n - s.length);
 const padL = (s: string, n: number) =>
@@ -73,20 +73,27 @@ export function TicketModal({ orderId, open, onClose }: TicketModalProps) {
 		return String(it.quantityPieces ?? 1);
 	};
 
-	// Líneas de la tabla de productos en texto monospace (2 renglones por item)
+	// Líneas de la tabla de productos en texto monospace. Por item: el nombre en
+	// su renglón (completo) y debajo PIEZAS · KILOS · PRECIO · TOTAL alineados.
 	const tableText = () => {
 		if (!ticket) return "";
-		const numsLine = (cant: string, precio: string, imp: string) =>
-			padR(cant, COL.cant) + padL(precio, COL.precio) + padL(imp, COL.imp);
-		const width = COL.cant + COL.precio + COL.imp;
-		const header = numsLine("CANT", "PRECIO", "IMPORTE");
+		const row = (pz: string, kg: string, precio: string, total: string) =>
+			padR(pz, COL.piezas) +
+			padL(kg, COL.kilos) +
+			padL(precio, COL.precio) +
+			padL(total, COL.total);
+		const width = COL.piezas + COL.kilos + COL.precio + COL.total;
+		const header = row("PIEZAS", "KILOS", "PRECIO", "TOTAL");
 		const sep = "-".repeat(width);
 		const lines: string[] = [header, sep];
 		for (const it of ticket.items) {
+			const pz = it.quantityPieces ? String(it.quantityPieces) : "-";
+			const kgNum = it.quantityKg ? parseFloat(it.quantityKg) : 0;
+			const kg = kgNum > 0 ? kgNum.toFixed(2) : "-";
 			const precio = money(parseFloat(it.unitPrice) / 100 || 0);
-			const imp = money(parseFloat(it.subtotal) / 100 || 0);
+			const total = money(parseFloat(it.subtotal) / 100 || 0);
 			lines.push(`- ${it.productName}`);
-			lines.push(numsLine(lineQty(it), precio, imp));
+			lines.push(row(pz, kg, precio, total));
 		}
 		return lines.join("\n");
 	};
@@ -169,7 +176,7 @@ ${TICKET_STYLE}
 			<>
 				<div className="t-logo">
 					{/* eslint-disable-next-line @next/next/no-img-element */}
-					<img src={`${origin}/images/favicon_cerdo.png`} alt="" />
+					<img src={`${origin}/brand/pig-head.png`} alt="" />
 				</div>
 				<div className="t-name">{BUSINESS.name}</div>
 				<div className="t-sub">{BUSINESS.address}</div>
