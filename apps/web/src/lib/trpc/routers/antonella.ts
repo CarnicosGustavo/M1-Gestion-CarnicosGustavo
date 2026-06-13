@@ -817,7 +817,7 @@ async function getDemand(period: string, userId: string): Promise<string> {
 				eq(orders.user_uid, userId),
 				// Status NOT IN (cancelled, completed, delivered, paid)
 				sql`${orders.status} NOT IN ('CANCELADA', 'COMPLETADA', 'ENTREGADA', 'COBRADA')`,
-				sql`${orders.created_at} >= ${startDate}`,
+				sql`${orders.created_at} >= ${startDate.toISOString()}`,
 			),
 		);
 
@@ -1022,7 +1022,7 @@ async function forecastDemand(days: number, userId: string): Promise<string> {
 		.where(
 			and(
 				eq(orders.user_uid, userId),
-				sql`${orders.created_at} >= ${fourWeeksAgo}`,
+				sql`${orders.created_at} >= ${fourWeeksAgo.toISOString()}`,
 				sql`${orders.status} NOT IN ('CANCELADA')`,
 			),
 		)
