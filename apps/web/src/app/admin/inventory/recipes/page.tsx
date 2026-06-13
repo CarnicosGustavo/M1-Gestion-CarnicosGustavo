@@ -787,8 +787,9 @@ export default function RecipesPage({
 		const kg = refW > 0 ? ratio * refW : 0;
 		const pct = ratio * 100;
 		const kids = baseByParentId.get(r.child_product_id) ?? [];
-		const canExpand =
-			kids.length > 0 && !ancestors.includes(r.child_product_id);
+		// Cualquier pieza puede despiezarse (abrir su sub-despiece), aunque aún no
+		// tenga sub-piezas; solo se evita el ciclo (que sea su propio ancestro).
+		const canExpand = !ancestors.includes(r.child_product_id);
 		const ekey = `b${r.id}`;
 		const expanded = !!boardExpanded[ekey] && canExpand;
 		return (
@@ -827,7 +828,13 @@ export default function RecipesPage({
 								? "text-foreground hover:bg-muted"
 								: "text-muted-foreground/30",
 						)}
-						title={canExpand ? "Ver/editar su despiece" : undefined}
+						title={
+							canExpand
+								? kids.length > 0
+									? "Ver/editar su despiece"
+									: "Despiezar esta pieza (agregar sub-piezas)"
+								: undefined
+						}
 					>
 						{expanded ? "▾" : "▸"}
 					</button>
@@ -977,11 +984,50 @@ export default function RecipesPage({
 								r.child_product_id,
 							]),
 						)}
-						<SumBadge
-							rows={kids}
-							refW={Number(r.childProduct.avg_weight ?? 0) || 0}
-							level="Nivel 2"
-						/>
+						{/* Seleccionar pieza desde la barra de productos (además de arrastrar) */}
+						<div className="mt-1 flex flex-wrap items-center gap-2">
+							<select
+								value=""
+								onChange={(e) => {
+									const id = Number(e.target.value);
+									if (!id) return;
+									const p = mapProductById.get(id);
+									if (p && id !== r.child_product_id)
+										dropCreate(r.child_product_id, "BASE", {
+											id: p.id,
+											name: p.name,
+										});
+								}}
+								className="h-7 rounded-md border bg-background px-2 text-xs"
+							>
+								<option value="">+ Agregar pieza…</option>
+								{productOptions
+									.filter((p) => p.id !== r.child_product_id)
+									.map((p) => (
+										<option key={p.id} value={p.id}>
+											{p.name}
+										</option>
+									))}
+							</select>
+							{kids.length === 1 && (
+								<span className="text-[11px] text-amber-700">
+									Un despiece normalmente da 2 o más piezas (ej. JAMÓN S/H +
+									HUESO PELÓN). Agrega otra.
+								</span>
+							)}
+							{kids.length === 0 && (
+								<span className="text-[11px] text-muted-foreground">
+									Elige las piezas que salen de {r.childProduct.name}.
+								</span>
+							)}
+						</div>
+						{kids.length > 0 && (
+							<SumBadge
+								rows={kids}
+								refW={Number(r.childProduct.avg_weight ?? 0) || 0}
+								level="Nivel 2"
+							/>
+						)}
 					</div>
 				)}
 			</div>
