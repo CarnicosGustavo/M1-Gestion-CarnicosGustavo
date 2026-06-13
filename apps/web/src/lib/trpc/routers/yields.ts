@@ -354,6 +354,136 @@ export const yieldsRouter = router({
 			});
 		}),
 
+	// ── PRODUCTOS DE PROVEEDOR (compra directa, no salen de un canal) ──
+	// Lista los productos marcados como "Compra" (category='Compra'), con stock.
+	supplierProducts: protectedProcedure
+		.input(z.void())
+		.output(
+			z.array(
+				z.object({
+					id: z.number(),
+					name: z.string(),
+					stockPieces: z.number(),
+					stockKg: z.number(),
+					sellableByWeight: z.boolean(),
+					sellableByUnit: z.boolean(),
+				}),
+			),
+		)
+		.query(async ({ ctx }) => {
+			const rows = await db
+				.select({
+					id: products.id,
+					name: products.name,
+					stockPieces: products.stock_pieces,
+					stockKg: products.stock_kg,
+					byWeight: products.is_sellable_by_weight,
+					byUnit: products.is_sellable_by_unit,
+				})
+				.from(products)
+				.where(
+					and(
+						eq(products.user_uid, ctx.user.id),
+						eq(products.category, "Compra"),
+					),
+				)
+				.orderBy(products.name);
+			return rows.map((r) => ({
+				id: r.id,
+				name: r.name,
+				stockPieces: r.stockPieces ?? 0,
+				stockKg: Number(r.stockKg) || 0,
+				sellableByWeight: r.byWeight !== false,
+				sellableByUnit: r.byUnit !== false,
+			}));
+		}),
+
+	// Registra una compra de productos de proveedor: suma al inventario (piezas
+	// y/o kg) y deja una transacción COMPRA por auditoría. No idempotente: cada
+	// llamada AGREGA (igual que registrar una factura de compra).
+	recordSupplierPurchase: protectedProcedure
+		.input(
+			z.object({
+				date: z.string(),
+				supplier: z.string().optional(),
+				items: z.array(
+					z.object({
+						productId: z.number(),
+						pieces: z.number().min(0).default(0),
+						kg: z.number().min(0).default(0),
+						pricePerKg: z.number().min(0).optional(),
+					}),
+				),
+			}),
+		)
+		.output(z.object({ success: z.boolean(), count: z.number() }))
+		.mutation(async ({ ctx, input }) => {
+			const uid = ctx.user.id;
+			const valid = input.items.filter((it) => it.pieces > 0 || it.kg > 0);
+			if (valid.length === 0) return { success: true, count: 0 };
+
+			await db.transaction(async (tx) => {
+				for (const it of valid) {
+					const [prod] = await tx
+						.select()
+						.from(products)
+						.where(and(eq(products.id, it.productId), eq(products.user_uid, uid)))
+						.limit(1);
+					if (!prod) continue;
+
+					await tx
+						.update(products)
+						.set({
+							stock_pieces: (prod.stock_pieces ?? 0) + it.pieces,
+							stock_kg: (Number(prod.stock_kg) + it.kg).toFixed(3),
+							updated_at: new Date(),
+						})
+						.where(eq(products.id, it.productId));
+
+					await tx.insert(inventoryTransactions).values({
+						product_id: it.productId,
+						quantity_change_pieces: it.pieces || null,
+						quantity_change_kg: it.kg > 0 ? it.kg.toFixed(3) : null,
+						transaction_type: "COMPRA",
+						reference_id: null,
+						notes: `Compra a proveedor${input.supplier ? ` ${input.supplier}` : ""} (${input.date})${it.pricePerKg ? ` · $${it.pricePerKg}/kg` : ""}`,
+					});
+				}
+			});
+			return { success: true, count: valid.length };
+		}),
+
+	// Historial de compras de proveedor de un día (transacciones COMPRA).
+	supplierPurchaseHistory: protectedProcedure
+		.input(z.object({ date: z.string() }))
+		.query(async ({ ctx, input }) => {
+			const res = (await db.execute(sql`
+				SELECT it.id, p.name, it.quantity_change_pieces AS pieces,
+				       it.quantity_change_kg AS kg, it.notes, it.created_at
+				FROM inventory_transactions it
+				JOIN products p ON p.id = it.product_id
+				WHERE p.user_uid = ${ctx.user.id}
+				  AND it.transaction_type = 'COMPRA'
+				  AND it.created_at::date = ${input.date}
+				ORDER BY it.created_at DESC
+			`)) as unknown as {
+				id: number;
+				name: string;
+				pieces: number | null;
+				kg: string | null;
+				notes: string | null;
+				created_at: string;
+			}[];
+			return res.map((r) => ({
+				id: Number(r.id),
+				name: r.name,
+				pieces: Number(r.pieces) || 0,
+				kg: Number(r.kg) || 0,
+				notes: r.notes ?? "",
+				createdAt: r.created_at,
+			}));
+		}),
+
 	// Última compra de canales registrada (para auto-rellenar la hoja)
 	latestPurchase: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
 		const [p] = await db
