@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@finopenpos/ui/components/card";
+import { Card, CardContent } from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
@@ -12,7 +12,6 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
 import { SnowflakeIcon, FlameIcon } from "lucide-react";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -107,66 +106,66 @@ export default function ColdInventoryPage() {
 				/>
 			</div>
 
-			<Card>
-				<CardHeader>
-					<CardTitle>Existencias</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<div className="overflow-x-auto">
-						<Table>
-							<TableHeader>
-								<TableRow className="bg-muted/50">
-									<TableHead className="w-[34%]">Producto</TableHead>
-									<TableHead className="text-center">Fresco (kg / pz)</TableHead>
-									<TableHead className="text-center">Frío (kg / pz)</TableHead>
-									<TableHead className="text-center">Acciones</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{filtered.length === 0 ? (
-									<TableRow>
-										<TableCell colSpan={4} className="text-center text-muted-foreground py-6">
-											Sin existencias
-										</TableCell>
-									</TableRow>
-								) : (
-									filtered.map((p) => (
-										<TableRow key={p.id}>
-											<TableCell className="font-medium">{p.name}</TableCell>
-											<TableCell className="text-center">
-												{Number(p.stockKg).toFixed(2)} / {p.stockPieces}
-											</TableCell>
-											<TableCell className="text-center text-blue-700">
-												{Number(p.stockKgFrozen).toFixed(2)} / {p.stockPiecesFrozen}
-											</TableCell>
-											<TableCell>
-												<div className="flex justify-center gap-2">
-													<Button
-														variant="outline"
-														size="sm"
-														onClick={() => openDialog("toFrozen", p)}
-													>
-														<SnowflakeIcon className="w-4 h-4 mr-1 text-blue-600" />
-														A frío
-													</Button>
-													<Button
-														variant="outline"
-														size="sm"
-														onClick={() => openDialog("toFresh", p)}
-													>
-														<FlameIcon className="w-4 h-4 mr-1 text-orange-600" />
-														A fresco
-													</Button>
-												</div>
-											</TableCell>
-										</TableRow>
-									))
-								)}
-							</TableBody>
-						</Table>
-					</div>
-				</CardContent>
-			</Card>
+			{filtered.length === 0 ? (
+				<Card>
+					<CardContent className="py-10 text-center text-sm text-muted-foreground">
+						Sin existencias
+					</CardContent>
+				</Card>
+			) : (
+				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+					{filtered.map((p) => (
+						<Card key={p.id} className="p-4">
+							<h3 className="mb-3 text-sm font-bold uppercase tracking-wide">
+								{p.name}
+							</h3>
+
+							{/* Estado dual: Fresco (ámbar) | Frío (azul) — del diseño */}
+							<div className="mb-4 grid grid-cols-2 gap-3">
+								<div className="rounded-lg border border-cg-amber bg-cg-amber-wash p-3 text-center">
+									<div className="text-[11px] text-muted-foreground">Fresco</div>
+									<div className="text-xl font-bold text-cg-amber">
+										{Number(p.stockKg).toFixed(1)}
+									</div>
+									<div className="text-[10px] text-muted-foreground">
+										kg · {p.stockPieces} pz
+									</div>
+								</div>
+								<div className="rounded-lg border border-cg-blue bg-cg-blue-wash p-3 text-center">
+									<div className="text-[11px] text-muted-foreground">Frío</div>
+									<div className="text-xl font-bold text-cg-blue">
+										{Number(p.stockKgFrozen).toFixed(1)}
+									</div>
+									<div className="text-[10px] text-muted-foreground">
+										kg · {p.stockPiecesFrozen} pz
+									</div>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-2 gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									className="border-cg-blue text-cg-blue hover:bg-cg-blue-wash"
+									onClick={() => openDialog("toFrozen", p)}
+								>
+									<SnowflakeIcon className="mr-1 h-4 w-4" />
+									A frío
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									className="border-cg-amber text-cg-amber hover:bg-cg-amber-wash"
+									onClick={() => openDialog("toFresh", p)}
+								>
+									<FlameIcon className="mr-1 h-4 w-4" />
+									A fresco
+								</Button>
+							</div>
+						</Card>
+					))}
+				</div>
+			)}
 
 			{/* Dialog de transferencia */}
 			<Dialog open={!!dialog} onOpenChange={(o) => !o && setDialog(null)}>
