@@ -10,6 +10,7 @@ import {
 	EyeIcon,
 	ShoppingCartIcon,
 	PrinterIcon,
+	ScaleIcon,
 } from "lucide-react";
 import { Button } from "@finopenpos/ui/components/button";
 import {
@@ -926,47 +927,55 @@ export default function OrdersPage() {
 							</div>
 						)}
 
-						<div className="flex items-center justify-between">
-							<div className="text-sm text-muted-foreground">
-								<div className="flex flex-col">
-									<span>
-										Total:{" "}
-										<span className="font-semibold">
-											{formatCurrency(
-												Math.round(draftTotals.real * 100),
-												locale,
-											)}
-										</span>
-									</span>
-									{draftTotals.estimated !== draftTotals.real ? (
-										<span className="text-muted-foreground text-xs">
-											Estimado:{" "}
-											{formatCurrency(
-												Math.round(draftTotals.estimated * 100),
-												locale,
-											)}
-										</span>
-									) : null}
+						{/* Aviso de pesaje — del diseño (NuevoPedidoModal) */}
+						{draftItems.some((p) => p.is_sellable_by_weight) ? (
+							<div className="flex items-center gap-2.5 rounded-xl bg-[var(--cg-amber-wash)] px-3.5 py-3">
+								<ScaleIcon className="h-4 w-4 shrink-0 text-cg-amber" />
+								<span className="text-sm font-semibold text-foreground/80">
+									Este pedido incluye piezas que requieren <b>pesaje</b> antes de
+									cobrar. Se enviarán a la cola de báscula.
+								</span>
+							</div>
+						) : null}
+
+						{/* Total estimado — del diseño */}
+						<div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-3">
+							<span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+								Total estimado
+							</span>
+							<div className="text-right">
+								<div className="text-2xl font-bold">
+									{formatCurrency(Math.round(draftTotals.real * 100), locale)}
 								</div>
+								{draftTotals.estimated !== draftTotals.real ? (
+									<div className="text-xs text-muted-foreground">
+										Estimado:{" "}
+										{formatCurrency(
+											Math.round(draftTotals.estimated * 100),
+											locale,
+										)}
+									</div>
+								) : null}
 							</div>
-							<div className="flex gap-2">
-								<Button
-									variant="secondary"
-									onClick={() => setIsCreateOpen(false)}
-								>
-									Cancelar
-								</Button>
-								<Button
-									onClick={submitDraft}
-									disabled={
-										!draftCustomer ||
-										draftItems.length === 0 ||
-										createMutation.isPending
-									}
-								>
-									{createMutation.isPending ? "Creando..." : "Crear pedido"}
-								</Button>
-							</div>
+						</div>
+
+						<div className="flex justify-end gap-2">
+							<Button
+								variant="secondary"
+								onClick={() => setIsCreateOpen(false)}
+							>
+								Cancelar
+							</Button>
+							<Button
+								onClick={submitDraft}
+								disabled={
+									!draftCustomer ||
+									draftItems.length === 0 ||
+									createMutation.isPending
+								}
+							>
+								{createMutation.isPending ? "Creando..." : "Crear pedido"}
+							</Button>
 						</div>
 					</div>
 				</DialogContent>
