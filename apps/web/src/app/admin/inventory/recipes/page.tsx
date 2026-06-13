@@ -3,6 +3,7 @@
 import { Badge } from "@finopenpos/ui/components/badge";
 import { Button } from "@finopenpos/ui/components/button";
 import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
+import { Combobox } from "@finopenpos/ui/components/combobox";
 import {
 	type Column,
 	DataTable,
@@ -984,31 +985,24 @@ export default function RecipesPage({
 								r.child_product_id,
 							]),
 						)}
-						{/* Seleccionar pieza desde la barra de productos (además de arrastrar) */}
+						{/* ProductSelector: buscador de productos existentes (o arrastra) */}
 						<div className="mt-1 flex flex-wrap items-center gap-2">
-							<select
-								value=""
-								onChange={(e) => {
-									const id = Number(e.target.value);
-									if (!id) return;
-									const p = mapProductById.get(id);
-									if (p && id !== r.child_product_id)
+							<Combobox
+								noSelect
+								placeholder="+ Agregar pieza…"
+								className="h-7 w-48 text-xs"
+								items={productOptions
+									.filter((p) => p.id !== r.child_product_id)
+									.map((p) => ({ id: p.id, name: p.name }))}
+								onSelect={(id) => {
+									const p = mapProductById.get(Number(id));
+									if (p && Number(id) !== r.child_product_id)
 										dropCreate(r.child_product_id, "BASE", {
 											id: p.id,
 											name: p.name,
 										});
 								}}
-								className="h-7 rounded-md border bg-background px-2 text-xs"
-							>
-								<option value="">+ Agregar pieza…</option>
-								{productOptions
-									.filter((p) => p.id !== r.child_product_id)
-									.map((p) => (
-										<option key={p.id} value={p.id}>
-											{p.name}
-										</option>
-									))}
-							</select>
+							/>
 							{kids.length === 1 && (
 								<span className="text-[11px] text-amber-700">
 									Un despiece normalmente da 2 o más piezas (ej. JAMÓN S/H +
@@ -1372,12 +1366,28 @@ export default function RecipesPage({
 					<div className="divide-y">
 						{s.rows.map((r) => recipeRow(r, s.canalW, [s.parentId]))}
 					</div>
-					{draggedChild && (
+					{draggedChild ? (
 						<div
 							className="mt-1 rounded-md border-2 border-dashed px-2 py-1.5 text-center font-semibold text-[11px] text-muted-foreground"
 							style={{ borderColor: accent }}
 						>
 							Suelta aquí para agregar {draggedChild.name} a {s.type}
+						</div>
+					) : (
+						<div className="mt-1.5 flex justify-center">
+							<Combobox
+								noSelect
+								placeholder="Agregar pieza · o arrastra desde la paleta"
+								className="h-7 w-full max-w-xs text-xs"
+								items={productOptions
+									.filter((p) => p.id !== s.parentId)
+									.map((p) => ({ id: p.id, name: p.name }))}
+								onSelect={(id) => {
+									const p = mapProductById.get(Number(id));
+									if (p)
+										dropCreate(s.parentId, s.type, { id: p.id, name: p.name });
+								}}
+							/>
 						</div>
 					)}
 					<SumBadge rows={s.rows} refW={s.canalW} level="Nivel 1" />
