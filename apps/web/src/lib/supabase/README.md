@@ -63,12 +63,16 @@ SUPABASE_SERVICE_ROLE_KEY=<service role key>   # solo servidor, nunca al cliente
    ```
    Debe reportar conexión OK, tablas presentes y consulta REST exitosa.
 
-4. **Habilita Realtime** para las tablas que se observan en vivo:
-   Supabase → Database → **Replication** → publicación `supabase_realtime` →
-   añade `orders` y `order_items`. (O por SQL:)
+4. **Habilita Realtime** para las tablas que se observan en vivo. **No requiere
+   plan Pro.** Hazlo por SQL (SQL Editor):
    ```sql
    alter publication supabase_realtime add table public.orders, public.order_items;
    ```
+   O por dashboard: Database → **Publications** → `supabase_realtime` → activa
+   `orders` y `order_items`.
+
+   > ⚠️ No confundir con Database → **Replication** (Read Replicas): esa función
+   > sí pide Small compute / Pro y **no la necesitamos** para Realtime.
 
 5. **(Opcional) RLS.** El cliente de navegador usa la anon key y respeta RLS.
    Si no defines políticas, las suscripciones Realtime/consultas anónimas no
