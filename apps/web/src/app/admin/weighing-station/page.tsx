@@ -426,15 +426,15 @@ export default function WeighingStationPage() {
 				{/* Sidebar: Lista de órdenes pendientes                              */}
 				{/* ----------------------------------------------------------------- */}
 				<Card className="flex flex-col overflow-hidden lg:col-span-1">
-					<CardHeader className="bg-muted/50 border-b">
-						<CardTitle className="flex items-center gap-2">
-							<ScaleIcon className="w-5 h-5" />
+					<CardHeader className="border-b bg-[var(--cg-chrome)]">
+						<CardTitle className="flex items-center gap-2 font-display text-xl tracking-wide text-[var(--cg-chrome-fg)]">
+							<ScaleIcon className="h-5 w-5" />
 							{t("weighingStation")}
 						</CardTitle>
-						<CardDescription>
+						<p className="text-sm text-[var(--cg-rail-dim)]">
 							{orders.length} {t("orders").toLowerCase()}{" "}
 							{tc("pending").toLowerCase()}
-						</CardDescription>
+						</p>
 					</CardHeader>
 					<CardContent className="p-0 overflow-y-auto flex-1">
 						{orders.length === 0 ? (
@@ -452,7 +452,7 @@ export default function WeighingStationPage() {
 											"w-full text-left p-4 hover:bg-accent transition-colors flex items-center justify-between group",
 											selectedOrderId === order.id && "bg-accent",
 											newOrderIds.has(order.id) &&
-												"animate-pulse bg-green-100 ring-2 ring-inset ring-green-400",
+												"animate-pulse bg-[var(--cg-green-wash)] ring-2 ring-inset ring-[var(--cg-green)]",
 										)}
 									>
 										<div className="space-y-1">
@@ -461,7 +461,7 @@ export default function WeighingStationPage() {
 												{order.whatsapp_message_id && (
 													<Badge
 														variant="secondary"
-														className="bg-green-100 text-green-700 hover:bg-green-100"
+														className="bg-[var(--cg-green-wash)] text-[var(--cg-green)] hover:bg-[var(--cg-green-wash)]"
 													>
 														<MessageSquareIcon className="w-3 h-3 mr-1" />
 														WhatsApp
@@ -530,7 +530,7 @@ export default function WeighingStationPage() {
 											{clampedIndex + 1} de {pendingItems.length}
 										</span>
 									</p>
-									<h2 className="text-4xl font-extrabold tracking-tight">
+									<h2 className="font-display text-4xl tracking-wide">
 										{currentItem.quantity_pieces}&nbsp;{currentItem.product?.name ?? currentItem.product_name}
 									</h2>
 									{currentItem.product?.category && (
@@ -626,7 +626,7 @@ export default function WeighingStationPage() {
 												type="button"
 												onClick={handleCaptureTare}
 												disabled={!actualWeight || parseFloat(actualWeight) <= 0}
-												className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+												className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-lg border border-[var(--cg-blue)] bg-[var(--cg-blue-wash)] text-[var(--cg-blue)] hover:brightness-95 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
 												title="Poner este peso como tara del recipiente y dejar la báscula en cero"
 											>
 												Capturar
@@ -681,7 +681,7 @@ export default function WeighingStationPage() {
 											<span
 												className={cn(
 													"font-mono",
-													netKg > 0 ? "text-green-600" : "text-muted-foreground",
+													netKg > 0 ? "text-[var(--cg-green)]" : "text-muted-foreground",
 												)}
 											>
 												{netKg.toFixed(3)} kg
@@ -925,7 +925,7 @@ export default function WeighingStationPage() {
 					<Link href={`/admin/checkout?order=${completedOrder.id}`}>
 						<Button
 							size="lg"
-							className="h-14 rounded-2xl bg-green-600 px-6 text-base font-bold shadow-xl hover:bg-green-700"
+							className="h-14 rounded-2xl bg-[var(--cg-green)] px-6 text-base font-bold shadow-xl hover:brightness-95"
 							onClick={() => setCompletedOrder(null)}
 						>
 							<CheckCircleIcon className="mr-2 h-5 w-5" />

@@ -11,20 +11,13 @@ import { Combobox } from "@finopenpos/ui/components/combobox";
 import { Input } from "@finopenpos/ui/components/input";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { AntonellaSlot } from "@/components/antonella-slot";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@finopenpos/ui/components/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Loader2Icon,
 	MinusIcon,
 	PlusIcon,
 	ReceiptTextIcon,
+	ScissorsIcon,
 	SearchIcon,
 	Trash2Icon,
 } from "lucide-react";
@@ -34,6 +27,7 @@ import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 import { formatCurrency } from "@/lib/utils";
+import { cn } from "@finopenpos/ui/lib/utils";
 
 type Product = RouterOutputs["products"]["list"][number];
 type POSProduct = Pick<
@@ -55,6 +49,45 @@ type POSProduct = Pick<
 	unitPricePerPiece: number;
 };
 
+// Availability badge — color-coded per the design system
+type AvailStatus = "stock" | "despiece" | "pesaje" | "faltante";
+
+function AvailBadge({
+	status,
+	small,
+}: { status: AvailStatus; small?: boolean }) {
+	const config: Record<AvailStatus, { label: string; cls: string }> = {
+		stock: {
+			label: "Stock",
+			cls: "bg-[var(--cg-green-wash)] text-[var(--cg-green)]",
+		},
+		despiece: {
+			label: "Despiece",
+			cls: "bg-[var(--cg-blue-wash)] text-[var(--cg-blue)]",
+		},
+		pesaje: {
+			label: "Por pesar",
+			cls: "bg-[var(--cg-amber-wash)] text-[var(--cg-amber)]",
+		},
+		faltante: {
+			label: "Faltante",
+			cls: "bg-[var(--cg-red-wash)] text-primary",
+		},
+	};
+	const { label, cls } = config[status];
+	return (
+		<span
+			className={cn(
+				"inline-flex shrink-0 rounded-full font-bold uppercase tracking-[0.04em]",
+				small ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-1 text-[10px]",
+				cls,
+			)}
+		>
+			{label}
+		</span>
+	);
+}
+
 export default function POSPage() {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
@@ -72,10 +105,20 @@ export default function POSPage() {
 	);
 	const { data: availability = [] } = useQuery(
 		trpc.products.availabilityMap.queryOptions(),
-	) as { data: { productId: number; stockPieces: number; stockKg: number; derivable: boolean }[] };
+	) as {
+		data: {
+			productId: number;
+			stockPieces: number;
+			stockKg: number;
+			derivable: boolean;
+		}[];
+	};
 
 	const availMap = useMemo(() => {
-		const m = new Map<number, { stockPieces: number; stockKg: number; derivable: boolean }>();
+		const m = new Map<
+			number,
+			{ stockPieces: number; stockKg: number; derivable: boolean }
+		>();
 		for (const a of availability) m.set(a.productId, a);
 		return m;
 	}, [availability]);
@@ -95,6 +138,17 @@ export default function POSPage() {
 		if (direct) return "stock";
 		return availMap.get(p.id)?.derivable ? "despiece" : "faltante";
 	};
+
+	// Availability status for catalog cards (uses availMap, not cart state)
+	const catalogAvail = (product: Product): AvailStatus => {
+		const a = availMap.get(product.id);
+		if (!a) return product.is_sellable_by_weight ? "pesaje" : "faltante";
+		if (a.stockPieces > 0 || a.stockKg > 0) return "stock";
+		if (a.derivable) return "despiece";
+		if (product.is_sellable_by_weight) return "pesaje";
+		return "faltante";
+	};
+
 	const t = useTranslations("pos");
 	const tc = useTranslations("common");
 	const tOrders = useTranslations("orders");
@@ -248,7 +302,6 @@ export default function POSPage() {
 		const product = products.find((p) => p.id === productId);
 		if (!product) return;
 
-		// Validar stock dual
 		if (product.stock_pieces <= 0 && product.stock_kg <= 0) {
 			toast.error(t("outOfStock", { name: product.name }));
 			return;
@@ -291,11 +344,7 @@ export default function POSPage() {
 
 	const handleSelectCustomer = (customerId: number | string) => {
 		const customer = customers.find((c) => c.id === customerId);
-		if (customer) {
-			setSelectedCustomer(customer);
-			// Re-precia los productos ya agregados con los precios de este cliente
-			// (el efecto real ocurre cuando llegan sus precios; ver useEffect abajo)
-		}
+		if (customer) setSelectedCustomer(customer);
 	};
 
 	const handleSelectPaymentMethod = (paymentMethodId: number | string) => {
@@ -360,17 +409,12 @@ export default function POSPage() {
 	};
 
 	const total = selectedProducts.reduce((sum, p) => {
-		if (p.quantityKg) {
-			return sum + (p.unitPricePerKg || 0) * p.quantityKg;
-		}
-		if (p.quantityPieces) {
+		if (p.quantityKg) return sum + (p.unitPricePerKg || 0) * p.quantityKg;
+		if (p.quantityPieces)
 			return sum + (p.unitPricePerPiece || 0) * p.quantityPieces;
-		}
 		return sum;
 	}, 0);
 
-	// El pago se decide en la Cola de Cobro, no al crear el pedido.
-	// Basta con tener productos y cliente; el pedido fluye a pesaje/cobro.
 	const canCreate = selectedProducts.length > 0 && !!selectedCustomer;
 
 	const handleCreateOrder = () => {
@@ -378,9 +422,10 @@ export default function POSPage() {
 		const customerId = selectedCustomer?.id;
 		if (!customerId) return;
 
-		// Clasifica: en stock / vía despiece / faltante
 		const faltantes = selectedProducts.filter((p) => classify(p) === "faltante");
-		const viaDespiece = selectedProducts.filter((p) => classify(p) === "despiece");
+		const viaDespiece = selectedProducts.filter(
+			(p) => classify(p) === "despiece",
+		);
 
 		if (viaDespiece.length > 0) {
 			toast.info(
@@ -389,7 +434,7 @@ export default function POSPage() {
 		}
 		if (faltantes.length > 0) {
 			toast.warning(
-				`⚠️ Falta(n) ${faltantes.length} pieza(s) (conseguir en otro centro): ${faltantes.map((p) => p.name).join(", ")}`,
+				`⚠️ Falta(n) ${faltantes.length} pieza(s): ${faltantes.map((p) => p.name).join(", ")}`,
 			);
 		}
 
@@ -403,8 +448,6 @@ export default function POSPage() {
 				unitPrice: p.quantityKg
 					? Math.round((p.unitPricePerKg || 0) * 100)
 					: Math.round((p.unitPricePerPiece || 0) * 100),
-				// Solo los FALTANTES reales son pendiente de compra; los derivables
-				// se generan por despiece de sus piezas padre.
 				requiresPurchase: classify(p) === "faltante",
 			})),
 		});
@@ -412,302 +455,319 @@ export default function POSPage() {
 
 	if (loading) {
 		return (
-			<div className="container mx-auto space-y-4 p-4">
-				<Card>
-					<CardHeader>
-						<Skeleton className="h-6 w-32" />
-					</CardHeader>
-					<CardContent className="flex gap-4">
-						<Skeleton className="h-10 flex-1" />
-						<Skeleton className="h-10 flex-1" />
-					</CardContent>
-				</Card>
-				<Card>
-					<CardHeader>
-						<Skeleton className="h-6 w-24" />
-					</CardHeader>
-					<CardContent className="space-y-3">
-						<Skeleton className="h-10 w-full" />
-						{Array.from({ length: 3 }).map((_, i) => (
-							<div key={i} className="flex items-center gap-4">
-								<Skeleton className="h-4 w-32" />
-								<Skeleton className="h-4 w-20" />
-								<Skeleton className="h-8 w-24" />
-								<Skeleton className="h-4 w-20" />
+			<div className="mx-auto w-full max-w-5xl space-y-4">
+				<Skeleton className="h-8 w-48" />
+				<div className="grid grid-cols-3 gap-3">
+					<Skeleton className="h-11" />
+					<Skeleton className="h-11" />
+					<Skeleton className="h-11" />
+				</div>
+				<div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+					<Card>
+						<CardContent className="p-4">
+							<Skeleton className="mb-3 h-11" />
+							<div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+								{Array.from({ length: 9 }).map((_, i) => (
+									<Skeleton key={i} className="h-20 rounded-xl" />
+								))}
 							</div>
-						))}
-					</CardContent>
-				</Card>
+						</CardContent>
+					</Card>
+					<Skeleton className="h-64 rounded-2xl" />
+				</div>
 			</div>
 		);
 	}
 
+	const hasDespiece = selectedProducts.some((p) => classify(p) === "despiece");
+	const hasFaltantes = selectedProducts.some((p) => classify(p) === "faltante");
+	const needsWeighing = selectedProducts.some(
+		(p) => p.is_sellable_by_weight && !p.quantityKg,
+	);
+
 	return (
-		<div className="mx-auto w-full max-w-4xl">
+		<div className="mx-auto w-full max-w-5xl">
+			{/* iAntonella */}
 			<AntonellaSlot
 				data={{
 					tone: "sugerencia",
-					titulo: "Punto de venta",
+					titulo: "Disponibilidad en vivo",
 					texto:
-						"Te aviso si una pieza no tiene stock y hay que despiezarla o pesarla. Puedo resolver precios del cliente y estimar el total antes de pesar.",
-					acciones: ["¿Qué piezas faltan en stock?", "¿Cubre mi stock los pedidos?"],
+						"Clasifico cada pieza al agregarla: en stock, vía despiece o faltante. CUERO y piezas de peso van a báscula. Te aviso antes de crear el pedido.",
+					acciones: [
+						"¿Qué piezas faltan en stock?",
+						"¿Cubre mi stock los pedidos?",
+					],
 				}}
 			/>
-			<Card className="mb-4">
-				<CardHeader>
-					<CardTitle>{t("saleDetails")}</CardTitle>
-				</CardHeader>
-				<CardContent className="flex flex-col gap-3 sm:flex-row sm:gap-4">
-					<div className="flex-1">
-						<Combobox
-							items={customers.map((c: any) => ({
-								id: c.id,
-								name: `${c.name ?? "Cliente"}${c.phone ? ` · ${c.phone}` : ""}`,
-							}))}
-							placeholder="Buscar cliente por nombre o teléfono"
-							onSelect={handleSelectCustomer}
-						/>
-					</div>
-					<div className="flex-1">
-						<Combobox
-							items={paymentMethods}
-							placeholder={t("selectPaymentMethod")}
-							onSelect={handleSelectPaymentMethod}
-						/>
-					</div>
-					<div className="flex-1">
-						<Combobox
-							items={priceListOptions}
-							placeholder="Lista de precios"
-							onSelect={handleSelectPriceList}
-						/>
-					</div>
-				</CardContent>
-			</Card>
-			<Card>
-				<CardHeader>
-					<CardTitle>{t("products")}</CardTitle>
-					<div className="!mt-4 flex flex-col gap-3 sm:flex-row">
-						<div className="relative flex-1">
-							<SearchIcon className="absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
+
+			{/* Encabezado */}
+			<div className="mb-4 flex items-baseline justify-between gap-3">
+				<h1 className="font-display text-[28px] tracking-wide text-foreground">
+					POS
+				</h1>
+				{selectedCustomer && (
+					<span className="text-sm font-semibold text-muted-foreground">
+						{selectedCustomer.name}
+					</span>
+				)}
+			</div>
+
+			{/* Detalles de venta (cliente / método / lista) */}
+			<div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+				<Combobox
+					items={customers.map((c: any) => ({
+						id: c.id,
+						name: `${c.name ?? "Cliente"}${c.phone ? ` · ${c.phone}` : ""}`,
+					}))}
+					placeholder="Buscar cliente…"
+					onSelect={handleSelectCustomer}
+				/>
+				<Combobox
+					items={paymentMethods}
+					placeholder={t("selectPaymentMethod")}
+					onSelect={handleSelectPaymentMethod}
+				/>
+				<Combobox
+					items={priceListOptions}
+					placeholder="Lista de precios"
+					onSelect={handleSelectPriceList}
+				/>
+			</div>
+
+			{/* Catálogo + Carrito */}
+			<div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+				{/* Catálogo de productos */}
+				<Card>
+					<CardContent className="p-4">
+						<div className="relative mb-3">
+							<SearchIcon className="absolute top-3 left-3 h-4 w-4 text-muted-foreground" />
 							<Input
 								type="text"
 								placeholder={t("searchPlaceholder")}
 								value={productSearch}
 								onChange={(e) => setProductSearch(e.target.value)}
-								className="pl-8"
+								className="h-11 pl-9"
 							/>
 						</div>
-						<Combobox
-							items={filteredProducts.map((p) => ({
-								id: p.id,
-								name: (() => {
-									const override = priceOverrides.get(p.id);
-									const price = p.is_sellable_by_weight
-										? (override?.kg ?? Number(p.price_per_kg || 0))
-										: (override?.piece ?? Number(p.price_per_piece || 0));
-									return `${p.name} — ${formatCurrency(price * 100, locale)} (${p.stock_pieces} pzas / ${p.stock_kg} kg)`;
-								})(),
-							}))}
-							placeholder={t("addProduct")}
-							noSelect
-							onSelect={handleSelectProduct}
-						/>
-					</div>
-				</CardHeader>
-				<CardContent>
-					{selectedProducts.length === 0 ? (
-						<div className="flex h-32 items-center justify-center text-muted-foreground text-sm">
-							{t("selectProducts")}
+						<div className="grid max-h-[440px] grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+							{filteredProducts.map((product) => {
+								const avail = catalogAvail(product);
+								const price = Number(
+									product.is_sellable_by_weight
+										? product.price_per_kg
+										: product.price_per_piece,
+								);
+								return (
+									<button
+										key={product.id}
+										type="button"
+										onClick={() => handleSelectProduct(product.id)}
+										className="group rounded-xl border bg-card p-3 text-left transition-colors hover:bg-secondary active:scale-[0.98]"
+									>
+										<div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+											{product.category || "—"}
+										</div>
+										<div className="mb-2 line-clamp-2 text-[13px] font-bold leading-tight text-foreground">
+											{product.name}
+										</div>
+										<div className="flex items-center justify-between gap-1">
+											<span className="font-mono text-xs text-foreground">
+												{price > 0
+													? `$${price.toFixed(2)}`
+													: "—"}
+												{product.is_sellable_by_weight ? "/kg" : "/pz"}
+											</span>
+											<AvailBadge status={avail} small />
+										</div>
+									</button>
+								);
+							})}
 						</div>
-					) : (
-						<div className="overflow-x-auto">
-							<Table>
-								<TableHeader>
-									<TableRow>
-										<TableHead>{tc("name")}</TableHead>
-										<TableHead className="hidden sm:table-cell">
-											{tc("price")}
-										</TableHead>
-										<TableHead>{t("pieces")}</TableHead>
-										<TableHead>{t("weight")}</TableHead>
-										<TableHead>{tc("total")}</TableHead>
-										<TableHead className="w-10" />
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{selectedProducts.map((product) => {
-										const price =
-											product.quantityKg !== null
-												? product.unitPricePerKg
-												: product.unitPricePerPiece;
-										return (
-											<TableRow key={product.id}>
-												<TableCell className="font-medium">
+					</CardContent>
+				</Card>
+
+				{/* Carrito */}
+				<Card className="flex flex-col">
+					<CardHeader className="pb-2">
+						<CardTitle className="font-display text-[18px] tracking-wide">
+							{selectedCustomer ? selectedCustomer.name : t("products")}
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="flex flex-1 flex-col">
+						{/* Líneas del pedido */}
+						{selectedProducts.length === 0 ? (
+							<div className="flex flex-1 items-center justify-center py-10 text-sm text-muted-foreground">
+								{t("selectProducts")}
+							</div>
+						) : (
+							<div className="space-y-2">
+								{selectedProducts.map((product) => {
+									const avail = classify(product);
+									const cartAvail: AvailStatus =
+										product.is_sellable_by_weight && !product.quantityKg
+											? "pesaje"
+											: avail;
+									const price =
+										product.quantityKg !== null
+											? product.unitPricePerKg
+											: product.unitPricePerPiece;
+									const subtotal =
+										product.quantityKg !== null
+											? product.quantityKg * price
+											: product.quantityPieces * price;
+									return (
+										<div
+											key={product.id}
+											className="rounded-xl border bg-secondary/50 p-2.5"
+										>
+											{/* Nombre + badge */}
+											<div className="mb-2 flex items-center gap-1.5">
+												<span className="flex-1 truncate text-[13px] font-bold text-foreground">
 													{product.name}
-												</TableCell>
-												<TableCell className="hidden sm:table-cell">
-													<div className="flex items-center gap-2">
-														<Input
-															type="number"
-															step="0.01"
-															className="w-28"
-															value={String(price)}
-															onChange={(e) => {
-																const v = Number(e.target.value);
-																if (product.quantityKg !== null)
-																	handleSetUnitPriceKg(product.id, v);
-																else handleSetUnitPricePiece(product.id, v);
-															}}
-														/>
-														<span className="text-muted-foreground text-xs">
-															{product.quantityKg !== null ? "/kg" : "/pza"}
-														</span>
-													</div>
-												</TableCell>
-												<TableCell>
-													<div className="flex items-center gap-1">
-														<Button
-															size="icon"
-															variant="outline"
-															className="h-7 w-7"
-															onClick={() =>
-																handleQuantityChange(product.id, -1)
-															}
-															disabled={product.quantityPieces <= 1}
-														>
-															<MinusIcon className="h-3 w-3" />
-														</Button>
-														<Input
-															type="number"
-															className="h-7 w-16 text-center"
-															value={String(product.quantityPieces)}
-															onChange={(e) =>
-																handleSetQuantityPieces(
-																	product.id,
-																	Number(e.target.value),
-																)
-															}
-														/>
-														<Button
-															size="icon"
-															variant="outline"
-															className="h-7 w-7"
-															onClick={() =>
-																handleQuantityChange(product.id, 1)
-															}
-														>
-															<PlusIcon className="h-3 w-3" />
-														</Button>
-													</div>
-												</TableCell>
-												<TableCell>
-													{product.is_sellable_by_weight ? (
-														<Input
-															type="number"
-															step="0.001"
-															placeholder="kg"
-															className="h-7 w-24"
-															value={
-																product.quantityKg === null
-																	? ""
-																	: String(product.quantityKg)
-															}
-															onChange={(e) => {
-																const raw = e.target.value.trim();
-																handleSetQuantityKg(
-																	product.id,
-																	raw ? Number(raw) : null,
-																);
-															}}
-														/>
-													) : (
-														<span className="text-muted-foreground">—</span>
-													)}
-												</TableCell>
-												<TableCell className="font-medium">
-													{formatCurrency(
-														(product.quantityKg !== null
-															? product.quantityKg * price
-															: product.quantityPieces * price) * 100,
-														locale,
-													)}
-												</TableCell>
-												<TableCell>
-													<Button
-														variant="ghost"
-														size="icon"
-														className="h-8 w-8"
-														onClick={() => handleRemoveProduct(product.id)}
+												</span>
+												<AvailBadge status={cartAvail} small />
+											</div>
+											{/* Stepper + kg + precio + trash */}
+											<div className="flex items-center gap-1.5">
+												{/* Stepper de piezas */}
+												<div className="flex items-center rounded-lg border bg-background">
+													<button
+														type="button"
+														onClick={() => handleQuantityChange(product.id, -1)}
+														disabled={product.quantityPieces <= 1}
+														className="flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
 													>
-														<Trash2Icon className="h-4 w-4" />
-														<span className="sr-only">{tc("remove")}</span>
-													</Button>
-												</TableCell>
-											</TableRow>
-										);
-									})}
-								</TableBody>
-							</Table>
-						</div>
-					)}
-					<div className="mt-4 flex flex-col items-center justify-between gap-3 border-t pt-4 sm:flex-row">
-						<div className="flex flex-col">
-							<strong className="text-lg">
-								{tc("total")}: {formatCurrency(total * 100, locale)}
-							</strong>
-							{selectedProducts.some(
-								(p) => p.is_sellable_by_weight && !p.quantityKg,
-							) && (
-								<span className="font-medium text-orange-600 text-xs">
-									{t("weighingPendingItems")}
+														<MinusIcon className="h-3.5 w-3.5" />
+													</button>
+													<Input
+														type="number"
+														className="h-9 w-10 border-0 text-center font-mono font-bold text-sm"
+														value={String(product.quantityPieces)}
+														onChange={(e) =>
+															handleSetQuantityPieces(
+																product.id,
+																Number(e.target.value),
+															)
+														}
+													/>
+													<button
+														type="button"
+														onClick={() => handleQuantityChange(product.id, 1)}
+														className="flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+													>
+														<PlusIcon className="h-3.5 w-3.5" />
+													</button>
+												</div>
+												{/* kg */}
+												{product.is_sellable_by_weight ? (
+													<Input
+														type="number"
+														step="0.001"
+														placeholder="kg"
+														className="h-9 w-20 text-center font-mono text-sm"
+														value={
+															product.quantityKg === null
+																? ""
+																: String(product.quantityKg)
+														}
+														onChange={(e) => {
+															const raw = e.target.value.trim();
+															handleSetQuantityKg(
+																product.id,
+																raw ? Number(raw) : null,
+															);
+														}}
+													/>
+												) : null}
+												{/* Precio */}
+												<Input
+													type="number"
+													step="0.01"
+													className="h-9 w-20 font-mono text-sm"
+													value={String(price)}
+													onChange={(e) => {
+														const v = Number(e.target.value);
+														if (product.quantityKg !== null)
+															handleSetUnitPriceKg(product.id, v);
+														else handleSetUnitPricePiece(product.id, v);
+													}}
+												/>
+												{/* Subtotal */}
+												<span className="ml-auto font-mono text-[13px] font-bold text-foreground">
+													{formatCurrency(subtotal * 100, locale)}
+												</span>
+												{/* Eliminar */}
+												<button
+													type="button"
+													onClick={() => handleRemoveProduct(product.id)}
+													className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-[var(--cg-red-wash)] hover:text-primary"
+												>
+													<Trash2Icon className="h-4 w-4" />
+												</button>
+											</div>
+										</div>
+									);
+								})}
+							</div>
+						)}
+
+						{/* Alertas de estado */}
+						{hasDespiece && (
+							<div className="mt-2 flex items-center gap-2 rounded-lg bg-[var(--cg-blue-wash)] px-3 py-2">
+								<ScissorsIcon className="h-3.5 w-3.5 shrink-0 text-[var(--cg-blue)]" />
+								<span className="text-[12px] font-medium text-[var(--cg-blue)]">
+									Piezas por despiece — se generarán al confirmar
 								</span>
-							)}
-							{selectedProducts.some((p) => classify(p) === "despiece") && (
-								<span className="text-xs font-medium text-blue-600">
-									🔪 Hay piezas que se generan por despiece (hay stock del padre).
+							</div>
+						)}
+						{hasFaltantes && (
+							<div className="mt-2 flex items-center gap-2 rounded-lg bg-[var(--cg-red-wash)] px-3 py-2">
+								<span className="text-[12px] font-medium text-primary">
+									⚠️ Piezas faltantes: sin stock ni despiece disponible
 								</span>
-							)}
-							{selectedProducts.some((p) => classify(p) === "faltante") && (
-								<span className="text-xs font-medium text-red-600">
-									⚠️ Piezas faltantes (ni en stock ni derivables):{" "}
-									{selectedProducts
-										.filter((p) => classify(p) === "faltante")
-										.map((p) => p.name)
-										.join(", ")}
+							</div>
+						)}
+
+						{/* Total y botón */}
+						<div className="mt-4 border-t pt-4">
+							<div className="mb-3 flex items-baseline justify-between">
+								<span className="font-display text-xl text-foreground">
+									Total
 								</span>
-							)}
+								<span className="font-display text-xl text-foreground">
+									{formatCurrency(total * 100, locale)}
+								</span>
+							</div>
+							<div className="flex items-center gap-3">
+								<label className="flex cursor-pointer select-none items-center gap-2 text-sm text-foreground">
+									<input
+										type="checkbox"
+										checked={emitNfce}
+										onChange={(e) => setEmitNfce(e.target.checked)}
+										className="h-4 w-4 rounded border accent-primary"
+									/>
+									<ReceiptTextIcon className="h-4 w-4 text-muted-foreground" />
+									Factura
+								</label>
+								<Button
+									onClick={handleCreateOrder}
+									disabled={!canCreate || createOrderMutation.isPending}
+									size="lg"
+									className="flex-1 bg-primary font-bold text-primary-foreground hover:bg-primary/90"
+								>
+									{createOrderMutation.isPending && (
+										<Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+									)}
+									{needsWeighing
+										? t("orderRequiresWeighing")
+										: t("createOrder")}
+								</Button>
+							</div>
 						</div>
-						<div className="flex w-full items-center gap-3 sm:w-auto">
-							<label className="flex cursor-pointer select-none items-center gap-2 text-sm">
-								<input
-									type="checkbox"
-									checked={emitNfce}
-									onChange={(e) => setEmitNfce(e.target.checked)}
-									className="h-4 w-4 rounded border-gray-300"
-								/>
-								<ReceiptTextIcon className="h-4 w-4 text-muted-foreground" />
-								Factura
-							</label>
-							<Button
-								onClick={handleCreateOrder}
-								disabled={!canCreate || createOrderMutation.isPending}
-								size="lg"
-								className="flex-1 sm:flex-initial"
-							>
-								{createOrderMutation.isPending && (
-									<Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-								)}
-								{selectedProducts.some(
-									(p) => p.is_sellable_by_weight && !p.quantityKg,
-								)
-									? t("orderRequiresWeighing")
-									: t("createOrder")}
-							</Button>
-						</div>
-					</div>
-				</CardContent>
-			</Card>
+					</CardContent>
+				</Card>
+			</div>
 		</div>
 	);
 }

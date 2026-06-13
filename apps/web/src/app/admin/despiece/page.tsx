@@ -26,12 +26,12 @@ import { useTRPC } from "@/lib/trpc/client";
 type Tab = "despiezar" | "recetas";
 
 const TYPE_ACCENT: Record<string, string> = {
-	AMERICANO: "#e11d48",
-	NACIONAL_LOMO: "#16a34a",
-	NACIONAL_ESPILOMO: "#0d9488",
-	POLINESIO: "#ea580c",
+	AMERICANO: "var(--primary)",
+	NACIONAL_LOMO: "var(--cg-green)",
+	NACIONAL_ESPILOMO: "var(--cg-blue)",
+	POLINESIO: "var(--cg-amber)",
 };
-const accentFor = (t: string) => TYPE_ACCENT[t] ?? "#2563eb";
+const accentFor = (t: string) => TYPE_ACCENT[t] ?? "var(--cg-blue)";
 
 // "CANAL NACIONAL LADO LOMO" -> "Nacional · Lomo"
 const shortCanal = (name: string) =>
@@ -154,7 +154,7 @@ export default function DespiecePage() {
 		<div className="mx-auto max-w-6xl space-y-5">
 			<div className="flex flex-wrap items-end justify-between gap-2">
 				<div>
-					<h1 className="font-bold text-2xl">Despiece</h1>
+					<h1 className="font-display text-[28px] tracking-wide">Despiece</h1>
 					<p className="text-muted-foreground text-sm">
 						Los canales vienen de la{" "}
 						<Link
@@ -257,7 +257,7 @@ export default function DespiecePage() {
 											</span>
 											{dem > 0 && (
 												<span
-													className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 font-bold text-[10px] text-blue-700"
+													className="shrink-0 rounded-full bg-[var(--cg-blue-wash)] px-1.5 py-0.5 font-bold text-[10px] text-[var(--cg-blue)]"
 													title={`${dem} piezas pedidas de este canal`}
 												>
 													● {dem}
@@ -305,7 +305,7 @@ export default function DespiecePage() {
 											Canales a despiezar
 										</div>
 										{suggested > 0 && (
-											<div className="text-[10px] text-blue-600">
+											<div className="text-[10px] text-[var(--cg-blue)]">
 												sugerido: {suggested}
 											</div>
 										)}
@@ -346,7 +346,7 @@ export default function DespiecePage() {
 							</CardHeader>
 							<CardContent>
 								{maxQty <= 0 && (
-									<div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-amber-800 text-xs">
+									<div className="mb-3 rounded-lg border border-[var(--cg-amber)] bg-[var(--cg-amber-wash)] p-2.5 text-[var(--cg-amber)] text-xs">
 										No hay canales de este tipo en inventario. Regístralos en{" "}
 										<Link
 											href="/admin/purchase"
@@ -471,7 +471,7 @@ function PieceCard({
 				onClick={onToggle}
 				className={cn(
 					"rounded-xl border bg-card p-2.5 text-left transition-all hover:border-foreground/30 hover:shadow-sm",
-					p.demand > 0 && "border-blue-200 bg-blue-50/40",
+					p.demand > 0 && "border-[var(--cg-blue)] bg-[var(--cg-blue-wash)]/40",
 				)}
 				title="Toca para ver todo el detalle de esta pieza"
 			>
@@ -490,8 +490,8 @@ function PieceCard({
 							className={cn(
 								"rounded-full px-1.5 py-0.5 font-bold text-[10px]",
 								covers
-									? "bg-green-100 text-green-700"
-									: "bg-blue-100 text-blue-700",
+									? "bg-[var(--cg-green-wash)] text-[var(--cg-green)]"
+									: "bg-[var(--cg-blue-wash)] text-[var(--cg-blue)]",
 							)}
 						>
 							{p.demand} pedidas
@@ -531,14 +531,14 @@ function PieceCard({
 
 			{/* Métricas clave */}
 			<div className="grid grid-cols-2 gap-2 px-4 pb-3 lg:grid-cols-4">
-				<div className="rounded-lg bg-blue-50 p-2.5">
-					<p className="text-[10px] text-blue-700/70 uppercase">
+				<div className="rounded-lg bg-[var(--cg-blue-wash)] p-2.5">
+					<p className="text-[10px] text-[var(--cg-blue)]/70 uppercase">
 						📋 En pedidos
 					</p>
-					<p className="font-bold text-blue-700 text-xl tabular-nums">
+					<p className="font-display text-[var(--cg-blue)] text-xl tabular-nums">
 						{p.demand} pz
 					</p>
-					<p className="text-[10px] text-blue-700/70">
+					<p className="text-[10px] text-[var(--cg-blue)]/70">
 						{demandKg > 0 ? `${demandKg.toFixed(1)} kg pedidos` : "—"}
 					</p>
 				</div>
@@ -567,13 +567,13 @@ function PieceCard({
 				<div
 					className={cn(
 						"rounded-lg p-2.5",
-						covers ? "bg-green-50" : "bg-amber-50",
+						covers ? "bg-[var(--cg-green-wash)]" : "bg-[var(--cg-amber-wash)]",
 					)}
 				>
 					<p
 						className={cn(
 							"text-[10px] uppercase",
-							covers ? "text-green-700/70" : "text-amber-700/70",
+							covers ? "text-[var(--cg-green)]/70" : "text-[var(--cg-amber)]/70",
 						)}
 					>
 						➕ Con {qty} canal(es)
@@ -581,7 +581,7 @@ function PieceCard({
 					<p
 						className={cn(
 							"font-bold text-xl tabular-nums",
-							covers ? "text-green-700" : "text-amber-700",
+							covers ? "text-[var(--cg-green)]" : "text-[var(--cg-amber)]",
 						)}
 					>
 						+{producePieces} pz
@@ -589,7 +589,7 @@ function PieceCard({
 					<p
 						className={cn(
 							"text-[10px]",
-							covers ? "text-green-700/70" : "text-amber-700/70",
+							covers ? "text-[var(--cg-green)]/70" : "text-[var(--cg-amber)]/70",
 						)}
 					>
 						{produceKg > 0 ? `~${produceKg.toFixed(1)} kg · ` : ""}
@@ -609,8 +609,8 @@ function PieceCard({
 						className={cn(
 							"rounded-lg border p-2.5 text-xs",
 							missing <= 0
-								? "border-green-200 bg-green-50 text-green-800"
-								: "border-blue-200 bg-blue-50 text-blue-800",
+								? "border-[var(--cg-green)] bg-[var(--cg-green-wash)] text-[var(--cg-green)]"
+								: "border-[var(--cg-blue)] bg-[var(--cg-blue-wash)] text-[var(--cg-blue)]",
 						)}
 					>
 						{missing <= 0 ? (

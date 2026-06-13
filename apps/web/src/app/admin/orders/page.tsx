@@ -64,24 +64,47 @@ import { TicketModal } from "@/components/ticket-modal";
 type Order = RouterOutputs["orders"]["list"][number];
 type OrderStatus = "completed" | "pending" | "cancelled";
 
-// Mapea cualquier estado interno a etiqueta y color visible en la lista
+// Mapea cualquier estado interno a badge con tokens del sistema de diseño
 function getOrderStatusDisplay(status: string): { label: string; color: string } {
+	const base =
+		"inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em]";
 	switch (status) {
 		case "COMPLETADA":
 		case "completed":
-			return { label: "Pagada", color: "text-green-600" };
+			return {
+				label: "Pagada",
+				color: `${base} bg-[var(--cg-green-wash)] text-[var(--cg-green)]`,
+			};
 		case "LISTA_PARA_COBRO":
-			return { label: "Lista para cobro", color: "text-blue-600" };
+			return {
+				label: "Lista para cobro",
+				color: `${base} bg-[var(--cg-blue-wash)] text-[var(--cg-blue)]`,
+			};
 		case "PROCESANDO_PAGO":
-			return { label: "Procesando pago", color: "text-blue-600" };
+			return {
+				label: "Procesando pago",
+				color: `${base} bg-[var(--cg-blue-wash)] text-[var(--cg-blue)]`,
+			};
 		case "PENDIENTE_PESAJE":
-			return { label: "Por pesar", color: "text-yellow-600" };
+			return {
+				label: "Por pesar",
+				color: `${base} bg-[var(--cg-amber-wash)] text-[var(--cg-amber)]`,
+			};
 		case "PARCIAL_DISPONIBLE":
-			return { label: "Parcial", color: "text-orange-600" };
+			return {
+				label: "Parcial",
+				color: `${base} bg-[var(--cg-amber-wash)] text-[var(--cg-amber)]`,
+			};
 		case "cancelled":
-			return { label: "Cancelada", color: "text-red-600" };
+			return {
+				label: "Cancelada",
+				color: `${base} bg-[var(--cg-red-wash)] text-primary`,
+			};
 		default:
-			return { label: "Pendiente", color: "text-yellow-600" };
+			return {
+				label: "Pendiente",
+				color: `${base} bg-[var(--cg-amber-wash)] text-[var(--cg-amber)]`,
+			};
 	}
 }
 
@@ -573,7 +596,7 @@ export default function OrdersPage() {
 		return (
 			<Card>
 				<CardContent>
-					<p className="text-red-500">{error.message}</p>
+					<p className="text-primary">{error.message}</p>
 				</CardContent>
 			</Card>
 		);

@@ -61,6 +61,7 @@ const messages = {
 		cedis: "Verificación CEDIS",
 		cierre: "Cierre del día",
 		antonella: "iAntonella",
+		designSystem: "Sistema de diseño",
 		adminPanel: "Panel de administración",
 		openMenu: "Abrir menú",
 		myAccount: "Mi cuenta",

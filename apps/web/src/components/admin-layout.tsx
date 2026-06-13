@@ -34,6 +34,7 @@ import {
 	ScaleIcon,
 	ScissorsIcon,
 	SettingsIcon,
+	ShapesIcon,
 	ShoppingBagIcon,
 	ShoppingCartIcon,
 	SnowflakeIcon,
@@ -77,7 +78,8 @@ interface NavItem {
 		| "checkout"
 		| "cedis"
 		| "cierre"
-		| "antonella";
+		| "antonella"
+		| "designSystem";
 	icon: LucideIcon;
 }
 
@@ -119,6 +121,7 @@ const cfgNav: NavItem[] = [
 		icon: CreditCardIcon,
 	},
 	{ href: "/admin/settings", labelKey: "settings", icon: SettingsIcon },
+	{ href: "/admin/design-system", labelKey: "designSystem", icon: ShapesIcon },
 ];
 
 const navItems: NavItem[] = [...opNav, ...cfgNav];
