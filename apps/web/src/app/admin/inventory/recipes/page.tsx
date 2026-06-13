@@ -697,6 +697,22 @@ export default function RecipesPage({
 			.sort((a, b) => a.type.localeCompare(b.type));
 	}, [mapRecipes]);
 
+	// Alerta de cierre de pesos: detecta el canal con más merma (% sin cubrir).
+	// Replica la card ALERTA de iAntonella del diseño.
+	const mermaAlert = useMemo(() => {
+		let worst: { canal: string; sumPct: number; merma: number } | null = null;
+		for (const s of boardStyles) {
+			const sumPct =
+				s.rows
+					.filter((r) => r.is_variant !== true)
+					.reduce((acc, r) => acc + (Number(r.yield_weight_ratio) || 0), 0) * 100;
+			const merma = 100 - sumPct;
+			if (sumPct > 0 && (!worst || merma > worst.merma))
+				worst = { canal: s.parent, sumPct, merma };
+		}
+		return worst;
+	}, [boardStyles]);
+
 	// BASE agrupado por id de pieza padre (para ramificar inline)
 	const baseByParentId = useMemo(() => {
 		const m = new Map<number, Recipe[]>();
@@ -2076,20 +2092,33 @@ export default function RecipesPage({
 	return (
 		<div className="space-y-4">
 			{selProdId != null && <ProductCard productId={selProdId} />}
-			{!configurator && (
-				<AntonellaSlot
-					data={{
-						tone: "sugerencia",
-						titulo: "Configurador de recetas",
-						texto:
-							"Las recetas son el núcleo: de aquí salen el despiece, la proyección de pedidos, el rendimiento y el precio sugerido. Puedo estimar los pesos faltantes desde los % y el peso del canal, con tu confirmación.",
-						acciones: [
-							"¿Cómo se despieza PIERNA?",
-							"Estima los pesos faltantes",
-						],
-					}}
-				/>
-			)}
+			{!configurator &&
+				(mermaAlert && mermaAlert.merma > 10 ? (
+					<AntonellaSlot
+						data={{
+							tone: "alerta",
+							titulo: "Revisa el cierre de pesos",
+							texto: `El ${mermaAlert.canal} suma ${mermaAlert.sumPct.toFixed(1)}% de su peso en piezas: hay ${mermaAlert.merma.toFixed(1)}% de merma, alto para tu histórico (~8%). Probablemente falta capturar el kg de alguna pieza, o quedó bajo.`,
+							acciones: [
+								"Ver piezas faltantes",
+								"¿Merma aceptable?",
+							],
+						}}
+					/>
+				) : (
+					<AntonellaSlot
+						data={{
+							tone: "sugerencia",
+							titulo: "Configurador de recetas",
+							texto:
+								"Las recetas son el núcleo: de aquí salen el despiece, la proyección de pedidos, el rendimiento y el precio sugerido. Puedo estimar los pesos faltantes desde los % y el peso del canal, con tu confirmación.",
+							acciones: [
+								"¿Cómo se despieza PIERNA?",
+								"Estima los pesos faltantes",
+							],
+						}}
+					/>
+				))}
 
 			{/* iAntonella — autoconfig: estimar el peso de los canales desde sus piezas */}
 			{aiBar === "show" && boardStyles.length > 0 && (
