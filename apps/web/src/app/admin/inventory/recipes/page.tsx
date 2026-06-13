@@ -43,6 +43,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
+import { AntonellaSlot } from "@/components/antonella-slot";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 import { formatCurrency } from "@/lib/utils";
@@ -1513,11 +1514,26 @@ export default function RecipesPage({
 		setActiveMutation.isPending;
 
 	return (
-		<Card className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
-			<CardHeader className="p-0">
-				<div className="flex flex-wrap items-center justify-between gap-2">
-					<div className="flex items-center gap-2 text-muted-foreground">
-						<BookOpenIcon className="h-5 w-5" />
+		<div className="space-y-4">
+			{!configurator && (
+				<AntonellaSlot
+					data={{
+						tone: "sugerencia",
+						titulo: "Configurador de recetas",
+						texto:
+							"Las recetas son el núcleo: de aquí salen el despiece, la proyección de pedidos, el rendimiento y el precio sugerido. Puedo estimar los pesos faltantes desde los % y el peso del canal, con tu confirmación.",
+						acciones: [
+							"¿Cómo se despieza PIERNA?",
+							"Estima los pesos faltantes",
+						],
+					}}
+				/>
+			)}
+			<Card className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6">
+				<CardHeader className="p-0">
+					<div className="flex flex-wrap items-center justify-between gap-2">
+						<div className="flex items-center gap-2 text-muted-foreground">
+							<BookOpenIcon className="h-5 w-5" />
 						{configurator ? (
 							<span className="font-bold text-base text-foreground">
 								Configurador de Despiece
@@ -2201,6 +2217,7 @@ export default function RecipesPage({
 					</form>
 				</DialogContent>
 			</Dialog>
-		</Card>
+			</Card>
+		</div>
 	);
 }

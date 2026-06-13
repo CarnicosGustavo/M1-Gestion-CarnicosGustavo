@@ -10,6 +10,7 @@ import {
 import { Combobox } from "@finopenpos/ui/components/combobox";
 import { Input } from "@finopenpos/ui/components/input";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
+import { AntonellaSlot } from "@/components/antonella-slot";
 import {
 	Table,
 	TableBody,
@@ -443,6 +444,15 @@ export default function POSPage() {
 
 	return (
 		<div className="mx-auto w-full max-w-4xl">
+			<AntonellaSlot
+				data={{
+					tone: "sugerencia",
+					titulo: "Punto de venta",
+					texto:
+						"Te aviso si una pieza no tiene stock y hay que despiezarla o pesarla. Puedo resolver precios del cliente y estimar el total antes de pesar.",
+					acciones: ["¿Qué piezas faltan en stock?", "¿Cubre mi stock los pedidos?"],
+				}}
+			/>
 			<Card className="mb-4">
 				<CardHeader>
 					<CardTitle>{t("saleDetails")}</CardTitle>

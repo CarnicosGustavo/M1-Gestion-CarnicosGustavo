@@ -12,7 +12,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	GitBranchIcon,
 	MinusIcon,
-	PackageIcon,
 	PlusIcon,
 	ScissorsIcon,
 	ShoppingCartIcon,
@@ -20,6 +19,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AntonellaSlot } from "@/components/antonella-slot";
 import { useTRPC } from "@/lib/trpc/client";
 
 type Tab = "despiezar" | "recetas";
@@ -192,19 +192,28 @@ export default function DespiecePage() {
 
 			{tab === "despiezar" && (
 				<>
-					{/* Banner de demanda (modo automático) */}
-					{totalDemandPieces > 0 && (
-						<div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
-							<div className="flex items-center gap-2 font-bold text-blue-800 text-sm">
-								<PackageIcon className="h-4 w-4" />
-								Pedidos pendientes: {totalDemandPieces} piezas por producir
-							</div>
-							<p className="mt-0.5 text-blue-700/80 text-xs">
-								Los canales con pedidos están marcados ●. Al elegir uno, te
-								sugiero cuántos despiezar para cubrir la demanda.
-							</p>
-						</div>
-					)}
+					{/* iAntonella: presencia con contexto de demanda */}
+					<AntonellaSlot
+						data={
+							totalDemandPieces > 0
+								? {
+										tone: "aviso",
+										titulo: "Despiece del día",
+										texto: `Hay ${totalDemandPieces} piezas pendientes de producir. Los canales con pedidos están marcados ●; al elegir uno te sugiero cuántos despiezar para cubrir la demanda.`,
+										acciones: [
+											"¿Qué conviene despiezar hoy?",
+											"¿Cubre mi stock los pedidos?",
+										],
+									}
+								: {
+										tone: "ok",
+										titulo: "Despiece del día",
+										texto:
+											"No hay pedidos pendientes de producir por ahora. Puedo ayudarte a planear el despiece o revisar el stock de canales.",
+										acciones: ["¿Cuántos canales tengo?"],
+									}
+						}
+					/>
 
 					{/* Cards de canales disponibles */}
 					{canales.length === 0 ? (

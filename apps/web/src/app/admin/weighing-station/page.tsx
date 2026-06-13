@@ -47,6 +47,7 @@ import {
 } from "@finopenpos/ui/components/select";
 import { Combobox } from "@finopenpos/ui/components/combobox";
 import { cn } from "@finopenpos/ui/lib/utils";
+import { AntonellaSlot } from "@/components/antonella-slot";
 
 // ---------------------------------------------------------------------------
 // Contenedores / Tara predefinida
@@ -396,6 +397,23 @@ export default function WeighingStationPage() {
 
 	return (
 		<div className="mx-auto max-w-7xl space-y-4">
+			<AntonellaSlot
+				data={
+					orders.length > 0
+						? {
+								tone: "aviso",
+								titulo: "Estación de pesaje",
+								texto: `Hay ${orders.length} pedido(s) por pesar. Pesa pieza por pieza (neto = bruto − tara) y al terminar te llevo al cobro.`,
+								acciones: ["¿Qué pedidos faltan por pesar?"],
+							}
+						: {
+								tone: "ok",
+								titulo: "Estación de pesaje",
+								texto:
+									"No hay pedidos pendientes de pesaje. Puedes registrar un pesaje de producción a granel cuando lo necesites.",
+							}
+				}
+			/>
 			<div className="flex items-center justify-end">
 				<Button onClick={() => setBatchOpen(true)} variant="outline">
 					<ScaleIcon className="mr-2 h-4 w-4" />
