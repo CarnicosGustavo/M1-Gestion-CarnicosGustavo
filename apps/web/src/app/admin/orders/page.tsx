@@ -1,17 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useForm } from "@tanstack/react-form";
-import { z } from "zod/v4";
-import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
-import {
-	FilePenIcon,
-	TrashIcon,
-	EyeIcon,
-	ShoppingCartIcon,
-	PrinterIcon,
-} from "lucide-react";
 import { Button } from "@finopenpos/ui/components/button";
+import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
+import { Combobox } from "@finopenpos/ui/components/combobox";
+import {
+	type Column,
+	DataTable,
+	type ExportColumn,
+	TableActionButton,
+	TableActions,
+} from "@finopenpos/ui/components/data-table";
 import {
 	Dialog,
 	DialogContent,
@@ -20,6 +18,11 @@ import {
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
 import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
+import {
+	type FilterOption,
+	SearchFilter,
+} from "@finopenpos/ui/components/search-filter";
 import {
 	Select,
 	SelectContent,
@@ -27,8 +30,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@finopenpos/ui/components/select";
-import { Label } from "@finopenpos/ui/components/label";
-import { Combobox } from "@finopenpos/ui/components/combobox";
+import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import {
 	Table,
 	TableBody,
@@ -37,35 +39,36 @@ import {
 	TableHeader,
 	TableRow,
 } from "@finopenpos/ui/components/table";
+import { useForm } from "@tanstack/react-form";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	EyeIcon,
+	FilePenIcon,
+	PrinterIcon,
+	ShoppingCartIcon,
+	TrashIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
-import { Skeleton } from "@finopenpos/ui/components/skeleton";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCrudMutation } from "@/hooks/use-crud-mutation";
-import {
-	DataTable,
-	TableActions,
-	TableActionButton,
-	type Column,
-	type ExportColumn,
-} from "@finopenpos/ui/components/data-table";
-import {
-	SearchFilter,
-	type FilterOption,
-} from "@finopenpos/ui/components/search-filter";
-import type { RouterOutputs } from "@/lib/trpc/router";
-import { useTranslations, useLocale } from "next-intl";
-import { formatCurrency } from "@/lib/utils";
+import { useLocale, useTranslations } from "next-intl";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { z } from "zod/v4";
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { TicketModal } from "@/components/ticket-modal";
+import { useCrudMutation } from "@/hooks/use-crud-mutation";
+import { useTRPC } from "@/lib/trpc/client";
+import type { RouterOutputs } from "@/lib/trpc/router";
+import { formatCurrency } from "@/lib/utils";
 
 type Order = RouterOutputs["orders"]["list"][number];
 type OrderStatus = "completed" | "pending" | "cancelled";
 
 // Mapea cualquier estado interno a etiqueta y color visible en la lista
-function getOrderStatusDisplay(status: string): { label: string; color: string } {
+function getOrderStatusDisplay(status: string): {
+	label: string;
+	color: string;
+} {
 	switch (status) {
 		case "COMPLETADA":
 		case "completed":
@@ -90,6 +93,7 @@ type CustomerRow = RouterOutputs["customers"]["list"][number];
 type PaymentMethodRow = RouterOutputs["paymentMethods"]["list"][number];
 
 type OrderDraftItem = {
+	lineId: number;
 	id: number;
 	name: string;
 	stock_pieces: number;
@@ -244,7 +248,10 @@ export default function OrdersPage() {
 			return;
 		}
 		const digits = ncWhats.replace(/[^\d]/g, "");
-		const slug = ncName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+		const slug = ncName
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-");
 		const email = digits
 			? `${digits}@cedis.local`
 			: `${slug || "cliente"}@cedis.local`;
@@ -264,6 +271,9 @@ export default function OrdersPage() {
 	);
 	const [draftNotes, setDraftNotes] = useState("");
 	const [draftItems, setDraftItems] = useState<OrderDraftItem[]>([]);
+	// Contador para asignar un id único a cada renglón del pedido, de modo que
+	// un mismo producto pueda agregarse en varias líneas sin colisionar.
+	const lineCounter = useRef(0);
 
 	const invalidateKeys = trpc.orders.list.queryOptions().queryKey;
 
@@ -320,7 +330,7 @@ export default function OrdersPage() {
 			if (editingId !== null) {
 				updateMutation.mutate({
 					id: editingId,
-					total_amount: Math.round(parseFloat(value.total) * 100),
+					total_amount: Math.round(Number.parseFloat(value.total) * 100),
 					status: value.status,
 				});
 			}
@@ -397,12 +407,18 @@ export default function OrdersPage() {
 		const p = products.find((x) => x.id === id);
 		if (!p) return;
 		setDraftItems((prev) => {
-			if (prev.some((x) => x.id === p.id)) return prev;
+			// Se permite el mismo producto en varias líneas (a veces se necesita,
+			// p. ej. dos cortes/pesos distintos). Solo avisamos si ya estaba.
+			if (prev.some((x) => x.id === p.id)) {
+				toast.info(`"${p.name}" ya está en el pedido — se agregó otra línea`);
+			}
+			lineCounter.current += 1;
 			const unitPriceKg = Number(p.price_per_kg ?? 0);
 			const unitPricePiece = Number(p.price_per_piece ?? 0);
 			return [
 				...prev,
 				{
+					lineId: lineCounter.current,
 					id: p.id,
 					name: p.name,
 					stock_pieces: p.stock_pieces,
@@ -423,10 +439,10 @@ export default function OrdersPage() {
 		});
 	};
 
-	const updateDraftQtyPieces = (id: number, v: number) => {
+	const updateDraftQtyPieces = (lineId: number, v: number) => {
 		setDraftItems((prev) =>
 			prev.map((p) =>
-				p.id === id
+				p.lineId === lineId
 					? {
 							...p,
 							quantityPieces: Math.max(0, Math.floor(v)),
@@ -437,10 +453,10 @@ export default function OrdersPage() {
 		);
 	};
 
-	const updateDraftQtyKg = (id: number, v: number | null) => {
+	const updateDraftQtyKg = (lineId: number, v: number | null) => {
 		setDraftItems((prev) =>
 			prev.map((p) =>
-				p.id === id
+				p.lineId === lineId
 					? {
 							...p,
 							quantityKg: v === null ? null : Math.max(0, v),
@@ -451,24 +467,24 @@ export default function OrdersPage() {
 		);
 	};
 
-	const updateDraftUnitPriceKg = (id: number, v: number) => {
+	const updateDraftUnitPriceKg = (lineId: number, v: number) => {
 		setDraftItems((prev) =>
 			prev.map((p) =>
-				p.id === id ? { ...p, unitPricePerKg: Math.max(0, v) } : p,
+				p.lineId === lineId ? { ...p, unitPricePerKg: Math.max(0, v) } : p,
 			),
 		);
 	};
 
-	const updateDraftUnitPricePiece = (id: number, v: number) => {
+	const updateDraftUnitPricePiece = (lineId: number, v: number) => {
 		setDraftItems((prev) =>
 			prev.map((p) =>
-				p.id === id ? { ...p, unitPricePerPiece: Math.max(0, v) } : p,
+				p.lineId === lineId ? { ...p, unitPricePerPiece: Math.max(0, v) } : p,
 			),
 		);
 	};
 
-	const removeDraftItem = (id: number) => {
-		setDraftItems((prev) => prev.filter((p) => p.id !== id));
+	const removeDraftItem = (lineId: number) => {
+		setDraftItems((prev) => prev.filter((p) => p.lineId !== lineId));
 	};
 
 	const submitDraft = () => {
@@ -506,7 +522,7 @@ export default function OrdersPage() {
 			<TableActions>
 				<TableActionButton
 					onClick={() => openEdit(row)}
-					icon={<FilePenIcon className="w-4 h-4" />}
+					icon={<FilePenIcon className="h-4 w-4" />}
 					label={tc("edit")}
 				/>
 				<TableActionButton
@@ -515,7 +531,7 @@ export default function OrdersPage() {
 						setDeleteId(row.id);
 						setIsDeleteOpen(true);
 					}}
-					icon={<TrashIcon className="w-4 h-4" />}
+					icon={<TrashIcon className="h-4 w-4" />}
 					label={tc("delete")}
 				/>
 				<Button
@@ -527,7 +543,7 @@ export default function OrdersPage() {
 					}}
 					title="Imprimir Ticket"
 				>
-					<PrinterIcon className="w-4 h-4" />
+					<PrinterIcon className="h-4 w-4" />
 					<span className="sr-only">Imprimir Ticket</span>
 				</Button>
 				<Link
@@ -536,7 +552,7 @@ export default function OrdersPage() {
 					onClick={(e) => e.stopPropagation()}
 				>
 					<Button size="icon" variant="ghost">
-						<EyeIcon className="w-4 h-4" />
+						<EyeIcon className="h-4 w-4" />
 						<span className="sr-only">{tc("view")}</span>
 					</Button>
 				</Link>
@@ -553,7 +569,7 @@ export default function OrdersPage() {
 						<Skeleton className="h-9 w-32" />
 					</div>
 				</CardHeader>
-				<CardContent className="p-0 space-y-3">
+				<CardContent className="space-y-3 p-0">
 					{Array.from({ length: 5 }).map((_, i) => (
 						<div key={i} className="flex items-center gap-4">
 							<Skeleton className="h-4 w-12" />
@@ -607,7 +623,7 @@ export default function OrdersPage() {
 					exportColumns={exportColumns}
 					exportFilename="orders"
 					emptyMessage={t("noOrders")}
-					emptyIcon={<ShoppingCartIcon className="w-8 h-8" />}
+					emptyIcon={<ShoppingCartIcon className="h-8 w-8" />}
 					defaultSort={[{ id: "created_at", desc: true }]}
 				/>
 			</CardContent>
@@ -630,7 +646,7 @@ export default function OrdersPage() {
 						}}
 					>
 						<div className="grid gap-4 py-4">
-							<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+							<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 								<Label htmlFor="customerName">{t("customer")}</Label>
 								<Input
 									id="customerName"
@@ -641,7 +657,7 @@ export default function OrdersPage() {
 							</div>
 							<form.Field name="total">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="total">{tc("total")}</Label>
 										<div className="col-span-3">
 											<Input
@@ -664,7 +680,7 @@ export default function OrdersPage() {
 							</form.Field>
 							<form.Field name="status">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="status">{tc("status")}</Label>
 										<Select
 											value={field.state.value}
@@ -732,7 +748,7 @@ export default function OrdersPage() {
 									<button
 										type="button"
 										onClick={() => setNewCustOpen(true)}
-										className="text-xs font-semibold text-primary hover:underline"
+										className="font-semibold text-primary text-xs hover:underline"
 									>
 										+ Nuevo cliente
 									</button>
@@ -811,7 +827,7 @@ export default function OrdersPage() {
 													: (p.unitPricePerKg || 0) * estimatedKg
 												: (p.unitPricePerPiece || 0) * pieces;
 											return (
-												<TableRow key={p.id}>
+												<TableRow key={p.lineId}>
 													<TableCell className="font-medium">
 														{p.name}
 													</TableCell>
@@ -825,7 +841,7 @@ export default function OrdersPage() {
 															onChange={(e) => {
 																const raw = e.target.value;
 																updateDraftQtyPieces(
-																	p.id,
+																	p.lineId,
 																	raw === ""
 																		? 0
 																		: Number.parseInt(raw, 10) || 0,
@@ -850,7 +866,7 @@ export default function OrdersPage() {
 															onChange={(e) => {
 																const raw = e.target.value;
 																updateDraftQtyKg(
-																	p.id,
+																	p.lineId,
 																	raw === ""
 																		? null
 																		: Number.parseFloat(raw) || 0,
@@ -882,8 +898,9 @@ export default function OrdersPage() {
 																const raw = e.target.value;
 																const v =
 																	raw === "" ? 0 : Number.parseFloat(raw) || 0;
-																if (isWeight) updateDraftUnitPriceKg(p.id, v);
-																else updateDraftUnitPricePiece(p.id, v);
+																if (isWeight)
+																	updateDraftUnitPriceKg(p.lineId, v);
+																else updateDraftUnitPricePiece(p.lineId, v);
 															}}
 															onFocus={(e) => e.currentTarget.select()}
 														/>
@@ -909,7 +926,7 @@ export default function OrdersPage() {
 														<Button
 															size="icon"
 															variant="ghost"
-															onClick={() => removeDraftItem(p.id)}
+															onClick={() => removeDraftItem(p.lineId)}
 														>
 															<TrashIcon className="h-4 w-4" />
 														</Button>
@@ -927,7 +944,7 @@ export default function OrdersPage() {
 						)}
 
 						<div className="flex items-center justify-between">
-							<div className="text-sm text-muted-foreground">
+							<div className="text-muted-foreground text-sm">
 								<div className="flex flex-col">
 									<span>
 										Total:{" "}
