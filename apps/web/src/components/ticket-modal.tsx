@@ -1,8 +1,5 @@
 "use client";
 
-import { useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useTRPC } from "@/lib/trpc/client";
 import { Button } from "@finopenpos/ui/components/button";
 import {
 	Dialog,
@@ -10,8 +7,11 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
-import { PrinterIcon } from "lucide-react";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
+import { useQuery } from "@tanstack/react-query";
+import { PrinterIcon } from "lucide-react";
+import { useRef } from "react";
+import { useTRPC } from "@/lib/trpc/client";
 
 interface TicketModalProps {
 	orderId: number;
@@ -31,8 +31,8 @@ const money = (pesos: number) =>
 
 // Estilos del ticket, compartidos por la vista previa y la impresión.
 const TICKET_STYLE = `
-.t-logo { text-align: center; margin-bottom: 2px; }
-.t-logo img { width: 72px; height: 72px; object-fit: contain; }
+.t-logo { text-align: center; margin: 2px 0 6px; }
+.t-logo img { width: 150px; height: auto; max-width: 70%; object-fit: contain; }
 .t-name { text-align: center; font-size: 17px; letter-spacing: 0.5px; line-height: 1.2; }
 .t-sub { text-align: center; font-size: 12px; }
 .t-orden { text-align: center; font-size: 22px; margin: 8px 0 2px; letter-spacing: 1px; }
@@ -68,7 +68,7 @@ export function TicketModal({ orderId, open, onClose }: TicketModalProps) {
 
 	// Cantidad de un renglón: kg (2 decimales) o piezas
 	const lineQty = (it: NonNullable<typeof ticket>["items"][number]) => {
-		const kg = it.quantityKg ? parseFloat(it.quantityKg) : 0;
+		const kg = it.quantityKg ? Number.parseFloat(it.quantityKg) : 0;
 		if (kg > 0) return kg.toFixed(2);
 		return String(it.quantityPieces ?? 1);
 	};
@@ -88,10 +88,10 @@ export function TicketModal({ orderId, open, onClose }: TicketModalProps) {
 		const lines: string[] = [header, sep];
 		for (const it of ticket.items) {
 			const pz = it.quantityPieces ? String(it.quantityPieces) : "-";
-			const kgNum = it.quantityKg ? parseFloat(it.quantityKg) : 0;
+			const kgNum = it.quantityKg ? Number.parseFloat(it.quantityKg) : 0;
 			const kg = kgNum > 0 ? kgNum.toFixed(2) : "-";
-			const precio = money(parseFloat(it.unitPrice) / 100 || 0);
-			const total = money(parseFloat(it.subtotal) / 100 || 0);
+			const precio = money(Number.parseFloat(it.unitPrice) / 100 || 0);
+			const total = money(Number.parseFloat(it.subtotal) / 100 || 0);
 			lines.push(`- ${it.productName}`);
 			lines.push(row(pz, kg, precio, total));
 		}
@@ -107,7 +107,7 @@ export function TicketModal({ orderId, open, onClose }: TicketModalProps) {
 		lines.push(`Cliente: ${ticket.customerName ?? "Consumidor Final"}`);
 		lines.push("------------------------------");
 		for (const it of ticket.items) {
-			const sub = parseFloat(it.subtotal) / 100 || 0;
+			const sub = Number.parseFloat(it.subtotal) / 100 || 0;
 			lines.push(`${lineQty(it)}  ${it.productName}  ${money(sub)}`);
 		}
 		lines.push("------------------------------");
@@ -117,7 +117,9 @@ export function TicketModal({ orderId, open, onClose }: TicketModalProps) {
 				maximumFractionDigits: 2,
 			})}`,
 		);
-		lines.push(`*TOTAL: ${money(parseFloat(ticket.totalAmount) / 100 || 0)}*`);
+		lines.push(
+			`*TOTAL: ${money(Number.parseFloat(ticket.totalAmount) / 100 || 0)}*`,
+		);
 		if (ticket.amountDue > 0)
 			lines.push(`POR COBRAR: ${money(ticket.amountDue)}`);
 		lines.push("¡Gracias por su preferencia!");
@@ -170,13 +172,12 @@ ${TICKET_STYLE}
 		if (!ticket) return null;
 		const fecha = new Date(ticket.date);
 		// URL absoluta para que el logo también cargue en la ventana de impresión
-		const origin =
-			typeof window !== "undefined" ? window.location.origin : "";
+		const origin = typeof window !== "undefined" ? window.location.origin : "";
 		return (
 			<>
 				<div className="t-logo">
 					{/* eslint-disable-next-line @next/next/no-img-element */}
-					<img src={`${origin}/brand/pig-head.png`} alt="" />
+					<img src={`${origin}/brand/logo-gustavo-ticket.png`} alt="" />
 				</div>
 				<div className="t-name">{BUSINESS.name}</div>
 				<div className="t-sub">{BUSINESS.address}</div>
@@ -218,7 +219,7 @@ ${TICKET_STYLE}
 
 				<div className="t-total">
 					<span>TOTAL</span>
-					<span>{money(parseFloat(ticket.totalAmount) / 100 || 0)}</span>
+					<span>{money(Number.parseFloat(ticket.totalAmount) / 100 || 0)}</span>
 				</div>
 				{ticket.paymentStatus === "PAGADO" ? (
 					<div className="t-cobrar">
@@ -230,9 +231,7 @@ ${TICKET_STYLE}
 						<div className="t-pay">
 							<span>FORMA DE PAGO:</span>
 							<span>
-								{ticket.paymentStatus === "CREDITO"
-									? "CRÉDITO"
-									: "PENDIENTE"}
+								{ticket.paymentStatus === "CREDITO" ? "CRÉDITO" : "PENDIENTE"}
 							</span>
 						</div>
 						<div className="t-cobrar">
@@ -256,7 +255,7 @@ ${TICKET_STYLE}
 				<style dangerouslySetInnerHTML={{ __html: TICKET_STYLE }} />
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
-						<PrinterIcon className="w-4 h-4" />
+						<PrinterIcon className="h-4 w-4" />
 						Recibo de compra
 					</DialogTitle>
 				</DialogHeader>
@@ -270,7 +269,7 @@ ${TICKET_STYLE}
 				) : ticket ? (
 					<div
 						ref={ticketRef}
-						className="border rounded-lg p-4 bg-white max-h-[60vh] overflow-y-auto text-black"
+						className="max-h-[60vh] overflow-y-auto rounded-lg border bg-white p-4 text-black"
 						style={{
 							fontFamily: "'Courier New', Courier, monospace",
 							fontWeight: "bold",
@@ -298,7 +297,7 @@ ${TICKET_STYLE}
 						WhatsApp
 					</Button>
 					<Button onClick={handlePrint} disabled={!ticket}>
-						<PrinterIcon className="w-4 h-4 mr-2" />
+						<PrinterIcon className="mr-2 h-4 w-4" />
 						Imprimir
 					</Button>
 				</div>
