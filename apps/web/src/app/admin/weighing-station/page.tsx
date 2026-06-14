@@ -77,6 +77,8 @@ export default function WeighingStationPage() {
 
 	// Peso bruto ingresado
 	const [actualWeight, setActualWeight] = useState("");
+	// Teclado numérico en pantalla: oculto por default, se abre con un botón.
+	const [showKeypad, setShowKeypad] = useState(false);
 
 	// Contenedor / Tara
 	const [containerId, setContainerId] = useState<ContainerId>("ninguno");
@@ -679,6 +681,20 @@ export default function WeighingStationPage() {
 											Peso bruto (kg)
 										</Label>
 										<div className="flex gap-1">
+											{/* TECLADO: muestra/oculta el teclado numérico en pantalla */}
+											<button
+												type="button"
+												onClick={() => setShowKeypad((v) => !v)}
+												className={cn(
+													"rounded-lg border px-3 py-1 font-bold text-xs uppercase tracking-wider transition-colors",
+													showKeypad
+														? "border-primary bg-primary text-primary-foreground"
+														: "border-border bg-muted hover:bg-muted/80",
+												)}
+												title="Mostrar / ocultar teclado numérico en pantalla"
+											>
+												Teclado
+											</button>
 											{/* CAPTURAR: toma el peso actual como tara y deja en cero */}
 											<button
 												type="button"
@@ -704,16 +720,16 @@ export default function WeighingStationPage() {
 									</div>
 									{/* Lectura grande de peso neto — del diseño (PesajeModal) */}
 									<div className="mb-3 rounded-2xl bg-[var(--cg-chrome)] px-4 py-4 text-center">
-										<div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--cg-chrome-fg)]/55">
+										<div className="mb-1.5 font-semibold text-[11px] text-[var(--cg-chrome-fg)]/55 uppercase tracking-[0.1em]">
 											Peso neto
 										</div>
-										<div className="font-display text-6xl leading-none text-[var(--cg-chrome-fg)]">
+										<div className="font-display text-6xl text-[var(--cg-chrome-fg)] leading-none">
 											{netKg.toFixed(2)}
-											<span className="ml-2 align-baseline text-2xl font-semibold text-[var(--cg-chrome-fg)]/60">
+											<span className="ml-2 align-baseline font-semibold text-2xl text-[var(--cg-chrome-fg)]/60">
 												kg
 											</span>
 										</div>
-										<div className="mt-2 font-mono text-xs text-[var(--cg-chrome-fg)]/50">
+										<div className="mt-2 font-mono text-[var(--cg-chrome-fg)]/50 text-xs">
 											bruto {grossKg.toFixed(2)} − tara {tareKg.toFixed(2)}
 										</div>
 									</div>
@@ -738,21 +754,35 @@ export default function WeighingStationPage() {
 										</div>
 									</div>
 
-									{/* Teclado numérico en pantalla — del diseño (PesajeModal) */}
-									<div className="mt-3 grid grid-cols-3 gap-2">
-										{["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "←"].map(
-											(k) => (
+									{/* Teclado numérico en pantalla — oculto por default, se abre con
+									    el botón "Teclado". Útil en tablet sin teclado físico. */}
+									{showKeypad && (
+										<div className="mt-3 grid grid-cols-3 gap-2">
+											{[
+												"7",
+												"8",
+												"9",
+												"4",
+												"5",
+												"6",
+												"1",
+												"2",
+												"3",
+												".",
+												"0",
+												"←",
+											].map((k) => (
 												<button
 													key={k}
 													type="button"
 													onClick={() => tapKey(k)}
-													className="rounded-xl border border-border bg-card py-3 font-mono text-xl font-bold text-foreground transition-colors hover:bg-muted"
+													className="rounded-xl border border-border bg-card py-3 font-bold font-mono text-foreground text-xl transition-colors hover:bg-muted"
 												>
 													{k}
 												</button>
-											),
-										)}
-									</div>
+											))}
+										</div>
+									)}
 								</div>
 
 								{/* Resumen bruto / tara / neto ------------------------------------ */}
