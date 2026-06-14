@@ -19,10 +19,18 @@ import {
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { SettingsIcon } from "lucide-react";
+import {
+	BotIcon,
+	CreditCardIcon,
+	GitBranchIcon,
+	PackageIcon,
+	SnowflakeIcon,
+	TagIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ScreenHead } from "@/components/screen-head";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function SettingsPage() {
@@ -87,37 +95,67 @@ export default function SettingsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-center gap-2">
-				<SettingsIcon className="h-6 w-6" />
-				<h1 className="font-bold text-3xl">Configuración</h1>
-			</div>
+			<ScreenHead
+				title="Configuración"
+				desc="Catálogo, recetas, precios y parámetros del sistema. Cada acceso abre su módulo."
+			/>
 
-			<Card>
-				<CardHeader>
-					<CardTitle>Configuración del Sistema</CardTitle>
-					<CardDescription>
-						Gestiona todos los parámetros del sistema desde aquí
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-4">
-					<div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-						<Button asChild variant="outline" className="justify-start">
-							<Link href="/admin/inventory/recipes">Recetas</Link>
-						</Button>
-						<Button asChild variant="outline" className="justify-start">
-							<Link href="/admin/payment-methods">Métodos de pago</Link>
-						</Button>
-						<Button asChild variant="outline" className="justify-start">
-							<Link href="/admin/settings/antonella">
-								🤖 Antonella (asistente IA)
-							</Link>
-						</Button>
-					</div>
-					<div className="text-muted-foreground text-sm">
-						Usa estos accesos para administrar recetas e información de cobro.
-					</div>
-				</CardContent>
-			</Card>
+			<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				{[
+					{
+						href: "/admin/products",
+						label: "Productos",
+						desc: "Catálogo de piezas padre (se despiezan) e hijas (se venden).",
+						icon: PackageIcon,
+					},
+					{
+						href: "/admin/inventory/recipes",
+						label: "Recetas",
+						desc: "Define el despiece: canal → piezas → variantes.",
+						icon: GitBranchIcon,
+					},
+					{
+						href: "/admin/prices",
+						label: "Precios por cliente",
+						desc: "Lista de precios propia de cada cliente.",
+						icon: TagIcon,
+					},
+					{
+						href: "/admin/cold-inventory",
+						label: "Inventario frío",
+						desc: "Transferencias entre fresco y congelado.",
+						icon: SnowflakeIcon,
+					},
+					{
+						href: "/admin/payment-methods",
+						label: "Métodos de pago",
+						desc: "Formas de cobro disponibles al cerrar un pedido.",
+						icon: CreditCardIcon,
+					},
+					{
+						href: "/admin/settings/antonella",
+						label: "Antonella (IA)",
+						desc: "Configura el asistente de inteligencia artificial.",
+						icon: BotIcon,
+					},
+				].map((a) => (
+					<Link key={a.href} href={a.href}>
+						<Card className="h-full transition-colors hover:border-primary/40 hover:bg-accent/40">
+							<CardContent className="flex items-start gap-3 pt-6">
+								<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--cg-red-wash)] text-primary">
+									<a.icon className="h-5 w-5" />
+								</span>
+								<div>
+									<p className="font-semibold text-foreground">{a.label}</p>
+									<p className="mt-0.5 text-muted-foreground text-sm">
+										{a.desc}
+									</p>
+								</div>
+							</CardContent>
+						</Card>
+					</Link>
+				))}
+			</div>
 
 			<Card className="border-blue-200 bg-blue-50">
 				<CardContent className="pt-6">
