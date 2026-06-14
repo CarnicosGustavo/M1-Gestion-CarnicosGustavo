@@ -6,13 +6,20 @@ import {
 	antonellaMemories,
 } from "@finopenpos/db/schema";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import {
+	creditAccounts,
+	creditCharges,
+	creditPayments,
+	customerPrices,
+	customers,
 	inventoryTransactions,
 	orderItems,
 	orders,
+	priceListItems,
+	priceLists,
 	products,
 	productTransformations,
 } from "@/lib/db/schema";
@@ -39,7 +46,10 @@ Contexto de negocio:
 - Segundo nivel: PIERNA → JAMON (+ variantes S/H, C/G, PINTO)
 - Demanda: órdenes abiertas (status != CANCELADA/COMPLETADA/etc)
 - Stock: pieces (pz) + kg calculados
-- Recetas: definidas en product_transformations`;
+- Recetas: definidas en product_transformations
+- Clientes: tienen saldo de crédito (cargos − abonos), límite de crédito y una
+  lista de precios asignada. Usa las herramientas de cliente para consultar
+  estado de cuenta, deudores y precios; NUNCA inventes saldos ni precios.`;
 
 // Metadata para la UI de configuración: categoría y nivel de riesgo de cada
 // herramienta integrada. El `name` debe coincidir con `tools[].name`.
@@ -69,6 +79,21 @@ export const TOOL_META: Record<
 	},
 	get_coverage: {
 		label: "Cobertura de demanda",
+		category: "lectura",
+		danger: false,
+	},
+	get_customer_account: {
+		label: "Estado de cuenta de cliente",
+		category: "lectura",
+		danger: false,
+	},
+	list_debtors: {
+		label: "Clientes con saldo pendiente",
+		category: "lectura",
+		danger: false,
+	},
+	get_customer_prices: {
+		label: "Precios de un cliente",
 		category: "lectura",
 		danger: false,
 	},
@@ -189,6 +214,52 @@ const tools = [
 			type: "object",
 			properties: {},
 			required: [],
+		},
+	},
+	{
+		name: "get_customer_account",
+		description:
+			"Estado de cuenta de un cliente: saldo pendiente, límite de crédito, crédito disponible y últimos movimientos (cargos y abonos)",
+		input_schema: {
+			type: "object",
+			properties: {
+				customer_name: {
+					type: "string",
+					description:
+						"Nombre del cliente o negocio (ej. \"Carnicería Balderas\")",
+				},
+			},
+			required: ["customer_name"],
+		},
+	},
+	{
+		name: "list_debtors",
+		description:
+			"Lista los clientes que tienen saldo pendiente (deben dinero), ordenados de mayor a menor, con el total adeudado",
+		input_schema: {
+			type: "object",
+			properties: {},
+			required: [],
+		},
+	},
+	{
+		name: "get_customer_prices",
+		description:
+			"Precios de un cliente: su lista de precios asignada y precios propios (overrides). Si se indica un producto, resuelve el precio final que paga ese cliente por ese producto",
+		input_schema: {
+			type: "object",
+			properties: {
+				customer_name: {
+					type: "string",
+					description: "Nombre del cliente o negocio",
+				},
+				product_name: {
+					type: "string",
+					description:
+						"Opcional. Producto para resolver su precio (ej. \"LOMO\", \"JAMON\")",
+				},
+			},
+			required: ["customer_name"],
 		},
 	},
 	{
@@ -410,6 +481,22 @@ async function executeTool(
 		case "get_coverage":
 			return await getCoverage(userId);
 
+		case "get_customer_account":
+			return await getCustomerAccount(
+				toolInput.customer_name as string,
+				userId,
+			);
+
+		case "list_debtors":
+			return await listDebtors(userId);
+
+		case "get_customer_prices":
+			return await getCustomerPrices(
+				toolInput.customer_name as string,
+				toolInput.product_name as string | undefined,
+				userId,
+			);
+
 		case "forecast_demand":
 			return await forecastDemand(toolInput.days as number, userId);
 
@@ -439,6 +526,260 @@ async function executeTool(
 		default:
 			return `Herramienta desconocida: ${toolName}`;
 	}
+}
+
+// ───── Implementación: CLIENTES / CRÉDITO / PRECIOS ─────
+
+const fmtMoney = (n: number) =>
+	n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
+
+async function findCustomer(name: string, userId: string) {
+	const q = `%${(name || "").trim()}%`;
+	return (
+		await db
+			.select()
+			.from(customers)
+			.where(and(eq(customers.user_uid, userId), ilike(customers.name, q)))
+			.limit(1)
+	)[0];
+}
+
+async function balanceFor(customerId: number): Promise<number> {
+	const [c] = await db
+		.select({ total: sql<string>`coalesce(sum(${creditCharges.amount}), 0)` })
+		.from(creditCharges)
+		.where(eq(creditCharges.customer_id, customerId));
+	const [p] = await db
+		.select({ total: sql<string>`coalesce(sum(${creditPayments.amount}), 0)` })
+		.from(creditPayments)
+		.where(eq(creditPayments.customer_id, customerId));
+	return Number(c?.total ?? 0) - Number(p?.total ?? 0);
+}
+
+async function getCustomerAccount(
+	name: string,
+	userId: string,
+): Promise<string> {
+	const cust = await findCustomer(name, userId);
+	if (!cust) return `No encontré ningún cliente que coincida con "${name}".`;
+
+	const balance = await balanceFor(cust.id);
+	const [acct] = await db
+		.select()
+		.from(creditAccounts)
+		.where(eq(creditAccounts.customer_id, cust.id))
+		.limit(1);
+	const limit = acct ? Number(acct.credit_limit) : 0;
+
+	const charges = await db
+		.select()
+		.from(creditCharges)
+		.where(eq(creditCharges.customer_id, cust.id));
+	const payments = await db
+		.select()
+		.from(creditPayments)
+		.where(eq(creditPayments.customer_id, cust.id));
+	const ledger = [
+		...charges.map((c) => ({
+			fecha: String(c.charge_date ?? ""),
+			txt: `cargo ${fmtMoney(Number(c.amount))}${c.concept ? ` — ${c.concept}` : ""}`,
+		})),
+		...payments.map((p) => ({
+			fecha: String(p.payment_date ?? ""),
+			txt: `abono ${fmtMoney(Number(p.amount))}${p.method ? ` (${p.method})` : ""}`,
+		})),
+	]
+		.sort((a, b) => b.fecha.localeCompare(a.fecha))
+		.slice(0, 8);
+
+	const lines = [
+		`Cliente: ${cust.name}`,
+		`Saldo pendiente: ${fmtMoney(balance)}`,
+	];
+	if (limit > 0) {
+		lines.push(`Límite de crédito: ${fmtMoney(limit)}`);
+		lines.push(
+			`Crédito disponible: ${fmtMoney(Math.max(0, limit - balance))}`,
+		);
+	} else {
+		lines.push("Sin límite de crédito configurado.");
+	}
+	if (ledger.length) {
+		lines.push("Últimos movimientos:");
+		lines.push(...ledger.map((l) => `  • ${l.fecha}: ${l.txt}`));
+	} else {
+		lines.push("Sin movimientos de cobranza registrados.");
+	}
+	return lines.join("\n");
+}
+
+async function listDebtors(userId: string): Promise<string> {
+	const custs = await db
+		.select({ id: customers.id, name: customers.name })
+		.from(customers)
+		.where(eq(customers.user_uid, userId));
+	if (!custs.length) return "Sin clientes registrados.";
+
+	const ids = custs.map((c) => c.id);
+	const chargeRows = await db
+		.select({
+			cid: creditCharges.customer_id,
+			total: sql<string>`coalesce(sum(${creditCharges.amount}), 0)`,
+		})
+		.from(creditCharges)
+		.where(inArray(creditCharges.customer_id, ids))
+		.groupBy(creditCharges.customer_id);
+	const payRows = await db
+		.select({
+			cid: creditPayments.customer_id,
+			total: sql<string>`coalesce(sum(${creditPayments.amount}), 0)`,
+		})
+		.from(creditPayments)
+		.where(inArray(creditPayments.customer_id, ids))
+		.groupBy(creditPayments.customer_id);
+
+	const charged = new Map(chargeRows.map((r) => [r.cid, Number(r.total)]));
+	const paid = new Map(payRows.map((r) => [r.cid, Number(r.total)]));
+
+	const debtors = custs
+		.map((c) => ({
+			name: c.name,
+			balance: (charged.get(c.id) ?? 0) - (paid.get(c.id) ?? 0),
+		}))
+		.filter((c) => c.balance > 0.005)
+		.sort((a, b) => b.balance - a.balance);
+
+	if (!debtors.length) return "Ningún cliente tiene saldo pendiente. 🎉";
+
+	const total = debtors.reduce((s, d) => s + d.balance, 0);
+	const top = debtors.slice(0, 20);
+	const lines = top.map((d) => `  • ${d.name}: ${fmtMoney(d.balance)}`);
+	if (debtors.length > top.length)
+		lines.push(`  …y ${debtors.length - top.length} más`);
+	return [
+		`Clientes con saldo pendiente: ${debtors.length}`,
+		`Total por cobrar: ${fmtMoney(total)}`,
+		...lines,
+	].join("\n");
+}
+
+async function getCustomerPrices(
+	name: string,
+	productName: string | undefined,
+	userId: string,
+): Promise<string> {
+	const cust = await findCustomer(name, userId);
+	if (!cust) return `No encontré ningún cliente que coincida con "${name}".`;
+
+	let listName = "ninguna";
+	if (cust.price_list_id) {
+		const [pl] = await db
+			.select({ name: priceLists.name })
+			.from(priceLists)
+			.where(eq(priceLists.id, cust.price_list_id))
+			.limit(1);
+		if (pl) listName = pl.name;
+	}
+
+	if (productName?.trim()) {
+		const [prod] = await db
+			.select({
+				id: products.id,
+				name: products.name,
+				price_per_kg: products.price_per_kg,
+				price_per_piece: products.price_per_piece,
+			})
+			.from(products)
+			.where(
+				and(
+					eq(products.user_uid, userId),
+					ilike(products.name, `%${productName.trim()}%`),
+				),
+			)
+			.limit(1);
+		if (!prod)
+			return `Cliente ${cust.name} (lista: ${listName}). No encontré el producto "${productName}".`;
+
+		const [ovr] = await db
+			.select()
+			.from(customerPrices)
+			.where(
+				and(
+					eq(customerPrices.customer_id, cust.id),
+					eq(customerPrices.product_id, prod.id),
+				),
+			)
+			.limit(1);
+		let perKg: number | null = ovr?.price_per_kg ? Number(ovr.price_per_kg) : null;
+		let perPiece: number | null = ovr?.price_per_piece
+			? Number(ovr.price_per_piece)
+			: null;
+		let source: string | null =
+			ovr && (perKg !== null || perPiece !== null)
+				? "precio propio del cliente"
+				: null;
+
+		if (!source && cust.price_list_id) {
+			const [li] = await db
+				.select()
+				.from(priceListItems)
+				.where(
+					and(
+						eq(priceListItems.price_list_id, cust.price_list_id),
+						eq(priceListItems.product_id, prod.id),
+					),
+				)
+				.limit(1);
+			if (li && (li.unit_price_per_kg || li.unit_price_per_piece)) {
+				perKg = li.unit_price_per_kg ? Number(li.unit_price_per_kg) : null;
+				perPiece = li.unit_price_per_piece
+					? Number(li.unit_price_per_piece)
+					: null;
+				source = `lista "${listName}"`;
+			}
+		}
+		if (!source) {
+			perKg = prod.price_per_kg ? Number(prod.price_per_kg) : null;
+			perPiece = prod.price_per_piece ? Number(prod.price_per_piece) : null;
+			source = "precio base del producto";
+		}
+
+		const parts: string[] = [];
+		if (perKg !== null) parts.push(`${fmtMoney(perKg)}/kg`);
+		if (perPiece !== null) parts.push(`${fmtMoney(perPiece)}/pza`);
+		const priceTxt = parts.length ? parts.join(" · ") : "sin precio definido";
+		return `Cliente: ${cust.name}\nProducto: ${prod.name}\nPrecio: ${priceTxt}\nOrigen: ${source}`;
+	}
+
+	const overrides = await db
+		.select({
+			pname: products.name,
+			per_kg: customerPrices.price_per_kg,
+			per_piece: customerPrices.price_per_piece,
+		})
+		.from(customerPrices)
+		.innerJoin(products, eq(customerPrices.product_id, products.id))
+		.where(eq(customerPrices.customer_id, cust.id))
+		.limit(30);
+
+	const lines = [
+		`Cliente: ${cust.name}`,
+		`Lista de precios asignada: ${listName}`,
+	];
+	if (overrides.length) {
+		lines.push(`Precios propios (overrides): ${overrides.length}`);
+		lines.push(
+			...overrides.map((o) => {
+				const p: string[] = [];
+				if (o.per_kg) p.push(`${fmtMoney(Number(o.per_kg))}/kg`);
+				if (o.per_piece) p.push(`${fmtMoney(Number(o.per_piece))}/pza`);
+				return `  • ${o.pname}: ${p.join(" · ") || "—"}`;
+			}),
+		);
+	} else {
+		lines.push("Sin precios propios; usa la lista asignada o el precio base.");
+	}
+	return lines.join("\n");
 }
 
 // ───── Implementación: MEMORIA ─────
