@@ -1,35 +1,15 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import Link from "next/link";
+import { Badge } from "@finopenpos/ui/components/badge";
 import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
 	CardContent,
+	CardDescription,
 	CardHeader,
 	CardTitle,
-	CardDescription,
 } from "@finopenpos/ui/components/card";
-import {
-	ScaleIcon,
-	CheckCircleIcon,
-	ChevronRightIcon,
-	MessageSquareIcon,
-	PackageIcon,
-	ChevronLeftIcon,
-	ChevronRight,
-	PencilIcon,
-} from "lucide-react";
-import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
-import { useTRPC } from "@/lib/trpc/client";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useQueryClient } from "@tanstack/react-query";
-import { Skeleton } from "@finopenpos/ui/components/skeleton";
-import { useTranslations, useLocale } from "next-intl";
-import { toast } from "sonner";
-import { Badge } from "@finopenpos/ui/components/badge";
-import { formatCurrency } from "@/lib/utils";
+import { Combobox } from "@finopenpos/ui/components/combobox";
 import {
 	Dialog,
 	DialogContent,
@@ -38,6 +18,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
 import {
 	Select,
 	SelectContent,
@@ -45,19 +27,36 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@finopenpos/ui/components/select";
-import { Combobox } from "@finopenpos/ui/components/combobox";
+import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { cn } from "@finopenpos/ui/lib/utils";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	CheckCircleIcon,
+	ChevronLeftIcon,
+	ChevronRight,
+	ChevronRightIcon,
+	MessageSquareIcon,
+	PackageIcon,
+	PencilIcon,
+	ScaleIcon,
+} from "lucide-react";
+import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { AntonellaSlot } from "@/components/antonella-slot";
+import { useTRPC } from "@/lib/trpc/client";
+import { formatCurrency } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Contenedores / Tara predefinida
 // ---------------------------------------------------------------------------
 const CONTAINERS = [
-	{ id: "ninguno",    label: "Sin recipiente", tare: 0 },
-	{ id: "tambo_azul", label: "Tambo Azul",     tare: 2.5 },
-	{ id: "tara",       label: "Tara",            tare: 1.2 },
-	{ id: "cubeta",     label: "Cubeta",          tare: 0.9 },
-	{ id: "otro",       label: "Otro",            tare: null },
+	{ id: "ninguno", label: "Sin recipiente", tare: 0 },
+	{ id: "tambo_azul", label: "Tambo Azul", tare: 2.5 },
+	{ id: "tara", label: "Tara", tare: 1.2 },
+	{ id: "cubeta", label: "Cubeta", tare: 0.9 },
+	{ id: "otro", label: "Otro", tare: null },
 ] as const;
 
 type ContainerId = (typeof CONTAINERS)[number]["id"];
@@ -84,8 +83,13 @@ export default function WeighingStationPage() {
 	const [customTare, setCustomTare] = useState("0.000");
 
 	// Pedido recién completado (para el botón flotante a cobro)
-	const [completedOrder, setCompletedOrder] = useState<{ id: number; name: string } | null>(null);
-	const pendingCompletionRef = useRef<{ id: number; name: string } | null>(null);
+	const [completedOrder, setCompletedOrder] = useState<{
+		id: number;
+		name: string;
+	} | null>(null);
+	const pendingCompletionRef = useRef<{ id: number; name: string } | null>(
+		null,
+	);
 	const completedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// Diálogo de pesaje por lote
@@ -159,7 +163,10 @@ export default function WeighingStationPage() {
 		[selectedOrder],
 	);
 
-	const clampedIndex = Math.min(currentItemIndex, Math.max(0, pendingItems.length - 1));
+	const clampedIndex = Math.min(
+		currentItemIndex,
+		Math.max(0, pendingItems.length - 1),
+	);
 	const currentItem = pendingItems[clampedIndex] ?? null;
 
 	// Deseleccionar orden cuando ya no queden artículos pendientes
@@ -170,10 +177,10 @@ export default function WeighingStationPage() {
 		}
 	}, [pendingItems.length, selectedOrderId, isLoadingOrders]);
 
-	// Resetear índice al cambiar de orden
+	// Resetear índice al cambiar de orden (el peso lo precarga el efecto de abajo
+	// según el artículo actual).
 	useEffect(() => {
 		setCurrentItemIndex(0);
-		setActualWeight("");
 	}, [selectedOrderId]);
 
 	// ---------------------------------------------------------------------------
@@ -182,10 +189,10 @@ export default function WeighingStationPage() {
 	const containerDef = CONTAINERS.find((c) => c.id === containerId)!;
 	const tareKg =
 		containerId === "otro"
-			? parseFloat(customTare) || 0
+			? Number.parseFloat(customTare) || 0
 			: (containerDef.tare ?? 0);
 
-	const grossKg = parseFloat(actualWeight) || 0;
+	const grossKg = Number.parseFloat(actualWeight) || 0;
 	const netKg = Math.max(0, grossKg - tareKg);
 	const hasValidWeight = netKg > 0;
 
@@ -202,8 +209,12 @@ export default function WeighingStationPage() {
 				if (pendingCompletionRef.current) {
 					setCompletedOrder(pendingCompletionRef.current);
 					pendingCompletionRef.current = null;
-					if (completedTimerRef.current) clearTimeout(completedTimerRef.current);
-					completedTimerRef.current = setTimeout(() => setCompletedOrder(null), 9000);
+					if (completedTimerRef.current)
+						clearTimeout(completedTimerRef.current);
+					completedTimerRef.current = setTimeout(
+						() => setCompletedOrder(null),
+						9000,
+					);
 				}
 				refetchOrders();
 			},
@@ -223,9 +234,15 @@ export default function WeighingStationPage() {
 				setBatchApplyToInventory(true);
 				setBatchNoPieces(false);
 				setBatchOpen(false);
-				queryClient.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
-				queryClient.invalidateQueries({ queryKey: trpc.products.disassemblyDashboard.queryKey() });
-				queryClient.invalidateQueries({ queryKey: trpc.inventory.status.queryKey() });
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.list.queryKey(),
+				});
+				queryClient.invalidateQueries({
+					queryKey: trpc.products.disassemblyDashboard.queryKey(),
+				});
+				queryClient.invalidateQueries({
+					queryKey: trpc.inventory.status.queryKey(),
+				});
 			},
 			onError: (error) => {
 				toast.error(error.message);
@@ -283,7 +300,8 @@ export default function WeighingStationPage() {
 	const handleRegisterWeight = useCallback(() => {
 		if (!currentItem || !hasValidWeight) return;
 		// ¿Es el último artículo por pesar? Si sí y NO es producción, ofrecer cobro.
-		const isProduction = (selectedOrder as any)?.notes === "Pesaje de producción";
+		const isProduction =
+			(selectedOrder as any)?.notes === "Pesaje de producción";
 		if (pendingItems.length <= 1 && selectedOrder && !isProduction) {
 			pendingCompletionRef.current = {
 				id: selectedOrder.id,
@@ -296,7 +314,14 @@ export default function WeighingStationPage() {
 			orderItemId: currentItem.id,
 			actualWeightKg: Math.round(netKg * 1000),
 		});
-	}, [currentItem, hasValidWeight, netKg, updateWeightMutation, pendingItems.length, selectedOrder]);
+	}, [
+		currentItem,
+		hasValidWeight,
+		netKg,
+		updateWeightMutation,
+		pendingItems.length,
+		selectedOrder,
+	]);
 
 	// Limpiar peso bruto (TARE)
 	const handleTare = () => {
@@ -305,15 +330,14 @@ export default function WeighingStationPage() {
 
 	// Capturar el peso actual como tara del recipiente y dejar la báscula en cero
 	const handleCaptureTare = () => {
-		if (!actualWeight || parseFloat(actualWeight) <= 0) return;
-		setCustomTare(parseFloat(actualWeight).toFixed(3));
+		if (!actualWeight || Number.parseFloat(actualWeight) <= 0) return;
+		setCustomTare(Number.parseFloat(actualWeight).toFixed(3));
 		setContainerId("otro");
 		setActualWeight("");
 	};
 
 	const handlePrevItem = () => {
 		setCurrentItemIndex((i) => Math.max(0, i - 1));
-		setActualWeight("");
 	};
 
 	const handleNextItem = () => {
@@ -321,7 +345,6 @@ export default function WeighingStationPage() {
 			const next = i + 1;
 			return next < pendingItems.length ? next : i;
 		});
-		setActualWeight("");
 	};
 
 	// Cambia el recipiente con flechas ↑/↓ (cicla la lista), conservando el peso bruto
@@ -333,9 +356,16 @@ export default function WeighingStationPage() {
 		});
 	}, []);
 
-	// Mantener el cursor SIEMPRE en el input de peso (al cambiar de artículo o tras registrar)
+	// Al cambiar de artículo: precargar el peso solicitado (el kg capturado al crear
+	// el pedido) como referencia y dejar el cursor en el input. El operador ajusta
+	// al peso real de la báscula. Así el dato capturado NO se "pierde".
 	const weightInputRef = useRef<HTMLInputElement>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: solo al cambiar de ítem
 	useEffect(() => {
+		const reqKg = currentItem?.quantity_kg
+			? Number(currentItem.quantity_kg).toString()
+			: "";
+		setActualWeight(reqKg);
 		weightInputRef.current?.focus();
 	}, [currentItem?.id]);
 
@@ -383,14 +413,17 @@ export default function WeighingStationPage() {
 	const handleRegisterBatch = () => {
 		if (!batchProductId) return;
 		const weight = Number.parseFloat(batchWeightKg);
-		const pieces = batchPieces.trim() === "" ? 0 : Number.parseInt(batchPieces, 10) || 0;
+		const pieces =
+			batchPieces.trim() === "" ? 0 : Number.parseInt(batchPieces, 10) || 0;
 		if (!Number.isFinite(weight) || weight <= 0) return;
 		if (
 			batchApplyToInventory &&
 			batchPendingPieces !== null &&
 			pieces > batchPendingPieces
 		) {
-			toast.error(`Piezas a pesar exceden pendientes (${pieces} > ${batchPendingPieces})`);
+			toast.error(
+				`Piezas a pesar exceden pendientes (${pieces} > ${batchPendingPieces})`,
+			);
 			return;
 		}
 		recordBatchMutation.mutate({
@@ -439,9 +472,9 @@ export default function WeighingStationPage() {
 				{/* Sidebar: Lista de órdenes pendientes                              */}
 				{/* ----------------------------------------------------------------- */}
 				<Card className="flex flex-col overflow-hidden lg:col-span-1">
-					<CardHeader className="bg-muted/50 border-b">
+					<CardHeader className="border-b bg-muted/50">
 						<CardTitle className="flex items-center gap-2">
-							<ScaleIcon className="w-5 h-5" />
+							<ScaleIcon className="h-5 w-5" />
 							{t("weighingStation")}
 						</CardTitle>
 						<CardDescription>
@@ -449,10 +482,10 @@ export default function WeighingStationPage() {
 							{tc("pending").toLowerCase()}
 						</CardDescription>
 					</CardHeader>
-					<CardContent className="p-0 overflow-y-auto flex-1">
+					<CardContent className="flex-1 overflow-y-auto p-0">
 						{orders.length === 0 ? (
 							<div className="p-8 text-center text-muted-foreground">
-								<CheckCircleIcon className="w-12 h-12 mx-auto mb-4 opacity-20" />
+								<CheckCircleIcon className="mx-auto mb-4 h-12 w-12 opacity-20" />
 								<p>{tc("noItemFound")}</p>
 							</div>
 						) : (
@@ -462,32 +495,32 @@ export default function WeighingStationPage() {
 										key={order.id}
 										onClick={() => setSelectedOrderId(order.id)}
 										className={cn(
-											"w-full text-left p-4 hover:bg-accent transition-colors flex items-center justify-between group",
+											"group flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-accent",
 											selectedOrderId === order.id && "bg-accent",
 											newOrderIds.has(order.id) &&
-												"animate-pulse bg-green-100 ring-2 ring-inset ring-green-400",
+												"animate-pulse bg-green-100 ring-2 ring-green-400 ring-inset",
 										)}
 									>
 										<div className="space-y-1">
-											<div className="font-medium flex items-center gap-2">
+											<div className="flex items-center gap-2 font-medium">
 												#{order.id} – {orderTitle(order)}
 												{order.whatsapp_message_id && (
 													<Badge
 														variant="secondary"
 														className="bg-green-100 text-green-700 hover:bg-green-100"
 													>
-														<MessageSquareIcon className="w-3 h-3 mr-1" />
+														<MessageSquareIcon className="mr-1 h-3 w-3" />
 														WhatsApp
 													</Badge>
 												)}
 											</div>
-											<div className="text-xs text-muted-foreground">
+											<div className="text-muted-foreground text-xs">
 												{order.orderItems.length} artículo(s) pendiente(s)
 											</div>
 										</div>
 										<ChevronRightIcon
 											className={cn(
-												"w-5 h-5 text-muted-foreground transition-transform",
+												"h-5 w-5 text-muted-foreground transition-transform",
 												selectedOrderId === order.id
 													? "translate-x-1"
 													: "opacity-0 group-hover:opacity-100",
@@ -507,13 +540,15 @@ export default function WeighingStationPage() {
 					{selectedOrder && currentItem ? (
 						<>
 							{/* Encabezado de orden */}
-							<CardHeader className="border-b py-3 px-6">
+							<CardHeader className="border-b px-6 py-3">
 								<div className="flex items-center justify-between gap-3">
 									<div className="space-y-0.5">
 										<CardTitle className="text-lg">
 											{orderTitle(selectedOrder)}
 										</CardTitle>
-										<CardDescription>Pedido #{selectedOrder.id}</CardDescription>
+										<CardDescription>
+											Pedido #{selectedOrder.id}
+										</CardDescription>
 									</div>
 									<div className="flex items-center gap-3">
 										<Link href={`/admin/orders/${selectedOrder.id}`}>
@@ -523,10 +558,10 @@ export default function WeighingStationPage() {
 											</Button>
 										</Link>
 										<div className="text-right">
-											<div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+											<div className="font-medium text-muted-foreground text-xs uppercase tracking-wider">
 												{tc("total")}
 											</div>
-											<div className="text-xl font-bold">
+											<div className="font-bold text-xl">
 												{formatCurrency(selectedOrder.total_amount, locale)}
 											</div>
 										</div>
@@ -534,28 +569,38 @@ export default function WeighingStationPage() {
 								</div>
 							</CardHeader>
 
-							<CardContent className="flex-1 flex flex-col p-6 gap-5 overflow-y-auto">
+							<CardContent className="flex flex-1 flex-col gap-5 overflow-y-auto p-6">
 								{/* Artículo actual -------------------------------------------------- */}
-								<div className="text-center space-y-1">
-									<p className="text-xs font-semibold text-primary uppercase tracking-widest">
+								<div className="space-y-1 text-center">
+									<p className="font-semibold text-primary text-xs uppercase tracking-widest">
 										Artículo{" "}
 										<span className="text-foreground">
 											{clampedIndex + 1} de {pendingItems.length}
 										</span>
 									</p>
-									<h2 className="text-4xl font-extrabold tracking-tight">
-										{currentItem.quantity_pieces}&nbsp;{currentItem.product?.name ?? currentItem.product_name}
+									<h2 className="font-extrabold text-4xl tracking-tight">
+										{currentItem.quantity_pieces}&nbsp;
+										{currentItem.product?.name ?? currentItem.product_name}
 									</h2>
 									{currentItem.product?.category && (
 										<p className="text-muted-foreground text-sm">
 											{currentItem.product.category}
 										</p>
 									)}
+									{currentItem.quantity_kg ? (
+										<p className="font-semibold text-primary text-sm">
+											Solicitado: {Number(currentItem.quantity_kg).toFixed(3)}{" "}
+											kg
+											<span className="ml-1 font-normal text-muted-foreground">
+												(referencia · ajusta al peso real)
+											</span>
+										</p>
+									) : null}
 								</div>
 
 								{/* Selector de recipiente ----------------------------------------- */}
 								<div className="space-y-2">
-									<Label className="text-sm font-semibold">Recipiente</Label>
+									<Label className="font-semibold text-sm">Recipiente</Label>
 									<div className="flex flex-wrap gap-2">
 										{CONTAINERS.map((c) => (
 											<button
@@ -566,15 +611,15 @@ export default function WeighingStationPage() {
 													if (c.id !== "otro") setActualWeight("");
 												}}
 												className={cn(
-													"px-4 py-2 rounded-xl border text-sm font-medium transition-all",
+													"rounded-xl border px-4 py-2 font-medium text-sm transition-all",
 													containerId === c.id
-														? "bg-primary text-primary-foreground border-primary shadow"
-														: "bg-muted/40 hover:bg-muted border-border",
+														? "border-primary bg-primary text-primary-foreground shadow"
+														: "border-border bg-muted/40 hover:bg-muted",
 												)}
 											>
 												{c.label}
 												{c.tare !== null && c.tare > 0 && (
-													<span className="ml-1 opacity-60 text-xs">
+													<span className="ml-1 text-xs opacity-60">
 														({c.tare.toFixed(3)} kg)
 													</span>
 												)}
@@ -584,8 +629,8 @@ export default function WeighingStationPage() {
 
 									{/* Input de tara personalizada */}
 									{containerId === "otro" && (
-										<div className="flex items-center gap-2 mt-1">
-											<Label className="text-xs text-muted-foreground whitespace-nowrap">
+										<div className="mt-1 flex items-center gap-2">
+											<Label className="whitespace-nowrap text-muted-foreground text-xs">
 												Peso del recipiente (kg)
 											</Label>
 											<Input
@@ -603,8 +648,8 @@ export default function WeighingStationPage() {
 
 									{/* Tara activa (solo informativo, para contenedores predefinidos) */}
 									{containerId !== "ninguno" && containerId !== "otro" && (
-										<div className="flex items-center gap-2 mt-1">
-											<Label className="text-xs text-muted-foreground whitespace-nowrap">
+										<div className="mt-1 flex items-center gap-2">
+											<Label className="whitespace-nowrap text-muted-foreground text-xs">
 												Peso del recipiente (kg)
 											</Label>
 											<Input
@@ -620,7 +665,7 @@ export default function WeighingStationPage() {
 												onFocus={(e) => e.currentTarget.select()}
 												className="w-32 text-center font-mono"
 											/>
-											<span className="text-xs text-muted-foreground">
+											<span className="text-muted-foreground text-xs">
 												(editable)
 											</span>
 										</div>
@@ -630,7 +675,7 @@ export default function WeighingStationPage() {
 								{/* Input de peso bruto -------------------------------------------- */}
 								<div className="space-y-2">
 									<div className="flex items-center justify-between gap-2">
-										<Label htmlFor="weight" className="text-sm font-semibold">
+										<Label htmlFor="weight" className="font-semibold text-sm">
 											Peso bruto (kg)
 										</Label>
 										<div className="flex gap-1">
@@ -638,8 +683,10 @@ export default function WeighingStationPage() {
 											<button
 												type="button"
 												onClick={handleCaptureTare}
-												disabled={!actualWeight || parseFloat(actualWeight) <= 0}
-												className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+												disabled={
+													!actualWeight || Number.parseFloat(actualWeight) <= 0
+												}
+												className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1 font-bold text-blue-700 text-xs uppercase tracking-wider transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
 												title="Poner este peso como tara del recipiente y dejar la báscula en cero"
 											>
 												Capturar
@@ -648,7 +695,7 @@ export default function WeighingStationPage() {
 											<button
 												type="button"
 												onClick={handleTare}
-												className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-lg border border-border bg-muted hover:bg-muted/80 transition-colors"
+												className="rounded-lg border border-border bg-muted px-3 py-1 font-bold text-xs uppercase tracking-wider transition-colors hover:bg-muted/80"
 												title="Limpiar / poner en cero (TARE)"
 											>
 												TARE
@@ -683,10 +730,10 @@ export default function WeighingStationPage() {
 											onChange={(e) => setActualWeight(e.target.value)}
 											onKeyDown={handleWeightKeyDown}
 											onFocus={(e) => e.currentTarget.select()}
-											className="text-5xl h-24 text-center font-mono font-bold rounded-2xl border-2 focus-visible:ring-offset-2 pr-20"
+											className="h-24 rounded-2xl border-2 pr-20 text-center font-bold font-mono text-5xl focus-visible:ring-offset-2"
 											placeholder="0.000"
 										/>
-										<div className="absolute right-5 top-1/2 -translate-y-1/2 text-3xl font-bold text-muted-foreground pointer-events-none">
+										<div className="pointer-events-none absolute top-1/2 right-5 -translate-y-1/2 font-bold text-3xl text-muted-foreground">
 											kg
 										</div>
 									</div>
@@ -710,7 +757,7 @@ export default function WeighingStationPage() {
 
 								{/* Resumen bruto / tara / neto ------------------------------------ */}
 								{(containerId !== "ninguno" || grossKg > 0) && (
-									<div className="rounded-2xl border bg-muted/30 px-5 py-3 space-y-1 text-sm">
+									<div className="space-y-1 rounded-2xl border bg-muted/30 px-5 py-3 text-sm">
 										<div className="flex justify-between text-muted-foreground">
 											<span>Peso bruto</span>
 											<span className="font-mono">{grossKg.toFixed(3)} kg</span>
@@ -718,15 +765,19 @@ export default function WeighingStationPage() {
 										{tareKg > 0 && (
 											<div className="flex justify-between text-muted-foreground">
 												<span>(–) Tara ({containerDef.label})</span>
-												<span className="font-mono">–{tareKg.toFixed(3)} kg</span>
+												<span className="font-mono">
+													–{tareKg.toFixed(3)} kg
+												</span>
 											</div>
 										)}
-										<div className="flex justify-between font-bold text-base border-t pt-1 mt-1">
+										<div className="mt-1 flex justify-between border-t pt-1 font-bold text-base">
 											<span>= Peso neto</span>
 											<span
 												className={cn(
 													"font-mono",
-													netKg > 0 ? "text-green-600" : "text-muted-foreground",
+													netKg > 0
+														? "text-green-600"
+														: "text-muted-foreground",
 												)}
 											>
 												{netKg.toFixed(3)} kg
@@ -736,21 +787,21 @@ export default function WeighingStationPage() {
 								)}
 
 								{/* Botones de acción ---------------------------------------------- */}
-								<div className="flex gap-3 mt-auto">
+								<div className="mt-auto flex gap-3">
 									<Button
 										variant="outline"
 										size="lg"
-										className="h-16 flex-1 text-base font-semibold rounded-2xl"
+										className="h-16 flex-1 rounded-2xl font-semibold text-base"
 										onClick={handlePrevItem}
 										disabled={currentItemIndex === 0}
 									>
-										<ChevronLeftIcon className="w-5 h-5 mr-2" />
+										<ChevronLeftIcon className="mr-2 h-5 w-5" />
 										Anterior
 									</Button>
 
 									<Button
 										size="lg"
-										className="h-16 flex-[3] text-lg font-bold rounded-2xl shadow-lg hover:shadow-xl transition-all"
+										className="h-16 flex-[3] rounded-2xl font-bold text-lg shadow-lg transition-all hover:shadow-xl"
 										onClick={handleRegisterWeight}
 										disabled={updateWeightMutation.isPending || !hasValidWeight}
 									>
@@ -758,8 +809,9 @@ export default function WeighingStationPage() {
 											tc("loading")
 										) : (
 											<>
-												<ScaleIcon className="w-6 h-6 mr-2" />
-												Registrar {netKg > 0 ? `${netKg.toFixed(3)} kg` : "peso"}
+												<ScaleIcon className="mr-2 h-6 w-6" />
+												Registrar{" "}
+												{netKg > 0 ? `${netKg.toFixed(3)} kg` : "peso"}
 											</>
 										)}
 									</Button>
@@ -767,12 +819,12 @@ export default function WeighingStationPage() {
 									<Button
 										variant="outline"
 										size="lg"
-										className="h-16 flex-1 text-base font-semibold rounded-2xl"
+										className="h-16 flex-1 rounded-2xl font-semibold text-base"
 										onClick={handleNextItem}
 										disabled={currentItemIndex >= pendingItems.length - 1}
 									>
 										Siguiente
-										<ChevronRight className="w-5 h-5 ml-2" />
+										<ChevronRight className="ml-2 h-5 w-5" />
 									</Button>
 								</div>
 
@@ -782,9 +834,9 @@ export default function WeighingStationPage() {
 										<div
 											key={item.id}
 											className={cn(
-												"w-3 h-3 rounded-full transition-all",
+												"h-3 w-3 rounded-full transition-all",
 												item.id === currentItem.id
-													? "bg-primary scale-125"
+													? "scale-125 bg-primary"
 													: item.status === "PESADO"
 														? "bg-green-500"
 														: "bg-muted",
@@ -795,12 +847,12 @@ export default function WeighingStationPage() {
 							</CardContent>
 						</>
 					) : (
-						<div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-12">
-							<ScaleIcon className="w-24 h-24 mb-6 opacity-10" />
-							<h3 className="text-2xl font-medium">
+						<div className="flex flex-1 flex-col items-center justify-center p-12 text-muted-foreground">
+							<ScaleIcon className="mb-6 h-24 w-24 opacity-10" />
+							<h3 className="font-medium text-2xl">
 								{t("weighingStationDescription")}
 							</h3>
-							<p className="max-w-md text-center mt-2">
+							<p className="mt-2 max-w-md text-center">
 								Selecciona una orden de la lista de pendientes para comenzar a
 								registrar el peso de los productos.
 							</p>
@@ -838,7 +890,7 @@ export default function WeighingStationPage() {
 						</div>
 
 						{/* A granel: pesar por tara sin contar piezas */}
-						<label className="flex items-center gap-2 rounded-md border bg-muted/20 p-3 text-sm cursor-pointer">
+						<label className="flex cursor-pointer items-center gap-2 rounded-md border bg-muted/20 p-3 text-sm">
 							<input
 								type="checkbox"
 								className="h-4 w-4 accent-primary"
@@ -855,20 +907,31 @@ export default function WeighingStationPage() {
 							<div className="rounded-md border bg-muted/30 p-3 text-sm">
 								<div className="flex items-center justify-between">
 									<span className="text-muted-foreground">En stock</span>
-									<span className="font-medium">{batchProduct.stock_pieces} piezas</span>
+									<span className="font-medium">
+										{batchProduct.stock_pieces} piezas
+									</span>
 								</div>
 								<div className="flex items-center justify-between">
 									<span className="text-muted-foreground">Ya pesadas</span>
-									<span className="font-medium">{batchProduct.weighed_pieces} piezas</span>
+									<span className="font-medium">
+										{batchProduct.weighed_pieces} piezas
+									</span>
 								</div>
 								<div className="flex items-center justify-between">
 									<span className="text-muted-foreground">Pendientes</span>
-									<span className="font-medium">{batchPendingPieces ?? 0} piezas</span>
+									<span className="font-medium">
+										{batchPendingPieces ?? 0} piezas
+									</span>
 								</div>
 							</div>
 						)}
 
-						<div className={cn("grid gap-3", batchNoPieces ? "grid-cols-1" : "grid-cols-2")}>
+						<div
+							className={cn(
+								"grid gap-3",
+								batchNoPieces ? "grid-cols-1" : "grid-cols-2",
+							)}
+						>
 							{!batchNoPieces && (
 								<div className="space-y-1">
 									<Label>Piezas</Label>
@@ -919,7 +982,7 @@ export default function WeighingStationPage() {
 							</Select>
 						</div>
 
-						<div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground flex items-center gap-2">
+						<div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3 text-muted-foreground text-sm">
 							<PackageIcon className="h-4 w-4 shrink-0" />
 							<span>
 								"Primera vez" suma el peso al stock_kg del producto. "Ya estaba
@@ -938,7 +1001,8 @@ export default function WeighingStationPage() {
 							disabled={
 								productionQueueMutation.isPending ||
 								!batchProductId ||
-								(!batchNoPieces && !(Number.parseInt(batchPieces || "0", 10) > 0))
+								(!batchNoPieces &&
+									!(Number.parseInt(batchPieces || "0", 10) > 0))
 							}
 							title="Crea un pesaje de producción en la cola para pesarlo pieza por pieza"
 						>
@@ -955,10 +1019,13 @@ export default function WeighingStationPage() {
 								!(Number.parseFloat(batchWeightKg) > 0) ||
 								(batchApplyToInventory &&
 									batchPendingPieces !== null &&
-									(Number.parseInt(batchPieces || "0", 10) || 0) > batchPendingPieces)
+									(Number.parseInt(batchPieces || "0", 10) || 0) >
+										batchPendingPieces)
 							}
 						>
-							{recordBatchMutation.isPending ? tc("loading") : "Registrar pesaje"}
+							{recordBatchMutation.isPending
+								? tc("loading")
+								: "Registrar pesaje"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
@@ -966,11 +1033,11 @@ export default function WeighingStationPage() {
 
 			{/* Botón flotante: pedido recién pesado → ir a cobro */}
 			{completedOrder && (
-				<div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4">
+				<div className="fade-in slide-in-from-bottom-4 fixed right-6 bottom-6 z-50 animate-in">
 					<Link href={`/admin/checkout?order=${completedOrder.id}`}>
 						<Button
 							size="lg"
-							className="h-14 rounded-2xl bg-green-600 px-6 text-base font-bold shadow-xl hover:bg-green-700"
+							className="h-14 rounded-2xl bg-green-600 px-6 font-bold text-base shadow-xl hover:bg-green-700"
 							onClick={() => setCompletedOrder(null)}
 						>
 							<CheckCircleIcon className="mr-2 h-5 w-5" />
