@@ -308,6 +308,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 							<DropdownMenuLabel>{t("myAccount")}</DropdownMenuLabel>
 							<DropdownMenuSeparator />
 							<DropdownMenuItem asChild>
+								<Link href="/admin/profile">Perfil</Link>
+							</DropdownMenuItem>
+							<DropdownMenuItem asChild>
 								<Link href="/admin/settings">{t("settings")}</Link>
 							</DropdownMenuItem>
 							<DropdownMenuItem asChild>
