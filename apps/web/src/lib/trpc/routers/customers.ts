@@ -7,6 +7,7 @@ import {
 	creditCharges,
 	creditPayments,
 	customerPrices,
+	creditAccounts,
 } from "@/lib/db/schema";
 import { eq, and, or, desc, sql, inArray } from "drizzle-orm";
 
@@ -20,6 +21,7 @@ const customerSchema = z.object({
   address: z.string().nullable(),
   notes: z.string().nullable(),
   status: z.string().nullable(),
+  price_list_id: z.number().nullable(),
   user_uid: z.string().nullable(),
   created_at: z.date().nullable(),
 });
@@ -50,14 +52,28 @@ export const customersRouter = router({
         address: z.string().optional(),
         notes: z.string().optional(),
         status: z.enum(["active", "inactive"]).optional(),
+        // Lista de precios asignada (del diseño)
+        price_list_id: z.number().nullable().optional(),
+        // Crédito (del diseño): si se define un límite, se crea su cuenta de crédito.
+        credit_limit: z.number().nonnegative().optional(),
+        terms_days: z.number().int().nonnegative().optional(),
       })
     )
     .output(customerSchema)
     .mutation(async ({ ctx, input }) => {
+      const { credit_limit, terms_days, ...customerData } = input;
       const [data] = await db
         .insert(customers)
-        .values({ ...input, user_uid: ctx.user.id })
+        .values({ ...customerData, user_uid: ctx.user.id })
         .returning();
+      // Cliente a crédito: crea la cuenta de crédito que usa Cobranza.
+      if (credit_limit !== undefined) {
+        await db.insert(creditAccounts).values({
+          customer_id: data.id,
+          credit_limit: String(credit_limit),
+          terms_days: terms_days ?? 0,
+        });
+      }
       return data;
     }),
 
@@ -74,11 +90,16 @@ export const customersRouter = router({
         address: z.string().optional(),
         notes: z.string().optional(),
         status: z.enum(["active", "inactive"]).optional(),
+        // Lista de precios asignada (del diseño)
+        price_list_id: z.number().nullable().optional(),
+        // Crédito (del diseño): upsert de la cuenta de crédito si se define límite.
+        credit_limit: z.number().nonnegative().optional(),
+        terms_days: z.number().int().nonnegative().optional(),
       })
     )
     .output(customerSchema)
     .mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
+      const { id, credit_limit, terms_days, ...data } = input;
       // Permite editar tambien clientes creados desde la web (user_uid='system')
       const [updated] = await db
         .update(customers)
@@ -90,6 +111,30 @@ export const customersRouter = router({
           ),
         )
         .returning();
+      // Upsert de la cuenta de crédito (la usa Cobranza) si se define un límite.
+      if (credit_limit !== undefined) {
+        const [existing] = await db
+          .select({ id: creditAccounts.id })
+          .from(creditAccounts)
+          .where(eq(creditAccounts.customer_id, id))
+          .limit(1);
+        if (existing) {
+          await db
+            .update(creditAccounts)
+            .set({
+              credit_limit: String(credit_limit),
+              terms_days: terms_days ?? 0,
+              updated_at: new Date(),
+            })
+            .where(eq(creditAccounts.id, existing.id));
+        } else {
+          await db.insert(creditAccounts).values({
+            customer_id: id,
+            credit_limit: String(credit_limit),
+            terms_days: terms_days ?? 0,
+          });
+        }
+      }
       return updated;
     }),
 

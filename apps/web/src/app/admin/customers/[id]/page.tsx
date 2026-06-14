@@ -1,11 +1,27 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
 import { Badge } from "@finopenpos/ui/components/badge";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
+import {
+	Dialog,
+	DialogContent,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@finopenpos/ui/components/dialog";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@finopenpos/ui/components/select";
 import {
 	ArrowLeftIcon,
 	PhoneIcon,
@@ -14,10 +30,13 @@ import {
 	TagIcon,
 	HandCoinsIcon,
 	PrinterIcon,
+	BanknoteIcon,
+	CheckIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useTRPC } from "@/lib/trpc/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCrudMutation } from "@/hooks/use-crud-mutation";
 import { TicketModal } from "@/components/ticket-modal";
 import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
 
@@ -46,7 +65,20 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 	const trpc = useTRPC();
 	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
 	const [receiptPaymentId, setReceiptPaymentId] = useState<number | null>(null);
+	const [abonarOpen, setAbonarOpen] = useState(false);
+	const [montoAbono, setMontoAbono] = useState("");
+	const [metodoAbono, setMetodoAbono] = useState("efectivo");
+	const [notaAbono, setNotaAbono] = useState("");
 
+	useEffect(() => {
+		if (abonarOpen) {
+			setMontoAbono("");
+			setMetodoAbono("efectivo");
+			setNotaAbono("");
+		}
+	}, [abonarOpen]);
+
+	const queryClient = useQueryClient();
 	const { data, isLoading } = useQuery(
 		trpc.customers.getDetail.queryOptions({ id: customerId }),
 	) as { data: any; isLoading: boolean };
@@ -54,6 +86,25 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 	const { data: statement } = useQuery(
 		trpc.collections.getStatement.queryOptions({ customerId }),
 	) as { data: any };
+
+	const detailKey = trpc.customers.getDetail.queryOptions({
+		id: customerId,
+	}).queryKey;
+	const statementKey = trpc.collections.getStatement.queryOptions({
+		customerId,
+	}).queryKey;
+
+	const abonarMutation = useCrudMutation({
+		mutationOptions: trpc.collections.addPayment.mutationOptions(),
+		invalidateKeys: statementKey,
+		successMessage: "Abono registrado",
+		errorMessage: "No se pudo registrar el abono",
+		onSuccess: (res: any) => {
+			queryClient.invalidateQueries({ queryKey: detailKey });
+			setAbonarOpen(false);
+			if (res?.id) setReceiptPaymentId(res.id);
+		},
+	});
 
 	if (isLoading) {
 		return (
@@ -110,6 +161,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 							Precios
 						</Button>
 					</Link>
+					<Button onClick={() => setAbonarOpen(true)}>
+						<BanknoteIcon className="w-4 h-4 mr-2" />
+						Abonar
+					</Button>
 				</div>
 			</div>
 
@@ -144,16 +199,23 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 			</div>
 
 			{data.balance > 0 && (
-				<Link href="/admin/collections">
-					<Card className="border-red-200 bg-red-50 hover:bg-red-100 transition-colors cursor-pointer">
-						<CardContent className="pt-6 flex items-center gap-3">
+				<Card
+					onClick={() => setAbonarOpen(true)}
+					className="border-red-200 bg-red-50 hover:bg-red-100 transition-colors cursor-pointer"
+				>
+					<CardContent className="pt-6 flex items-center justify-between gap-3">
+						<span className="flex items-center gap-3">
 							<HandCoinsIcon className="w-5 h-5 text-red-600" />
 							<span className="text-sm font-medium text-red-900">
-								Este cliente tiene saldo pendiente. Ir a Cobranza para registrar un abono.
+								Este cliente tiene saldo pendiente. Registra un abono.
 							</span>
-						</CardContent>
-					</Card>
-				</Link>
+						</span>
+						<Button size="sm" variant="outline" className="border-red-300 text-red-700">
+							<BanknoteIcon className="w-4 h-4 mr-2" />
+							Abonar
+						</Button>
+					</CardContent>
+				</Card>
 			)}
 
 			{/* Pedidos */}
@@ -308,6 +370,103 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 					onClose={() => setReceiptPaymentId(null)}
 				/>
 			)}
+
+			{/* Registrar abono — del diseño (AbonarModal) */}
+			<Dialog open={abonarOpen} onOpenChange={setAbonarOpen}>
+				<DialogContent className="sm:max-w-[520px]">
+					<DialogHeader>
+						<DialogTitle className="flex items-center gap-2">
+							<BanknoteIcon className="h-5 w-5 text-primary" />
+							Registrar abono
+						</DialogTitle>
+					</DialogHeader>
+					<p className="-mt-2 text-sm text-muted-foreground">
+						Cliente:{" "}
+						<span className="font-medium text-foreground">
+							{c.name ?? `Cliente #${c.id}`}
+						</span>
+						{" · "}Saldo actual:{" "}
+						<span className="font-medium text-foreground">
+							{data.balance.toLocaleString("es-MX", {
+								style: "currency",
+								currency: "MXN",
+							})}
+						</span>
+					</p>
+					<div className="grid grid-cols-2 gap-4">
+						<div className="space-y-1.5">
+							<Label htmlFor="abono-monto">Monto</Label>
+							<Input
+								id="abono-monto"
+								type="number"
+								min="0"
+								step="0.01"
+								inputMode="decimal"
+								placeholder="0.00"
+								value={montoAbono}
+								onChange={(e) => setMontoAbono(e.target.value)}
+								onFocus={(e) => e.currentTarget.select()}
+							/>
+						</div>
+						<div className="space-y-1.5">
+							<Label>Método</Label>
+							<Select value={metodoAbono} onValueChange={setMetodoAbono}>
+								<SelectTrigger>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="efectivo">Efectivo</SelectItem>
+									<SelectItem value="cheque">Cheque</SelectItem>
+									<SelectItem value="transferencia">Transferencia</SelectItem>
+									<SelectItem value="otro">Otro</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+					</div>
+					<div className="space-y-1.5">
+						<Label htmlFor="abono-nota">Nota (opcional)</Label>
+						<textarea
+							id="abono-nota"
+							value={notaAbono}
+							onChange={(e) => setNotaAbono(e.target.value)}
+							placeholder="Ej: Referencia de transferencia, número de cheque..."
+							className="min-h-[80px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-3">
+						<span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+							Nuevo saldo
+						</span>
+						<span className="text-xl font-bold text-red-600">
+							{(data.balance - (Number.parseFloat(montoAbono) || 0)).toLocaleString(
+								"es-MX",
+								{ style: "currency", currency: "MXN" },
+							)}
+						</span>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setAbonarOpen(false)}>
+							Cancelar
+						</Button>
+						<Button
+							disabled={
+								!(Number.parseFloat(montoAbono) > 0) || abonarMutation.isPending
+							}
+							onClick={() =>
+								abonarMutation.mutate({
+									customerId,
+									amount: Number.parseFloat(montoAbono),
+									method: metodoAbono,
+									notes: notaAbono || undefined,
+								})
+							}
+						>
+							<CheckIcon className="mr-2 h-4 w-4" />
+							{abonarMutation.isPending ? "Registrando..." : "Registrar abono"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

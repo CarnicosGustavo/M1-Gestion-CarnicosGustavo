@@ -44,8 +44,17 @@ import {
 	YAxis,
 } from "recharts";
 import { AntonellaSlot } from "@/components/antonella-slot";
+import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency, formatShortDate } from "@/lib/utils";
+
+/** Saludo según la hora del día (mismo tono que el prototipo: "Buen día, …"). */
+function greetingForNow(): string {
+	const h = new Date().getHours();
+	if (h < 12) return "Buen día";
+	if (h < 19) return "Buenas tardes";
+	return "Buenas noches";
+}
 
 const CHART_COLORS = [
 	"var(--chart-1)",
@@ -62,6 +71,16 @@ export default function Page() {
 	);
 	const t = useTranslations("dashboard");
 	const locale = useLocale();
+
+	// Sesión: para el saludo personalizado del hero.
+	const { data: session } = authClient.useSession();
+
+	// Resumen del día (en vivo, datos reales). Se cargan aparte y no bloquean el
+	// render del tablero; si fallan, simplemente no se muestra esa parte.
+	const { data: ordersData } = useQuery(trpc.orders.list.queryOptions());
+	const { data: accountsData } = useQuery(
+		trpc.collections.listAccounts.queryOptions(),
+	);
 
 	// Privacidad: por defecto SIEMPRE oculto al entrar. El usuario revela con el
 	// botón (solo para la sesión actual; al recargar vuelve a ocultarse).
@@ -125,6 +144,35 @@ export default function Page() {
 	}
 
 	const profitIsPositive = data.totalProfit >= 0;
+	const margen =
+		data.totalRevenue > 0 ? (data.totalProfit / data.totalRevenue) * 100 : 0;
+
+	// --- Hero: saludo + resumen del día (del diseño PanelScreen) ---
+	const userName =
+		session?.user?.name?.trim().split(/\s+/)[0] ||
+		session?.user?.email?.split("@")[0] ||
+		"Gustavo";
+	const todayLabel = new Intl.DateTimeFormat(locale, {
+		weekday: "long",
+		day: "numeric",
+		month: "long",
+		year: "numeric",
+	}).format(new Date());
+	const todayCapitalized =
+		todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1);
+	const pedidosEnCobro =
+		ordersData?.filter((o) => o.status === "LISTA_PARA_COBRO").length ?? 0;
+	const cuentasPorCobrar =
+		accountsData?.filter((a) => a.balance > 0).length ?? 0;
+	const summaryBits = [
+		todayCapitalized,
+		pedidosEnCobro > 0
+			? `${pedidosEnCobro} ${pedidosEnCobro === 1 ? "pedido" : "pedidos"} en cola de cobro`
+			: null,
+		cuentasPorCobrar > 0
+			? `${cuentasPorCobrar} ${cuentasPorCobrar === 1 ? "cuenta" : "cuentas"} por cobrar`
+			: null,
+	].filter(Boolean) as string[];
 
 	return (
 		<div className="relative min-h-[78vh]">
@@ -136,6 +184,20 @@ export default function Page() {
 					hideAmounts && "pointer-events-none select-none blur-md",
 				)}
 			>
+				{/* Hero (del diseño PanelScreen): saludo + resumen del día. El logo
+				    vive en el velo de privacidad (abajo), por eso aquí no se repite. */}
+				<div className="overflow-hidden rounded-2xl border bg-[var(--cg-cream)] px-6 py-5 shadow-sm">
+					<p className="font-bold text-[11px] text-primary uppercase tracking-[0.22em]">
+						Centro de Distribución
+					</p>
+					<h1 className="mt-2 font-display text-3xl text-foreground leading-[0.95] tracking-[0.01em] sm:text-4xl">
+						{greetingForNow()}, {userName}
+					</h1>
+					<p className="mt-2.5 max-w-prose text-muted-foreground text-sm">
+						{summaryBits.join("  ·  ")}
+					</p>
+				</div>
+
 				{/* iAntonella — presencia inline */}
 				<AntonellaSlot
 					data={{
@@ -211,7 +273,7 @@ export default function Page() {
 								{money(data.totalProfit)}
 							</div>
 							<p className="text-muted-foreground text-xs">
-								{t("profitDescription")}
+								{`Margen ${margen.toFixed(1)}%`}
 							</p>
 						</CardContent>
 					</Card>

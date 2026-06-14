@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cárnicos Gustavo · Sistema + iAntonella</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; overflow: hidden; }
+  body { font-family: 'Archivo', system-ui, sans-serif; background: #ECE5D8; color: #211C19;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  #root { height: 100vh; }
+  button { font-family: inherit; }
+  input { font-family: inherit; }
+  input::placeholder { color: #9A9087; }
+
+  /* scrollbars */
+  .cg-main::-webkit-scrollbar { width: 10px; }
+  .cg-main::-webkit-scrollbar-thumb { background: rgba(33,28,25,0.16); border-radius: 999px; border: 3px solid #ECE5D8; }
+  ::-webkit-scrollbar { height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(33,28,25,0.2); border-radius: 999px; }
+
+  /* interacciones */
+  .cg-btn { transition: filter .15s ease, transform .05s ease; }
+  .cg-btn:hover { filter: brightness(0.93); }
+  .cg-btn:active { transform: translateY(1px); }
+  .cg-chip { transition: background .15s ease, border-color .15s ease; }
+  .cg-chip:hover { background: rgba(33,28,25,0.05); }
+  .cg-rail-item { transition: background .15s ease, color .15s ease; }
+  .cg-rail-item:hover { background: rgba(241,231,214,0.1); }
+
+  .cg-menu-item:hover { background: rgba(33,28,25,0.06); }
+  .cg-modal-in { animation: cgModalIn .26s cubic-bezier(.22,1,.36,1); }
+  @keyframes cgModalIn { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+  .cg-ctx-in { animation: cgCtxIn .3s cubic-bezier(.22,1,.36,1); }
+  @keyframes cgCtxIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  .cg-lock-key { transition: background .14s ease, transform .05s ease; }
+  .cg-lock-key:hover { background: rgba(241,231,214,0.14) !important; }
+  .cg-lock-key:active { transform: scale(0.94); }
+  .cg-shake { animation: cgShake .4s; }
+  @keyframes cgShake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-9px)} 40%,80%{transform:translateX(9px)} }
+
+  /* tooltip de label en el rail */
+  .cg-rail-label { position: absolute; left: 54px; top: 50%; transform: translateY(-50%) scale(0.96);
+    background: #211C19; color: #F1E7D6; font: 600 12px/1 'Archivo', sans-serif; white-space: nowrap;
+    padding: 7px 10px; border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity .14s ease, transform .14s ease; z-index: 60; }
+  .cg-rail-item:hover .cg-rail-label { opacity: 1; transform: translateY(-50%) scale(1); }
+
+  /* responsive */
+  @media (max-width: 600px) { .cg-hide-sm { display: none !important; } }
+  @media (max-width: 880px) {
+    .cg-body-row { flex-direction: column-reverse !important; }
+    .cg-rail { flex-direction: row !important; width: 100% !important; height: auto !important;
+      overflow-x: auto; overflow-y: hidden; padding: 8px 10px !important; gap: 4px !important;
+      border-top: 1px solid rgba(241,231,214,0.14); }
+    .cg-rail > div:first-child { display: none; }
+    .cg-rail-label { display: none !important; }
+    .cg-two-col { grid-template-columns: 1fr !important; }
+    .cg-ds-grid { grid-template-columns: 1fr !important; }
+    .cg-ds-nav { display: none !important; }
+    .cg-recetas-grid { grid-template-columns: 1fr !important; }
+    .cg-palette { position: static !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+
+<script type="text/babel" src="cg-data.jsx"></script>
+<script type="text/babel" src="cg-ui.jsx"></script>
+<script type="text/babel" src="cg-antonella.jsx"></script>
+<script type="text/babel" src="cg-ai-kit.jsx"></script>
+<script type="text/babel" src="cg-cold.jsx"></script>
+<script type="text/babel" src="cg-secure-dashboard.jsx"></script>
+<script type="text/babel" src="cg-flows.jsx"></script>
+<script type="text/babel" src="cg-screens-prof.jsx"></script>
+<script type="text/babel" src="cg-screens-a.jsx"></script>
+<script type="text/babel" src="cg-screens-b.jsx"></script>
+<script type="text/babel" src="cg-screens-c.jsx"></script>
+<script type="text/babel" src="cg-screens-d.jsx"></script>
+<script type="text/babel" src="cg-recetas.jsx"></script>
+<script type="text/babel" src="cg-config.jsx"></script>
+<script type="text/babel" src="cg-designsystem.jsx"></script>
+<script type="text/babel" src="cg-app.jsx"></script>
+</body>
+</html>
