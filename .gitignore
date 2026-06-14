@@ -45,8 +45,8 @@ next-env.d.ts
 **/data/*
 !**/data/.gitkeep
 
-# drizzle migrations
-drizzle
+# Las migraciones de drizzle (apps/web/drizzle/) SÍ se versionan:
+# el SQL + meta/_journal.json + meta/*_snapshot.json son necesarios para migrate.
 
 # playwright mcp
 .playwright-mcp/

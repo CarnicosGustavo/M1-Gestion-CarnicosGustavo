@@ -9,6 +9,8 @@
     "lint": "bunx biome check .",
     "db:ensure": "node scripts/ensure-db.mjs",
     "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "test": "bun test src/lib/trpc/routers/__tests__",
     "test:coverage": "bun test --coverage src/lib/trpc/routers/__tests__",
     "prepare-prod": "bun scripts/prepare-prod.ts"
