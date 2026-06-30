@@ -58,6 +58,7 @@ const messages = {
 		prices: "Precios",
 		coldInventory: "Inventario Frío",
 		collections: "Cobranza",
+		validacion: "Validación de saldos",
 		adminPanel: "Panel de administración",
 		openMenu: "Abrir menú",
 		myAccount: "Mi cuenta",

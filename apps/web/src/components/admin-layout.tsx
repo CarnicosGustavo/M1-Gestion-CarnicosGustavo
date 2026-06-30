@@ -31,6 +31,7 @@ import {
 	ScaleIcon,
 	ScissorsIcon,
 	SettingsIcon,
+	ShieldCheckIcon,
 	ShoppingBagIcon,
 	ShoppingCartIcon,
 	SnowflakeIcon,
@@ -65,6 +66,7 @@ interface NavItem {
 		| "prices"
 		| "coldInventory"
 		| "collections"
+		| "validacion"
 		| "checkout"
 		| "antonella";
 	icon: LucideIcon;
@@ -84,6 +86,7 @@ const opNav: NavItem[] = [
 	{ href: "/admin/checkout", labelKey: "checkout", icon: BanknoteIcon },
 	{ href: "/admin/yield", labelKey: "yield", icon: ClipboardListIcon },
 	{ href: "/admin/collections", labelKey: "collections", icon: HandCoinsIcon },
+	{ href: "/admin/validacion", labelKey: "validacion", icon: ShieldCheckIcon },
 	{ href: "/admin/customers", labelKey: "customers", icon: UsersIcon },
 	{ href: "/admin/pos", labelKey: "pos", icon: ShoppingCartIcon },
 	{ href: "/admin/antonella", labelKey: "antonella", icon: BotIcon },
