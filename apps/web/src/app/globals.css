@@ -79,26 +79,26 @@
    TEMA: Paleta cálida (default) · modo claro  — calida-claro
    =========================================================== */
 :root {
-  --background: #ece5d8;
-  --foreground: #211c19;
-  --card: #fbf7ef;
-  --card-foreground: #211c19;
-  --popover: #fbf7ef;
-  --popover-foreground: #211c19;
-  --primary: #9e3326;
-  --primary-foreground: #fbf7ef;
-  --secondary: #f4eee1;
-  --secondary-foreground: #211c19;
-  --muted: #f4eee1;
-  --muted-foreground: #6b625a;
-  --accent: #f1e7d6;
-  --accent-foreground: #211c19;
-  --destructive: #9e3326;
-  --destructive-foreground: #fbf7ef;
-  --border: rgba(33, 28, 25, 0.12);
-  --input: rgba(33, 28, 25, 0.12);
-  --ring: #9e3326;
-  --radius: 0.875rem;
+  --background: #ffffff;
+  --foreground: #020817;
+  --card: #ffffff;
+  --card-foreground: #020817;
+  --popover: #ffffff;
+  --popover-foreground: #020817;
+  --primary: #0f172a;
+  --primary-foreground: #f8fafc;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #f8fafc;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #020817;
+  --radius: 0.5rem;
 
   --chart-1: #9e3326;
   --chart-2: #3f7d54;
@@ -126,25 +126,25 @@
 
 /* Paleta cálida · modo oscuro — calida-oscuro */
 .dark {
-  --background: #1a1714;
-  --foreground: #f1e7d6;
-  --card: #241f1b;
-  --card-foreground: #f1e7d6;
-  --popover: #241f1b;
-  --popover-foreground: #f1e7d6;
-  --primary: #da5742;
-  --primary-foreground: #1a1714;
-  --secondary: #2c2621;
-  --secondary-foreground: #f1e7d6;
-  --muted: #2c2621;
-  --muted-foreground: #a99e8f;
-  --accent: #2c2621;
-  --accent-foreground: #f1e7d6;
-  --destructive: #da5742;
-  --destructive-foreground: #1a1714;
-  --border: rgba(241, 231, 214, 0.13);
-  --input: rgba(241, 231, 214, 0.13);
-  --ring: #da5742;
+  --background: #020817;
+  --foreground: #f8fafc;
+  --card: #020817;
+  --card-foreground: #f8fafc;
+  --popover: #020817;
+  --popover-foreground: #f8fafc;
+  --primary: #f8fafc;
+  --primary-foreground: #0f172a;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: #7f1d1d;
+  --destructive-foreground: #f8fafc;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #cbd5e1;
 
   --chart-1: #da5742;
   --chart-2: #5ca877;
