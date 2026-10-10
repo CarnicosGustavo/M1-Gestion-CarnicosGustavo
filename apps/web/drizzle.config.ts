@@ -48,6 +48,7 @@ export default defineConfig({
 		"antonella_memories",
 		"antonella_datasets",
 		"antonella_dataset_rows",
+		"scale_readings",
 	],
 	// Tabla de control de migraciones (esquema `drizzle`, estándar de drizzle-orm)
 	migrations: {

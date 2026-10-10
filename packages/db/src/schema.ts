@@ -762,6 +762,47 @@ export const antonellaDatasetRows = pgTable(
 	],
 );
 
+// Lecturas de básculas físicas recibidas por POST /api/scale/ingest (gateway
+// ESP32 junto al indicador). Llegan SIN asignar; la estación de Báscula las
+// consume al registrar el peso de un renglón. Ver docs/scale-ingest.md.
+export const scaleReadings = pgTable(
+	"scale_readings",
+	{
+		id: bigserial("id", { mode: "number" }).primaryKey(),
+		// Idempotencia: el dispositivo reutiliza el mismo event_id en reintentos.
+		event_id: uuid("event_id").notNull(),
+		device_id: varchar("device_id", { length: 64 }).notNull(),
+		seq: bigint("seq", { mode: "number" }).notNull(),
+		weight: numeric("weight", { precision: 12, scale: 3 }).notNull(),
+		unit: varchar("unit", { length: 8 }).notNull(),
+		weight_g: integer("weight_g").notNull(),
+		stable: boolean("stable").notNull(),
+		// true si el indicador ya restó la tara (peso neto)
+		net: boolean("net").notNull().default(false),
+		raw: varchar("raw", { length: 128 }),
+		// Hora del dispositivo (null si no tiene NTP) y hora de recepción.
+		captured_at: tstz("captured_at"),
+		received_at: tstz("received_at").notNull().defaultNow(),
+		// Pistas opcionales enviadas por el dispositivo (no se usan para asignar).
+		order_id: integer("order_id"),
+		order_item_id: integer("order_item_id"),
+		piece_count: integer("piece_count"),
+		// Consumo desde la estación de Báscula.
+		consumed_at: tstz("consumed_at"),
+		consumed_by: varchar("consumed_by", { length: 255 }),
+		consumed_order_item_id: integer("consumed_order_item_id"),
+	},
+	(t) => [
+		unique("scale_readings_event_id_key").on(t.event_id),
+		index("idx_scale_readings_device_id").on(t.device_id, t.id),
+		foreignKey({
+			name: "scale_readings_consumed_order_item_id_fkey",
+			columns: [t.consumed_order_item_id],
+			foreignColumns: [orderItems.id],
+		}).onDelete("set null"),
+	],
+);
+
 // --- RELACIONES ---
 
 export const userRelations = relations(user, ({ many }) => ({
