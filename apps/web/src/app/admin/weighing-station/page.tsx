@@ -45,6 +45,10 @@ import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AntonellaSlot } from "@/components/antonella-slot";
+import {
+	type ScaleReading,
+	ScaleReadingCard,
+} from "@/components/scale-reading-card";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
 
@@ -77,6 +81,12 @@ export default function WeighingStationPage() {
 
 	// Peso bruto ingresado
 	const [actualWeight, setActualWeight] = useState("");
+	// Lectura de la báscula física usada como peso bruto. Solo se envía si el
+	// peso en el input sigue siendo exactamente el de la lectura.
+	const [scaleUse, setScaleUse] = useState<{
+		id: number;
+		value: string;
+	} | null>(null);
 	// Teclado numérico en pantalla: oculto por default, se abre con un botón.
 	const [showKeypad, setShowKeypad] = useState(false);
 
@@ -210,6 +220,10 @@ export default function WeighingStationPage() {
 			onSuccess: () => {
 				toast.success(t("weighed"));
 				setActualWeight("");
+				setScaleUse(null);
+				queryClient.invalidateQueries({
+					queryKey: trpc.scale.latest.pathKey(),
+				});
 				// Si este era el último artículo por pesar, el pedido quedó listo
 				// para cobro: mostrar botón flotante a /admin/checkout por unos segundos.
 				if (pendingCompletionRef.current) {
@@ -319,8 +333,12 @@ export default function WeighingStationPage() {
 		updateWeightMutation.mutate({
 			orderItemId: currentItem.id,
 			actualWeightGrams: Math.round(netKg * 1000),
+			scaleReadingId:
+				scaleUse && scaleUse.value === actualWeight ? scaleUse.id : undefined,
 		});
 	}, [
+		scaleUse,
+		actualWeight,
 		currentItem,
 		hasValidWeight,
 		netKg,
@@ -328,6 +346,21 @@ export default function WeighingStationPage() {
 		pendingItems.length,
 		selectedOrder,
 	]);
+
+	// Usar la lectura de la báscula física como peso bruto. Si la báscula ya
+	// restó la tara (neto), no se resta recipiente otra vez.
+	const handleUseScaleReading = (r: ScaleReading) => {
+		const value = (r.weight_g / 1000).toFixed(3);
+		setActualWeight(value);
+		setScaleUse({ id: r.id, value });
+		if (r.net && containerId !== "ninguno") {
+			setContainerId("ninguno");
+			toast.info(
+				"Lectura neta: se quitó el recipiente para no restar la tara dos veces",
+			);
+		}
+		weightInputRef.current?.focus();
+	};
 
 	// Limpiar peso bruto (TARE)
 	const handleTare = () => {
@@ -684,6 +717,16 @@ export default function WeighingStationPage() {
 										</div>
 									)}
 								</div>
+
+								{/* Lectura de la báscula física (si la ingesta está activa) ---- */}
+								<ScaleReadingCard
+									onUse={handleUseScaleReading}
+									usedReadingId={
+										scaleUse && scaleUse.value === actualWeight
+											? scaleUse.id
+											: null
+									}
+								/>
 
 								{/* Input de peso bruto -------------------------------------------- */}
 								<div className="space-y-2">
