@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isHealthAuthorized } from "@/lib/health-auth";
 
 export const runtime = "nodejs";
 
@@ -33,6 +34,9 @@ function parseDatabaseUrl(databaseUrl: string | undefined) {
 }
 
 export async function GET(req: Request) {
+  if (!(await isHealthAuthorized(req))) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
   const databaseUrl = process.env.DATABASE_URL;
   const baseUrl = process.env.BASE_URL;
   const betterAuthUrl = process.env.BETTER_AUTH_URL;

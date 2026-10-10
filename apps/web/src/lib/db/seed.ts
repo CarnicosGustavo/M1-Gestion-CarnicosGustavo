@@ -16,7 +16,17 @@ import {
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { faker } from "@faker-js/faker";
 import { auth } from "../auth";
-import { CLIENT_NAME, COUNTRY, DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/constants";
+import { CLIENT_NAME, COUNTRY, DEMO_EMAIL } from "@/lib/constants";
+
+// La contraseña del usuario inicial ya no vive en el código: se toma de
+// SEED_ADMIN_PASSWORD (solo se usa al sembrar una base vacía).
+function seedPassword(): string {
+  const value = process.env.SEED_ADMIN_PASSWORD;
+  if (!value || value.length < 8) {
+    throw new Error("SEED_ADMIN_PASSWORD (min 8 chars) is required to seed the initial user");
+  }
+  return value;
+}
 
 const DEMO_NAME = CLIENT_NAME;
 const LEGACY_DEMO_EMAIL = "test@example.com";
@@ -74,7 +84,7 @@ async function seedAuthUser(options: { headers?: Headers; forceRecreate?: boolea
 
   const created = (
     await auth.api.signUpEmail({
-      body: { name: DEMO_NAME, email: DEMO_EMAIL, password: DEMO_PASSWORD },
+      body: { name: DEMO_NAME, email: DEMO_EMAIL, password: seedPassword() },
       headers: options.headers,
     })
   ).user.id;
@@ -391,7 +401,7 @@ export async function seed(
   const cityCount = COUNTRY === "MX" ? 0 : await seedCities();
 
   console.log(
-    `Seeded: 3 payment methods, 1 demo user (${DEMO_EMAIL} / ${DEMO_PASSWORD}), ` +
+    `Seeded: 3 payment methods, 1 demo user (${DEMO_EMAIL}), ` +
       `${customerValues.length} customers, ${productValues.length} products, ` +
       `${orderCount} orders, ${expenseCount} expense transactions, ` +
       `${cityCount} cities`

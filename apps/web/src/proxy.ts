@@ -38,7 +38,6 @@ export async function proxy(request: NextRequest) {
   if (
     !sessionCookie &&
     !pathname.startsWith("/login") &&
-    !pathname.startsWith("/signup") &&
     !pathname.startsWith("/auth") &&
     !pathname.startsWith("/api/auth") &&
     !pathname.startsWith("/api/admin/seed") &&

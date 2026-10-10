@@ -4,11 +4,10 @@ import { login } from "./actions";
 import { Card, CardContent, CardFooter } from "@finopenpos/ui/components/card";
 import { Label } from "@finopenpos/ui/components/label";
 import { Input } from "@finopenpos/ui/components/input";
-import Link from "next/link";
 import { Button } from "@finopenpos/ui/components/button";
 import { useRef } from "react";
 import { useTranslations } from "next-intl";
-import { CLIENT_NAME, DEMO_EMAIL, DEMO_PASSWORD, PROJECT_CREDIT } from "@/lib/constants";
+import { CLIENT_NAME, PROJECT_CREDIT } from "@/lib/constants";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 
@@ -20,10 +19,6 @@ export default function LoginPage() {
   const error = searchParams.get("error");
   const reason = searchParams.get("reason");
 
-  function fillDemo() {
-    if (emailRef.current) emailRef.current.value = DEMO_EMAIL;
-    if (passwordRef.current) passwordRef.current.value = DEMO_PASSWORD;
-  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background">
@@ -82,23 +77,6 @@ export default function LoginPage() {
               <Button className="w-full" formAction={login}>
                 {t("submit")}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={fillDemo}
-              >
-                {t("fillDemo")}
-              </Button>
-              <p className="text-sm text-center text-muted-foreground">
-                {t("noAccount")}{" "}
-                <Link
-                  href="/signup"
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  {t("signUp")}
-                </Link>
-              </p>
             </CardFooter>
           </form>
         </Card>
