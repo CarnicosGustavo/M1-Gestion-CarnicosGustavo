@@ -10,7 +10,7 @@ import {
 } from "@finopenpos/ui/components/card";
 import { useEffect } from "react";
 
-export default function Error({
+export default function AdminError({
 	error,
 	reset,
 }: {

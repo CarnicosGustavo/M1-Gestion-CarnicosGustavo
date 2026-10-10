@@ -13,10 +13,8 @@ function resolveCurrency(locale: string) {
 }
 
 export function formatDate(date: Date | string, locale?: string) {
-	if (typeof date === "string") {
-		date = new Date(date);
-	}
-	return new Intl.DateTimeFormat(resolveLocale(locale)).format(date);
+	const d = typeof date === "string" ? new Date(date) : date;
+	return new Intl.DateTimeFormat(resolveLocale(locale)).format(d);
 }
 
 /** Format an integer amount in cents as a currency string. */

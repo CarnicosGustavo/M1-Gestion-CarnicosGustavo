@@ -127,7 +127,9 @@ export default function WeighingStationPage() {
 			if (fresh.length > 0) {
 				setNewOrderIds((s) => {
 					const next = new Set(s);
-					fresh.forEach((id) => next.add(id));
+					fresh.forEach((id) => {
+						next.add(id);
+					});
 					return next;
 				});
 				const first = orders.find((o) => o.id === fresh[0]);
@@ -138,7 +140,9 @@ export default function WeighingStationPage() {
 				setTimeout(() => {
 					setNewOrderIds((s) => {
 						const next = new Set(s);
-						fresh.forEach((id) => next.delete(id));
+						fresh.forEach((id) => {
+							next.delete(id);
+						});
 						return next;
 					});
 				}, 3000);
@@ -497,6 +501,7 @@ export default function WeighingStationPage() {
 							<div className="divide-y">
 								{orders.map((order) => (
 									<button
+										type="button"
 										key={order.id}
 										onClick={() => setSelectedOrderId(order.id)}
 										className={cn(

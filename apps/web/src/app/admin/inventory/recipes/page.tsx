@@ -842,6 +842,7 @@ export default function RecipesPage({
 						r.is_variant && "bg-amber-50/60",
 					)}
 				>
+					{/* biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado */}
 					<span
 						draggable
 						onDragStart={(e) => {
@@ -983,6 +984,7 @@ export default function RecipesPage({
 					</span>
 				</div>
 				{expanded && (
+					// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 					<div
 						className={cn(
 							"mt-1 mb-2 ml-5 rounded-lg border border-l-2 border-l-blue-400 bg-muted/20 p-2",
@@ -1179,6 +1181,7 @@ export default function RecipesPage({
 		const isSupplier = p.category === "Compra";
 		const orphan = !isSupplier && styles.length === 0 && parents.length === 0;
 		return (
+			// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 			<div
 				draggable
 				onDragStart={(e) => {
@@ -1318,6 +1321,7 @@ export default function RecipesPage({
 		const accent = accentFor(s.type);
 		const dkey = `style:${s.type}`;
 		return (
+			// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 			<div
 				key={s.type}
 				className={cn(
@@ -1622,6 +1626,7 @@ export default function RecipesPage({
 			sortable: true,
 			accessorFn: (r) => r.parentProduct.name,
 			render: (r) => (
+				// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 				<div
 					onDragOver={(e) => {
 						e.preventDefault();
@@ -1665,6 +1670,7 @@ export default function RecipesPage({
 				const key = `${r.parent_product_id}:${r.child_product_id}:${r.transformation_type}`;
 				const dup = duplicateCounts.get(key) ?? 0;
 				return (
+					// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 					<div
 						onDragOver={(e) => {
 							e.preventDefault();
@@ -2541,6 +2547,7 @@ export default function RecipesPage({
 							esa pieza (2º nivel, receta BASE).
 							<div className="mt-1 flex flex-wrap gap-1">
 								{productsWithoutRecipe.map((p) => (
+									// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 									<span
 										key={p.id}
 										draggable
@@ -2560,6 +2567,7 @@ export default function RecipesPage({
 							</div>
 							{/* Zonas de drop alternativas */}
 							<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+								{/* biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado */}
 								<div
 									onDragOver={(e) => e.preventDefault()}
 									onDrop={(e) => {
@@ -2583,6 +2591,7 @@ export default function RecipesPage({
 										Manteca, lomo ahumado, chicharrón…
 									</div>
 								</div>
+								{/* biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado */}
 								<div
 									onDragOver={(e) => e.preventDefault()}
 									onDrop={(e) => {

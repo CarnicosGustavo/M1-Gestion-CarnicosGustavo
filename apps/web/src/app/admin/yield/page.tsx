@@ -291,9 +291,9 @@ export default function YieldPage() {
 	};
 
 	const totals = useMemo(() => {
-		let piezas = 0,
-			estimado = 0,
-			real = 0;
+		let piezas = 0;
+		let estimado = 0;
+		let real = 0;
 		for (const r of rows) {
 			const pz = Number.parseInt(r.pieces) || 0;
 			piezas += pz;

@@ -125,7 +125,7 @@ export default function CollectionsPage() {
 		const text =
 			`Hola ${a.name ?? ""}, le saluda *Cárnicos Gustavo*. ` +
 			`Le recordamos que tiene un saldo pendiente de *${fmt(a.balance)}*. ` +
-			`Agradecemos mucho su pago. ¡Gracias por su preferencia!`;
+			"Agradecemos mucho su pago. ¡Gracias por su preferencia!";
 		const url = phone
 			? `https://wa.me/52${phone.replace(/^52/, "")}?text=${encodeURIComponent(text)}`
 			: `https://wa.me/?text=${encodeURIComponent(text)}`;

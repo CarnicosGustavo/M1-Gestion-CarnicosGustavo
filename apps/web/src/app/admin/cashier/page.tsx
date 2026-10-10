@@ -222,6 +222,7 @@ export default function Cashier() {
 		key: "actions",
 		header: "",
 		render: (row) => (
+			// biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: contenedor que solo evita que el clic del menú active el clic de la fila; el control real es el botón del menú
 			<div onClick={(e) => e.stopPropagation()}>
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>

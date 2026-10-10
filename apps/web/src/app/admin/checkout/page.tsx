@@ -164,6 +164,7 @@ export default function CheckoutPage() {
 							<div className="divide-y">
 								{list.map((o) => (
 									<button
+										type="button"
 										key={o.id}
 										onClick={() => setSelectedOrderId(o.id)}
 										className={cn(
