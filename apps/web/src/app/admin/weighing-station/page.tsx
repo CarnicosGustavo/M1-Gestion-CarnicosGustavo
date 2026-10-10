@@ -318,7 +318,7 @@ export default function WeighingStationPage() {
 		}
 		updateWeightMutation.mutate({
 			orderItemId: currentItem.id,
-			actualWeightKg: Math.round(netKg * 1000),
+			actualWeightGrams: Math.round(netKg * 1000),
 		});
 	}, [
 		currentItem,

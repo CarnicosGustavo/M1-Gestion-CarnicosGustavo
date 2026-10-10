@@ -1297,18 +1297,49 @@ export const ordersRouter = router({
 			},
 		})
 		.input(
+			// Sin .refine(): trpc-to-openapi necesita un objeto "plano" para generar
+			// el documento OpenAPI; la regla de "uno y solo uno" se valida abajo.
 			z.object({
 				orderItemId: z.number(),
-				actualWeightKg: z.number().int().positive(),
+				// Peso neto en GRAMOS (entero).
+				actualWeightGrams: z.number().int().positive().optional(),
+				// Obsoleto: mismo valor en GRAMOS (el nombre es histórico). Se acepta
+				// por compatibilidad; usar actualWeightGrams.
+				actualWeightKg: z.number().int().positive().optional(),
 			}),
 		)
 		.output(z.object({ success: z.boolean() }))
 		.mutation(async ({ ctx, input }) => {
+			const grams = input.actualWeightGrams ?? input.actualWeightKg;
+			if (
+				grams === undefined ||
+				(input.actualWeightGrams !== undefined &&
+					input.actualWeightKg !== undefined)
+			)
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Envía solo actualWeightGrams (peso neto en gramos)",
+				});
 			return db.transaction(async (tx) => {
+				// Solo renglones de pedidos del usuario (o creados por el sistema),
+				// igual que la cola de getPendingWeighingOrders.
 				const [item] = await tx
-					.select()
+					.select({
+						id: orderItems.id,
+						order_id: orderItems.order_id,
+						product_id: orderItems.product_id,
+						unit_price: orderItems.unit_price,
+						quantity_pieces: orderItems.quantity_pieces,
+						status: orderItems.status,
+					})
 					.from(orderItems)
-					.where(eq(orderItems.id, input.orderItemId))
+					.innerJoin(orders, eq(orders.id, orderItems.order_id))
+					.where(
+						and(
+							eq(orderItems.id, input.orderItemId),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
+					)
 					.limit(1);
 
 				if (!item)
@@ -1317,19 +1348,32 @@ export const ordersRouter = router({
 						message: "Ítem no encontrado",
 					});
 
-				const subtotal = Math.round(
-					(input.actualWeightKg * Number(item.unit_price)) / 1000,
-				);
-				const actualWeightKg = (input.actualWeightKg / 1000).toFixed(3);
+				const subtotal = Math.round((grams * Number(item.unit_price)) / 1000);
+				const actualWeightKg = (grams / 1000).toFixed(3);
 
-				await tx
+				// Solo se pesa un renglón PENDIENTE_PESAJE. El UPDATE condicional evita
+				// pesar dos veces (y sumar stock doble en producción) aunque lleguen
+				// dos peticiones al mismo tiempo.
+				const updated = await tx
 					.update(orderItems)
 					.set({
 						quantity_kg: actualWeightKg,
 						subtotal: String(subtotal),
 						status: "PESADO",
 					})
-					.where(eq(orderItems.id, input.orderItemId));
+					.where(
+						and(
+							eq(orderItems.id, input.orderItemId),
+							eq(orderItems.status, "PENDIENTE_PESAJE"),
+						),
+					)
+					.returning({ id: orderItems.id });
+
+				if (updated.length === 0)
+					throw new TRPCError({
+						code: "CONFLICT",
+						message: "Este artículo ya fue pesado",
+					});
 
 				// Recalcular total de la orden
 				const allItems = await tx
