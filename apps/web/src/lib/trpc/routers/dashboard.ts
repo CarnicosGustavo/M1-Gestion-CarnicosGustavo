@@ -1,8 +1,8 @@
+import { and, asc, eq, sql, sum } from "drizzle-orm";
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
-import { transactions, orderItems, products } from "@/lib/db/schema";
-import { eq, and, asc, sum, sql } from "drizzle-orm";
+import { orderItems, products, transactions } from "@/lib/db/schema";
+import { protectedProcedure, router } from "../init";
 
 function safeNumber(value: unknown) {
 	const n = typeof value === "number" ? value : Number(value);
@@ -150,6 +150,6 @@ function calculateProfitMarginSeries(
 	return Object.entries(dailyData).map(([date, { income, expense }]) => {
 		const profit = income - expense;
 		const margin = income > 0 ? (profit / income) * 100 : 0;
-		return { date, margin: parseFloat(margin.toFixed(2)) };
+		return { date, margin: Number.parseFloat(margin.toFixed(2)) };
 	});
 }

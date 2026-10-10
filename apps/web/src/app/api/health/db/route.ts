@@ -1,7 +1,7 @@
-import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import postgres from "postgres";
+import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
 

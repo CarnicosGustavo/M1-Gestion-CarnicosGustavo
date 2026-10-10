@@ -1,9 +1,9 @@
-import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
-import { db } from "@/lib/db";
-import { products, inventoryTransactions } from "@/lib/db/schema";
-import { eq, and, sql, or, gt } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { and, eq, gt, or, sql } from "drizzle-orm";
+import { z } from "zod/v4";
+import { db } from "@/lib/db";
+import { inventoryTransactions, products } from "@/lib/db/schema";
+import { protectedProcedure, router } from "../init";
 
 export const coldInventoryRouter = router({
 	// Productos con stock fresco o congelado

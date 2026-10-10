@@ -10,7 +10,6 @@ import {
 import { Combobox } from "@finopenpos/ui/components/combobox";
 import { Input } from "@finopenpos/ui/components/input";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
-import { AntonellaSlot } from "@/components/antonella-slot";
 import {
 	Table,
 	TableBody,
@@ -31,6 +30,7 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AntonellaSlot } from "@/components/antonella-slot";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 import { formatCurrency } from "@/lib/utils";

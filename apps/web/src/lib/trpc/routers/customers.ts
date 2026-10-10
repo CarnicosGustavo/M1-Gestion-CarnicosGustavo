@@ -1,15 +1,15 @@
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
 import {
-	customers,
-	orders,
+	creditAccounts,
 	creditCharges,
 	creditPayments,
 	customerPrices,
-	creditAccounts,
+	customers,
+	orders,
 } from "@/lib/db/schema";
-import { eq, and, or, desc, sql, inArray } from "drizzle-orm";
+import { protectedProcedure, router } from "../init";
 
 const customerSchema = z.object({
 	id: z.number(),

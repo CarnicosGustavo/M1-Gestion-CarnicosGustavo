@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { type Locale, locales, defaultLocale } from "./config";
+import { defaultLocale, type Locale, locales } from "./config";
 
 export async function setLocale(locale: Locale) {
 	const cookieStore = await cookies();

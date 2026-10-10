@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
+import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { useState } from "react";
 import superjson from "superjson";
 import { TRPCProvider } from "@/lib/trpc/client";
-import { createTRPCClient } from "@trpc/client";
 import type { AppRouter } from "@/lib/trpc/router";
 
 export function TRPCReactProvider({ children }: { children: React.ReactNode }) {

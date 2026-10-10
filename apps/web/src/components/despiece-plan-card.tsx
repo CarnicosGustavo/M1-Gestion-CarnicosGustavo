@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@finopenpos/ui/components/button";
-import { cn } from "@finopenpos/ui/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
 	CheckIcon,

@@ -1,14 +1,29 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { Badge } from "@finopenpos/ui/components/badge";
+import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
 	CardContent,
 	CardHeader,
 	CardTitle,
 } from "@finopenpos/ui/components/card";
-import { Button } from "@finopenpos/ui/components/button";
-import { Badge } from "@finopenpos/ui/components/badge";
+import {
+	Dialog,
+	DialogContent,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@finopenpos/ui/components/dialog";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@finopenpos/ui/components/select";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import {
 	Table,
@@ -18,39 +33,24 @@ import {
 	TableHeader,
 	TableRow,
 } from "@finopenpos/ui/components/table";
-import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
-import {
-	Dialog,
-	DialogContent,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@finopenpos/ui/components/dialog";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@finopenpos/ui/components/select";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ArrowLeftIcon,
-	PhoneIcon,
-	MapPinIcon,
-	ReceiptTextIcon,
-	TagIcon,
-	HandCoinsIcon,
-	PrinterIcon,
 	BanknoteIcon,
 	CheckIcon,
+	HandCoinsIcon,
+	MapPinIcon,
+	PhoneIcon,
+	PrinterIcon,
+	ReceiptTextIcon,
+	TagIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCrudMutation } from "@/hooks/use-crud-mutation";
-import { TicketModal } from "@/components/ticket-modal";
+import { use, useEffect, useState } from "react";
 import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
+import { TicketModal } from "@/components/ticket-modal";
+import { useCrudMutation } from "@/hooks/use-crud-mutation";
+import { useTRPC } from "@/lib/trpc/client";
 
 const money = (cents: number) =>
 	(cents / 100).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -77,7 +77,7 @@ export default function CustomerDetailPage({
 	params: Promise<{ id: string }>;
 }) {
 	const { id } = use(params);
-	const customerId = parseInt(id);
+	const customerId = Number.parseInt(id);
 	const trpc = useTRPC();
 	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
 	const [receiptPaymentId, setReceiptPaymentId] = useState<number | null>(null);

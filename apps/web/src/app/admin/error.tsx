@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
 import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
 	CardContent,
+	CardDescription,
 	CardHeader,
 	CardTitle,
-	CardDescription,
 } from "@finopenpos/ui/components/card";
+import { useEffect } from "react";
 
 export default function Error({
 	error,

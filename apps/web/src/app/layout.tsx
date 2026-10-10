@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { Anton, Archivo, JetBrains_Mono } from "next/font/google";
-import { Toaster } from "sonner";
-import { TRPCReactProvider } from "@/components/trpc-provider";
-import { CookieConsent } from "@/components/cookie-consent";
-import { ThemeProvider, ThemeScript } from "@/components/theme-provider";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
+import { Toaster } from "sonner";
+import { CookieConsent } from "@/components/cookie-consent";
+import { ThemeProvider, ThemeScript } from "@/components/theme-provider";
+import { TRPCReactProvider } from "@/components/trpc-provider";
 import "./globals.css";
 import { CLIENT_NAME } from "@/lib/constants";
 

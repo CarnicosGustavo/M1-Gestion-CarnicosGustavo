@@ -1,16 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { Badge } from "@finopenpos/ui/components/badge";
+import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
 	CardContent,
 	CardHeader,
 	CardTitle,
 } from "@finopenpos/ui/components/card";
-import { Button } from "@finopenpos/ui/components/button";
-import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
-import { Badge } from "@finopenpos/ui/components/badge";
 import {
 	Dialog,
 	DialogContent,
@@ -18,6 +15,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
 import {
 	Select,
 	SelectContent,
@@ -33,20 +32,21 @@ import {
 	TableHeader,
 	TableRow,
 } from "@finopenpos/ui/components/table";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	PlusIcon,
 	BanknoteIcon,
 	FileTextIcon,
-	PrinterIcon,
 	MessageCircleIcon,
 	PencilIcon,
+	PlusIcon,
+	PrinterIcon,
 	Trash2Icon,
 } from "lucide-react";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
 import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
 import { TicketModal } from "@/components/ticket-modal";
+import { useTRPC } from "@/lib/trpc/client";
 
 const fmt = (n: number) =>
 	n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -197,7 +197,7 @@ export default function CollectionsPage() {
 
 	const saveEditMovement = () => {
 		if (!editMov) return;
-		const amount = parseFloat(editMov.amount) || 0;
+		const amount = Number.parseFloat(editMov.amount) || 0;
 		if (amount <= 0) {
 			toast.error("El monto debe ser mayor a 0");
 			return;
@@ -464,8 +464,8 @@ export default function CollectionsPage() {
 							disabled={chargeMut.isPending || !chCustomer || !chAmount}
 							onClick={() =>
 								chargeMut.mutate({
-									customerId: parseInt(chCustomer),
-									amount: parseFloat(chAmount) || 0,
+									customerId: Number.parseInt(chCustomer),
+									amount: Number.parseFloat(chAmount) || 0,
 									concept: chConcept || undefined,
 									chargeDate: chDate || undefined,
 									source: "ticket_viejo",
@@ -514,7 +514,7 @@ export default function CollectionsPage() {
 								payOpen &&
 								payMut.mutate({
 									customerId: payOpen.customerId,
-									amount: parseFloat(payAmount) || 0,
+									amount: Number.parseFloat(payAmount) || 0,
 									method: payMethod || undefined,
 								})
 							}

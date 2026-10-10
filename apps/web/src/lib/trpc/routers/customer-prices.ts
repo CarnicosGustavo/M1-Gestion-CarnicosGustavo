@@ -1,13 +1,13 @@
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
 import {
 	customerPrices,
-	products,
-	priceListItems,
 	customers,
+	priceListItems,
+	products,
 } from "@/lib/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { protectedProcedure, router } from "../init";
 
 export const customerPricesRouter = router({
 	// Lista TODOS los productos del usuario con el precio guardado del cliente (si existe)

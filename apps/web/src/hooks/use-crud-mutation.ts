@@ -1,9 +1,9 @@
+import type { MutationFunctionContext } from "@tanstack/query-core";
 import {
+	type UseMutationOptions,
 	useMutation,
 	useQueryClient,
-	type UseMutationOptions,
 } from "@tanstack/react-query";
-import type { MutationFunctionContext } from "@tanstack/query-core";
 import { toast } from "sonner";
 
 interface UseCrudMutationOptions<TData, TError, TVariables, TOnMutateResult> {

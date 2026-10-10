@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const DEMO_HOST = "fin-open-pos.johnenrique.tech";
 const STORAGE_KEY = "cookie-consent";

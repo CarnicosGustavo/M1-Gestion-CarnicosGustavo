@@ -4,7 +4,6 @@ import { Badge } from "@finopenpos/ui/components/badge";
 import { Button } from "@finopenpos/ui/components/button";
 import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
 import { Combobox } from "@finopenpos/ui/components/combobox";
-import { AiLearned, AiSuggestBar } from "@/components/antonella-ai-kit";
 import {
 	type Column,
 	DataTable,
@@ -57,6 +56,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
+import { AiLearned, AiSuggestBar } from "@/components/antonella-ai-kit";
 import { AntonellaSlot } from "@/components/antonella-slot";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";

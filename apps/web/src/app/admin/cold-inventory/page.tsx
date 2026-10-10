@@ -1,10 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Card, CardContent } from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
-import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
+import { Card, CardContent } from "@finopenpos/ui/components/card";
 import {
 	Dialog,
 	DialogContent,
@@ -12,10 +9,13 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
-import { SnowflakeIcon, FlameIcon } from "lucide-react";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FlameIcon, SnowflakeIcon } from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useTRPC } from "@/lib/trpc/client";
 
 type Dir = "toFrozen" | "toFresh";
 
@@ -76,8 +76,8 @@ export default function ColdInventoryPage() {
 		if (!dialog) return;
 		const payload = {
 			productId: dialog.product.id,
-			kg: parseFloat(kg) || 0,
-			pieces: parseInt(pieces) || 0,
+			kg: Number.parseFloat(kg) || 0,
+			pieces: Number.parseInt(pieces) || 0,
 		};
 		if (payload.kg <= 0 && payload.pieces <= 0) {
 			toast.error("Indica kg o piezas a transferir");

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { isHealthAuthorized } from "@/lib/health-auth";
 import postgres from "postgres";
+import { isHealthAuthorized } from "@/lib/health-auth";
 
 export const runtime = "nodejs";
 

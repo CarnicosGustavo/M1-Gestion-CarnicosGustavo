@@ -1,14 +1,14 @@
 import {
-	router,
-	createCallerFactory,
-	publicProcedure,
-	protectedProcedure,
 	adminProcedure,
 	almacenProcedure,
 	cajeroProcedure,
-	withRole,
+	createCallerFactory,
+	protectedProcedure,
+	publicProcedure,
+	router,
 	type TRPCContext,
 	type UserRole,
+	withRole,
 } from "@finopenpos/api";
 import { getAuthUser } from "@/lib/auth-guard";
 

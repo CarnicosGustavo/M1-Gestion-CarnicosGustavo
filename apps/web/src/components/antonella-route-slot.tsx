@@ -2,8 +2,8 @@
 
 import { usePathname } from "next/navigation";
 import {
-	type AntonellaSlotData,
 	AntonellaSlot,
+	type AntonellaSlotData,
 } from "@/components/antonella-slot";
 
 // Rutas que ya manejan su propio slot (con datos en vivo): no duplicar.

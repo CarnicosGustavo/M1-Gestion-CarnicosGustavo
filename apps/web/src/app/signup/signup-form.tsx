@@ -1,14 +1,14 @@
 "use client";
 
-import { signup } from "./actions";
-import { Card, CardContent, CardFooter } from "@finopenpos/ui/components/card";
-import { Label } from "@finopenpos/ui/components/label";
-import { Input } from "@finopenpos/ui/components/input";
-import Link from "next/link";
 import { Button } from "@finopenpos/ui/components/button";
-import { useTranslations } from "next-intl";
+import { Card, CardContent, CardFooter } from "@finopenpos/ui/components/card";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { CLIENT_NAME, PROJECT_CREDIT } from "@/lib/constants";
+import { signup } from "./actions";
 
 export default function SignupForm() {
 	const t = useTranslations("signup");

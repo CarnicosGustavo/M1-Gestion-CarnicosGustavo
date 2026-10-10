@@ -1,5 +1,5 @@
-import { seed } from "@/lib/db/seed";
 import { NextResponse } from "next/server";
+import { seed } from "@/lib/db/seed";
 
 export const runtime = "nodejs";
 

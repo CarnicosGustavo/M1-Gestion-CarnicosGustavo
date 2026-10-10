@@ -2,9 +2,9 @@
 // For now, it redirects to the existing recipes page
 // This will be fully migrated in the next iteration
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function RecipesTab() {
 	const router = useRouter();

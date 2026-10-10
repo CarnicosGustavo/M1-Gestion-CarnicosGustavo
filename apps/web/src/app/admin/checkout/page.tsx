@@ -1,16 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
 	CardContent,
+	CardDescription,
 	CardHeader,
 	CardTitle,
-	CardDescription,
 } from "@finopenpos/ui/components/card";
-import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
 import {
 	Select,
 	SelectContent,
@@ -26,12 +24,13 @@ import {
 	TableHeader,
 	TableRow,
 } from "@finopenpos/ui/components/table";
-import { BanknoteIcon, ReceiptTextIcon } from "lucide-react";
 import { cn } from "@finopenpos/ui/lib/utils";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BanknoteIcon, ReceiptTextIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { TicketModal } from "@/components/ticket-modal";
+import { useTRPC } from "@/lib/trpc/client";
 
 const money = (n: number) =>
 	n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -68,7 +67,7 @@ export default function CheckoutPage() {
 	useEffect(() => {
 		if (appliedUrlRef.current || !ordersReady) return;
 		try {
-			const ord = parseInt(
+			const ord = Number.parseInt(
 				new URLSearchParams(window.location.search).get("order") ?? "",
 				10,
 			);
@@ -119,7 +118,7 @@ export default function CheckoutPage() {
 		if (!selectedOrder) return 0;
 		return selectedOrder.items.reduce((sum: number, it: any) => {
 			const kg = Number(it.quantityKg) || 0;
-			const price = parseFloat(prices[it.id] || "0") || 0;
+			const price = Number.parseFloat(prices[it.id] || "0") || 0;
 			return sum + kg * price;
 		}, 0);
 	}, [selectedOrder, prices]);
@@ -129,13 +128,15 @@ export default function CheckoutPage() {
 		const items = selectedOrder.items.map((it: any) => ({
 			orderItemId: it.id,
 			productId: it.productId,
-			pricePerKg: parseFloat(prices[it.id] || "0") || 0,
+			pricePerKg: Number.parseFloat(prices[it.id] || "0") || 0,
 		}));
 		chargeMut.mutate({
 			orderId: selectedOrder.id,
 			paymentType: payType,
 			paymentMethodId:
-				payType === "contado" ? parseInt(methodId) || undefined : undefined,
+				payType === "contado"
+					? Number.parseInt(methodId) || undefined
+					: undefined,
 			items,
 		});
 	}
@@ -209,7 +210,8 @@ export default function CheckoutPage() {
 										<TableBody>
 											{selectedOrder.items.map((it: any) => {
 												const kg = Number(it.quantityKg) || 0;
-												const price = parseFloat(prices[it.id] || "0") || 0;
+												const price =
+													Number.parseFloat(prices[it.id] || "0") || 0;
 												return (
 													<TableRow key={it.id}>
 														<TableCell className="font-medium">

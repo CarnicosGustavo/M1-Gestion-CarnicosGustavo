@@ -1,8 +1,8 @@
+import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
 import { paymentMethods } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { protectedProcedure, router } from "../init";
 
 const paymentMethodSchema = z.object({
 	id: z.number(),

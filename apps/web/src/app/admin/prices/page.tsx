@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
 	CardContent,
 	CardHeader,
 	CardTitle,
 } from "@finopenpos/ui/components/card";
-import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import {
@@ -25,10 +24,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@finopenpos/ui/components/table";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { SaveIcon } from "lucide-react";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useTRPC } from "@/lib/trpc/client";
 
 type PriceRow = {
 	productId: number;
@@ -51,7 +51,7 @@ export default function PricesPage() {
 
 	const { data: prices, refetch } = useQuery({
 		...trpc.customerPrices.getByCustomer.queryOptions({
-			customerId: parseInt(customerId) || 0,
+			customerId: Number.parseInt(customerId) || 0,
 		}),
 		enabled: !!customerId,
 	});
@@ -100,12 +100,12 @@ export default function PricesPage() {
 		}
 		const items = rows.map((r) => ({
 			productId: r.productId,
-			pricePerKg: r.pricePerKg.trim() ? parseFloat(r.pricePerKg) : null,
+			pricePerKg: r.pricePerKg.trim() ? Number.parseFloat(r.pricePerKg) : null,
 			pricePerPiece: r.pricePerPiece.trim()
-				? parseFloat(r.pricePerPiece)
+				? Number.parseFloat(r.pricePerPiece)
 				: null,
 		}));
-		saveMutation.mutate({ customerId: parseInt(customerId), items });
+		saveMutation.mutate({ customerId: Number.parseInt(customerId), items });
 	}
 
 	return (

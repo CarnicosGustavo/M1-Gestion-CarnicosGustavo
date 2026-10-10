@@ -1,6 +1,5 @@
 "use client";
 
-import { useTranslations } from "next-intl";
 import { Button } from "@finopenpos/ui/components/button";
 import {
 	Dialog,
@@ -10,6 +9,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
+import { useTranslations } from "next-intl";
 
 interface DeleteConfirmationDialogProps {
 	open: boolean;

@@ -1,7 +1,7 @@
-import { db } from "@/lib/db";
-import { products, inventoryTransactions } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { inventoryTransactions, products } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 

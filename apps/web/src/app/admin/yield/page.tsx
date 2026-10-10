@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@finopenpos/ui/components/button";
 import {
 	Card,
 	CardContent,
 	CardHeader,
 	CardTitle,
 } from "@finopenpos/ui/components/card";
-import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import {
@@ -18,13 +17,14 @@ import {
 	TableHeader,
 	TableRow,
 } from "@finopenpos/ui/components/table";
-import { PlusIcon, TrashIcon, SaveIcon, SparklesIcon } from "lucide-react";
 import { cn } from "@finopenpos/ui/lib/utils";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PlusIcon, SaveIcon, SparklesIcon, TrashIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AiSuggestBar } from "@/components/antonella-ai-kit";
 import { useAntonella } from "@/components/antonella-dock";
+import { useTRPC } from "@/lib/trpc/client";
 
 type Row = {
 	productName: string;
@@ -188,7 +188,7 @@ export default function YieldPage() {
 	// Estimado de un renglón: usa el override de cascada si existe, si no avg×piezas
 	const rowEst = (r: Row, pz: number) =>
 		r.estKg != null && r.estKg !== ""
-			? parseFloat(r.estKg) || 0
+			? Number.parseFloat(r.estKg) || 0
 			: estKgFor(r.productName, pz);
 
 	// Proyecta las piezas del despiece a partir de los canales seleccionados
@@ -197,7 +197,7 @@ export default function YieldPage() {
 		const seleccion = canales
 			.map((c) => ({
 				canalProductId: c.id,
-				numCanales: parseInt(canalQty[c.id] ?? "") || 0,
+				numCanales: Number.parseInt(canalQty[c.id] ?? "") || 0,
 			}))
 			.filter((c) => c.numCanales > 0);
 		if (seleccion.length === 0) {
@@ -295,12 +295,12 @@ export default function YieldPage() {
 			estimado = 0,
 			real = 0;
 		for (const r of rows) {
-			const pz = parseInt(r.pieces) || 0;
+			const pz = Number.parseInt(r.pieces) || 0;
 			piezas += pz;
 			estimado += rowEst(r, pz);
-			real += parseFloat(r.kg) || 0;
+			real += Number.parseFloat(r.kg) || 0;
 		}
-		const comprado = parseFloat(kgComprado) || 0;
+		const comprado = Number.parseFloat(kgComprado) || 0;
 		return {
 			piezas,
 			estimado,
@@ -320,10 +320,12 @@ export default function YieldPage() {
 				if (patch.productName !== undefined) next.estKg = undefined;
 				// Si cambian las piezas, reescala el estimado de cascada proporcionalmente
 				if (patch.pieces !== undefined && r.estKg) {
-					const oldPz = parseInt(r.pieces) || 0;
-					const newPz = parseInt(patch.pieces) || 0;
+					const oldPz = Number.parseInt(r.pieces) || 0;
+					const newPz = Number.parseInt(patch.pieces) || 0;
 					next.estKg =
-						oldPz > 0 ? String((parseFloat(r.estKg) / oldPz) * newPz) : r.estKg;
+						oldPz > 0
+							? String((Number.parseFloat(r.estKg) / oldPz) * newPz)
+							: r.estKg;
 				}
 				return next;
 			}),
@@ -344,8 +346,8 @@ export default function YieldPage() {
 			.filter((r) => r.productName.trim() && (r.pieces || r.kg))
 			.map((r, idx) => ({
 				productName: r.productName.trim(),
-				pieces: parseInt(r.pieces) || 0,
-				kgTotal: parseFloat(r.kg) || 0,
+				pieces: Number.parseInt(r.pieces) || 0,
+				kgTotal: Number.parseFloat(r.kg) || 0,
 				weighed: r.weighed,
 				sortOrder: idx,
 			}));
@@ -355,8 +357,8 @@ export default function YieldPage() {
 		}
 		createMutation.mutate({
 			sheetDate: yieldDate || undefined,
-			numCanales: parseInt(numCanales) || 0,
-			kgComprado: parseFloat(kgComprado) || 0,
+			numCanales: Number.parseInt(numCanales) || 0,
+			kgComprado: Number.parseFloat(kgComprado) || 0,
 			supplier: supplier || undefined,
 			notes: notes || undefined,
 			items,
@@ -675,9 +677,9 @@ export default function YieldPage() {
 							</TableHeader>
 							<TableBody>
 								{rows.map((r, idx) => {
-									const pz = parseInt(r.pieces) || 0;
+									const pz = Number.parseInt(r.pieces) || 0;
 									const est = rowEst(r, pz);
-									const real = parseFloat(r.kg) || 0;
+									const real = Number.parseFloat(r.kg) || 0;
 									const dif = real - est;
 									return (
 										<TableRow

@@ -1,6 +1,6 @@
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function PaymentsTab() {
 	const router = useRouter();

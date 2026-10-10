@@ -30,7 +30,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertCircleIcon,
 	CheckCircleIcon,
-	LoaderIcon,
 	PackageIcon,
 	PrinterIcon,
 	ScissorsIcon,

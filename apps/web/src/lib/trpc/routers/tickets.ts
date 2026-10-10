@@ -1,15 +1,8 @@
+import { and, eq, or } from "drizzle-orm";
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
-import {
-	orders,
-	orderItems,
-	customers,
-	products,
-	creditCharges,
-	transactions,
-} from "@/lib/db/schema";
-import { eq, and, or } from "drizzle-orm";
+import { creditCharges, orders, transactions } from "@/lib/db/schema";
+import { protectedProcedure, router } from "../init";
 
 export const ticketsRouter = router({
 	generateTicket: protectedProcedure

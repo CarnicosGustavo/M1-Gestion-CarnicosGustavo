@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 /**
  * prepare-prod.ts
  *
@@ -18,9 +19,9 @@
  *   bun scripts/prepare-prod.ts
  */
 
-import { $ } from "bun";
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { $ } from "bun";
 
 const ROOT = join(import.meta.dir, "..");
 

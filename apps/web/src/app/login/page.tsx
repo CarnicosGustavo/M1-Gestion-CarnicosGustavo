@@ -1,15 +1,15 @@
 "use client";
 
-import { login } from "./actions";
-import { Card, CardContent, CardFooter } from "@finopenpos/ui/components/card";
-import { Label } from "@finopenpos/ui/components/label";
-import { Input } from "@finopenpos/ui/components/input";
 import { Button } from "@finopenpos/ui/components/button";
-import { useRef } from "react";
-import { useTranslations } from "next-intl";
-import { CLIENT_NAME, PROJECT_CREDIT } from "@/lib/constants";
-import { useSearchParams } from "next/navigation";
+import { Card, CardContent, CardFooter } from "@finopenpos/ui/components/card";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { useRef } from "react";
+import { CLIENT_NAME, PROJECT_CREDIT } from "@/lib/constants";
+import { login } from "./actions";
 
 export default function LoginPage() {
 	const emailRef = useRef<HTMLInputElement>(null);
