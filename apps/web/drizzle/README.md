@@ -75,6 +75,12 @@ igual la migración para mantener el historial consistente.
 - `drizzle.config.ts` tiene `tablesFilter` para que `push` nunca toque tablas que
   no gestiona drizzle (la BD tiene otras tablas, vistas y el esquema `staging`).
 
+- `0003_scale_readings` — **PENDIENTE, no aplicada.** Crea `scale_readings`
+  (lecturas de básculas, ver `docs/scale-ingest.md`) con RLS y sin acceso para
+  `anon`/`authenticated`. Aplicarla antes de activar `SCALE_INGEST_ENABLED`; después
+  actualizar `supabase/schema/app_tables.sql` (mientras tanto `db:verify-drift`
+  muestra el `CREATE TABLE` pendiente).
+
 ## Triggers y datos semilla
 
 Los triggers SQL y seeds siguen viviendo en [`../../../sql/`](../../../sql/) y se
