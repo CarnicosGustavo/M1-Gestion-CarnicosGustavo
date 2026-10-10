@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
@@ -13,6 +13,7 @@ import {
 	orders,
 	products,
 	productTransformations,
+	scaleReadings,
 	transactions,
 } from "@/lib/db/schema";
 import { almacenProcedure, protectedProcedure, router } from "../init";
@@ -1306,6 +1307,8 @@ export const ordersRouter = router({
 				// Obsoleto: mismo valor en GRAMOS (el nombre es histórico). Se acepta
 				// por compatibilidad; usar actualWeightGrams.
 				actualWeightKg: z.number().int().positive().optional(),
+				// Lectura de báscula usada (scale_readings.id); se marca consumida.
+				scaleReadingId: z.number().int().positive().optional(),
 			}),
 		)
 		.output(z.object({ success: z.boolean() }))
@@ -1374,6 +1377,30 @@ export const ordersRouter = router({
 						code: "CONFLICT",
 						message: "Este artículo ya fue pesado",
 					});
+
+				// Si el peso vino de la báscula física, marcar la lectura como usada
+				// (una sola vez). Si ya se usó, se revierte todo el pesaje.
+				if (input.scaleReadingId !== undefined) {
+					const consumed = await tx
+						.update(scaleReadings)
+						.set({
+							consumed_at: new Date(),
+							consumed_by: ctx.user.id,
+							consumed_order_item_id: input.orderItemId,
+						})
+						.where(
+							and(
+								eq(scaleReadings.id, input.scaleReadingId),
+								isNull(scaleReadings.consumed_at),
+							),
+						)
+						.returning({ id: scaleReadings.id });
+					if (consumed.length === 0)
+						throw new TRPCError({
+							code: "CONFLICT",
+							message: "Esa lectura de báscula ya fue usada",
+						});
+				}
 
 				// Recalcular total de la orden
 				const allItems = await tx

@@ -10,6 +10,7 @@ import { inventoryRouter } from "./routers/inventory";
 import { ordersRouter } from "./routers/orders";
 import { paymentMethodsRouter } from "./routers/payment-methods";
 import { productsRouter } from "./routers/products";
+import { scaleRouter } from "./routers/scale";
 import { ticketsRouter } from "./routers/tickets";
 import { transactionsRouter } from "./routers/transactions";
 import { yieldsRouter } from "./routers/yields";
@@ -28,6 +29,7 @@ export const appRouter = router({
 	coldInventory: coldInventoryRouter,
 	collections: collectionsRouter,
 	antonella: antonicellaRouter,
+	scale: scaleRouter,
 });
 
 export type AppRouter = typeof appRouter;
