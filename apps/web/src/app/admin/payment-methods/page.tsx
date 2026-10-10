@@ -70,7 +70,7 @@ export default function PaymentMethodsPage() {
     validators: {
       onSubmit: ({ value }) => {
         const res = paymentMethodSchema.safeParse(value);
-        if (!res.success) return res.error.errors.map((e) => e.message).join(", ");
+        if (!res.success) return res.error.issues.map((e) => e.message).join(", ");
         return undefined;
       },
     },
@@ -170,7 +170,7 @@ export default function PaymentMethodsPage() {
                         onChange={(e) => field.handleChange(e.target.value)}
                         onBlur={field.handleBlur}
                         placeholder={t("namePlaceholder")}
-                        error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map(e => e?.message ?? e).join(", ") : undefined}
+                        error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map((e) => (e as { message?: string } | undefined)?.message ?? e).join(", ") : undefined}
                         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); form.handleSubmit(); } }}
                       />
                     </div>

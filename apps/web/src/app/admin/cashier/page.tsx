@@ -66,7 +66,7 @@ export default function Cashier() {
       header: tc("amount"),
       sortable: true,
       accessorFn: (row) => row.amount,
-      render: (row) => formatCurrency(row.amount, locale),
+      render: (row) => formatCurrency(row.amount ?? 0, locale),
     },
     {
       key: "status",
@@ -120,7 +120,7 @@ export default function Cashier() {
     validators: {
       onSubmit: ({ value }) => {
         const res = editTransactionSchema.safeParse(value);
-        if (!res.success) return res.error.errors.map((e) => e.message).join(", ");
+        if (!res.success) return res.error.issues.map((e) => e.message).join(", ");
         return undefined;
       },
     },
@@ -143,7 +143,7 @@ export default function Cashier() {
     editForm.setFieldValue("description", t.description ?? "");
     editForm.setFieldValue("category", t.category ?? "");
     editForm.setFieldValue("type", (t.type ?? "income") as TransactionType);
-    editForm.setFieldValue("amount", t.amount / 100);
+    editForm.setFieldValue("amount", (t.amount ?? 0) / 100);
     editForm.setFieldValue("status", (t.status ?? "completed") as TransactionStatus);
     setIsEditOpen(true);
   };
@@ -238,7 +238,7 @@ export default function Cashier() {
                   <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
                     <Label htmlFor="edit-desc">{tc("description")}</Label>
                     <div className="col-span-3">
-                      <Input id="edit-desc" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map(e => e?.message ?? e).join(", ") : undefined} />
+                      <Input id="edit-desc" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map((e) => (e as { message?: string } | undefined)?.message ?? e).join(", ") : undefined} />
                     </div>
                   </div>
                 )}
@@ -267,7 +267,7 @@ export default function Cashier() {
                   <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
                     <Label htmlFor="edit-amount">{tc("amount")}</Label>
                     <div className="col-span-3">
-                      <Input id="edit-amount" type="number" min="0.01" step="0.01" value={field.state.value} onChange={(e) => field.handleChange(Number(e.target.value))} onBlur={field.handleBlur} error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map(e => e?.message ?? e).join(", ") : undefined} />
+                      <Input id="edit-amount" type="number" min="0.01" step="0.01" value={field.state.value} onChange={(e) => field.handleChange(Number(e.target.value))} onBlur={field.handleBlur} error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map((e) => (e as { message?: string } | undefined)?.message ?? e).join(", ") : undefined} />
                     </div>
                   </div>
                 )}

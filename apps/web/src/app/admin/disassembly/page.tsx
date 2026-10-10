@@ -241,7 +241,7 @@ export default function DisassemblyPage() {
 	}, [primaryParentProducts, selectedPrimaryParentId]);
 
 	const hasAnyPrimaryStock = useMemo(() => {
-		return primaryParentProducts.some((p) => p.stock_pieces > 0);
+		return primaryParentProducts.some((p) => (p.stock_pieces ?? 0) > 0);
 	}, [primaryParentProducts]);
 
 	const dashboardOrder = useCallback((name: string) => {
@@ -408,7 +408,7 @@ export default function DisassemblyPage() {
 		setDashboardQty((prev) => {
 			const next = { ...prev };
 			for (const p of dashboardStock) {
-				if (next[p.id] === undefined) next[p.id] = p.stock_pieces;
+				if (next[p.id] === undefined) next[p.id] = p.stock_pieces ?? 0;
 			}
 			return next;
 		});
@@ -576,7 +576,7 @@ export default function DisassemblyPage() {
 			const qty = dashboardQty[p.id] ?? 0;
 			const type = dashboardType[p.id];
 			if (!type || qty <= 0) continue;
-			if (qty > p.stock_pieces) continue;
+			if (qty > (p.stock_pieces ?? 0)) continue;
 			await executeDashboardCard(p.id);
 		}
 		invalidateStockQueries();
@@ -790,7 +790,7 @@ export default function DisassemblyPage() {
 		if (recipesUpsertMutation.isPending) return;
 
 		const parentsNeeding = dashboardStock.filter((p) => {
-			if (p.stock_pieces <= 0) return false;
+			if ((p.stock_pieces ?? 0) <= 0) return false;
 			if (p.transformationTypes.length > 0) return false;
 			const n = normalizeProductName(p.name);
 			return n.includes("pierna") || n.includes("espaldilla") || n.includes("cabeza");
@@ -1280,7 +1280,7 @@ export default function DisassemblyPage() {
 
 		const piecesAvailableFor = (p: (typeof parentProducts)[number]) => {
 			const last = lastPurchaseStockPiecesByProductId[p.id] ?? 0;
-			return Math.max(p.stock_pieces, last);
+			return Math.max(p.stock_pieces ?? 0, last);
 		};
 
 		for (const s of steps) {
@@ -1939,8 +1939,8 @@ export default function DisassemblyPage() {
 										const fixed = fixedTypeForCanal(p.name);
 										const effectiveType = fixed ?? type;
 										const disabled =
-											!effectiveType || qty <= 0 || qty > p.stock_pieces;
-										const leaveCompleteQty = Math.max(0, p.stock_pieces - qty);
+											!effectiveType || qty <= 0 || qty > (p.stock_pieces ?? 0);
+										const leaveCompleteQty = Math.max(0, (p.stock_pieces ?? 0) - qty);
 										const byType = dashboardRecipesByParent.get(p.id);
 										const isCanal = isCanalName(p.name);
 
@@ -1982,7 +1982,7 @@ export default function DisassemblyPage() {
 											outputMap.set(recorteProduct.id, {
 												childId: recorteProduct.id,
 												childName: recorteProduct.name,
-												childStockPieces: recorteProduct.stock_pieces,
+												childStockPieces: recorteProduct.stock_pieces ?? 0,
 												addPieces: (prev?.addPieces ?? 0) + qty,
 											});
 										}
@@ -2096,20 +2096,20 @@ export default function DisassemblyPage() {
 																				: Number.parseInt(val, 10) || 0;
 																		const clamped = Math.min(
 																			Math.max(leave, 0),
-																			p.stock_pieces,
+																			p.stock_pieces ?? 0,
 																		);
 																		setDashboardQty((prev) => ({
 																			...prev,
 																			[p.id]: Math.max(
 																				0,
-																				p.stock_pieces - clamped,
+																				(p.stock_pieces ?? 0) - clamped,
 																			),
 																		}));
 																	}}
 																/>
 																<div className="text-muted-foreground text-xs">
 																	Procesar:{" "}
-																	{Math.max(0, Math.min(qty, p.stock_pieces))} ·
+																	{Math.max(0, Math.min(qty, p.stock_pieces ?? 0))} ·
 																	Dejar: {leaveCompleteQty}
 																</div>
 															</div>
@@ -2118,7 +2118,7 @@ export default function DisassemblyPage() {
 																Dejar en stock: {leaveCompleteQty}
 															</div>
 														)}
-														{qty > p.stock_pieces ? (
+														{qty > (p.stock_pieces ?? 0) ? (
 															<div className="text-red-600 text-xs">
 																Cantidad excede el stock
 															</div>
@@ -2243,7 +2243,7 @@ export default function DisassemblyPage() {
 																							childId: recorteProduct.id,
 																							childName: recorteProduct.name,
 																							childStockPieces:
-																								recorteProduct.stock_pieces,
+																								recorteProduct.stock_pieces ?? 0,
 																							addPieces:
 																								(prev?.addPieces ?? 0) +
 																								toSplit,

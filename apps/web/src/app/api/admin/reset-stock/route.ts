@@ -19,7 +19,7 @@ async function resetStock() {
   // Create inventory transactions for audit trail
   const transactions = allProducts.map((product) => ({
     product_id: product.id,
-    quantity_change_pieces: -product.stock_pieces,
+    quantity_change_pieces: -(product.stock_pieces ?? 0),
     quantity_change_kg: product.stock_kg ? String(-Number(product.stock_kg)) : "0",
     transaction_type: "RESET",
     reference_id: null,

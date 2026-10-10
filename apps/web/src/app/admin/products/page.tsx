@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { z } from "zod/v4";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { useCrudMutation } from "@/hooks/use-crud-mutation";
@@ -153,7 +154,7 @@ export default function Products() {
 		{
 			key: "stock_pieces",
 			header: t("stock"),
-			getValue: (p) => p.stock_pieces,
+			getValue: (p) => p.stock_pieces ?? 0,
 		},
 		{
 			key: "type",
@@ -269,7 +270,7 @@ export default function Products() {
 				return p ? { id: String(p.id), label: x.label, name: p.name } : null;
 			})
 			.filter(
-				(x): x is { id: string; label: string; name: string } => x !== null,
+				(x): x is NonNullable<typeof x> => x !== null,
 			);
 	}, [parentProducts]);
 
@@ -393,7 +394,10 @@ export default function Products() {
 
 	const importForm = useForm({
 		defaultValues: {
-			listCode: "MAYOREO_CONTADO" as const,
+			listCode: "MAYOREO_CONTADO" as
+				| "MAYOREO_CONTADO"
+				| "MAYOREO_CREDITO"
+				| "MENUDEO",
 			listName: "Mayoreo contado",
 			priceIsPerKg: true,
 			csvText: "",
@@ -408,7 +412,7 @@ export default function Products() {
 			if (typeFilter === "parent" && !p.is_parent_product) return false;
 			if (typeFilter === "child" && p.is_parent_product) return false;
 			if (stockFilter === "in-stock" && p.stock_pieces === 0) return false;
-			if (stockFilter === "out-of-stock" && p.stock_pieces > 0) return false;
+			if (stockFilter === "out-of-stock" && (p.stock_pieces ?? 0) > 0) return false;
 			return p.name.toLowerCase().includes(searchTerm.toLowerCase());
 		});
 	}, [products, typeFilter, stockFilter, searchTerm]);
@@ -425,8 +429,8 @@ export default function Products() {
 		form.setFieldValue("name", p.name);
 		form.setFieldValue("description", p.description ?? "");
 		form.setFieldValue("price_per_kg", Number(p.price_per_kg ?? 0));
-		form.setFieldValue("stock_pieces", p.stock_pieces);
-		form.setFieldValue("is_parent_product", p.is_parent_product);
+		form.setFieldValue("stock_pieces", p.stock_pieces ?? 0);
+		form.setFieldValue("is_parent_product", p.is_parent_product ?? false);
 		form.setFieldValue("ncm", p.ncm ?? "");
 		form.setFieldValue("cfop", p.cfop ?? "");
 		form.setFieldValue("icms_cst", p.icms_cst ?? "");
@@ -645,7 +649,7 @@ export default function Products() {
 												error={
 													field.state.meta.errors.length > 0
 														? field.state.meta.errors
-																.map((e) => e?.message ?? e)
+																.map((e) => (e as { message?: string } | undefined)?.message ?? e)
 																.join(", ")
 														: undefined
 												}
@@ -688,7 +692,7 @@ export default function Products() {
 												error={
 													field.state.meta.errors.length > 0
 														? field.state.meta.errors
-																.map((e) => e?.message ?? e)
+																.map((e) => (e as { message?: string } | undefined)?.message ?? e)
 																.join(", ")
 														: undefined
 												}
@@ -715,7 +719,7 @@ export default function Products() {
 												error={
 													field.state.meta.errors.length > 0
 														? field.state.meta.errors
-																.map((e) => e?.message ?? e)
+																.map((e) => (e as { message?: string } | undefined)?.message ?? e)
 																.join(", ")
 														: undefined
 												}

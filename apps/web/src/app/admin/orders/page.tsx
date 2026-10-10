@@ -97,10 +97,10 @@ type OrderDraftItem = {
 	lineId: number;
 	id: number;
 	name: string;
-	stock_pieces: number;
-	stock_kg: string | number;
-	is_sellable_by_weight: boolean;
-	is_sellable_by_unit: boolean;
+	stock_pieces: number | null;
+	stock_kg: string | number | null;
+	is_sellable_by_weight: boolean | null;
+	is_sellable_by_unit: boolean | null;
 	price_per_kg?: string | number | null;
 	price_per_piece?: string | number | null;
 	quantityPieces: number;
@@ -154,7 +154,7 @@ export default function OrdersPage() {
 			header: tc("total"),
 			sortable: true,
 			accessorFn: (row) => row.total_amount,
-			render: (row) => formatCurrency(row.total_amount, locale),
+			render: (row) => formatCurrency(Number(row.total_amount), locale),
 		},
 		{
 			key: "status",
@@ -187,7 +187,7 @@ export default function OrdersPage() {
 		{
 			key: "total",
 			header: tc("total"),
-			getValue: (o) => (o.total_amount / 100).toFixed(2),
+			getValue: (o) => (Number(o.total_amount) / 100).toFixed(2),
 		},
 		{
 			key: "status",
@@ -323,7 +323,7 @@ export default function OrdersPage() {
 			onSubmit: ({ value }) => {
 				const res = orderEditSchema.safeParse(value);
 				if (!res.success)
-					return res.error.errors.map((e) => e.message).join(", ");
+					return res.error.issues.map((e) => e.message).join(", ");
 				return undefined;
 			},
 		},
@@ -353,7 +353,7 @@ export default function OrdersPage() {
 		setEditingId(o.id);
 		setEditCustomerName(o.customer?.name ?? "");
 		form.reset();
-		form.setFieldValue("total", (o.total_amount / 100).toString());
+		form.setFieldValue("total", (Number(o.total_amount) / 100).toString());
 		form.setFieldValue("status", (o.status ?? "pending") as OrderStatus);
 		setIsDialogOpen(true);
 	};
@@ -404,7 +404,7 @@ export default function OrdersPage() {
 		);
 	}, [draftItems]);
 
-	const addDraftProduct = (id: number) => {
+	const addDraftProduct = (id: number | string) => {
 		const p = products.find((x) => x.id === id);
 		if (!p) return;
 		setDraftItems((prev) => {
@@ -670,7 +670,7 @@ export default function OrdersPage() {
 												error={
 													field.state.meta.errors.length > 0
 														? field.state.meta.errors
-																.map((e) => e?.message ?? e)
+																.map((e) => (e as { message?: string } | undefined)?.message ?? e)
 																.join(", ")
 														: undefined
 												}
@@ -755,7 +755,7 @@ export default function OrdersPage() {
 									</button>
 								</div>
 								<Combobox
-									items={customers.map((c) => ({ id: c.id, name: c.name }))}
+									items={customers.map((c) => ({ id: c.id, name: c.name ?? "" }))}
 									placeholder="Selecciona cliente"
 									value={draftCustomer?.name ?? ""}
 									onSelect={(id) =>

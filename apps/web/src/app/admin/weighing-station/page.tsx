@@ -409,7 +409,7 @@ export default function WeighingStationPage() {
 	);
 	const batchPendingPieces = useMemo(() => {
 		if (!batchProduct) return null;
-		return Math.max(0, batchProduct.stock_pieces - batchProduct.weighed_pieces);
+		return Math.max(0, (batchProduct.stock_pieces ?? 0) - batchProduct.weighed_pieces);
 	}, [batchProduct]);
 
 	const handleRegisterBatch = () => {
@@ -564,7 +564,7 @@ export default function WeighingStationPage() {
 												{tc("total")}
 											</div>
 											<div className="font-bold text-xl">
-												{formatCurrency(selectedOrder.total_amount, locale)}
+												{formatCurrency(Number(selectedOrder.total_amount), locale)}
 											</div>
 										</div>
 									</div>

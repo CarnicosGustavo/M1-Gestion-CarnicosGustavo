@@ -1032,8 +1032,8 @@ async function getInventorySnapshot(userId: string): Promise<string> {
 		.map((p) => `  • ${p.name}: ${p.stock_pieces} pz`)
 		.join("\n");
 
-	const totalCanals = canals.reduce((s, c) => s + c.stock_pieces, 0);
-	const totalPieces = pieces.reduce((s, p) => s + p.stock_pieces, 0);
+	const totalCanals = canals.reduce((s, c) => s + (c.stock_pieces ?? 0), 0);
+	const totalPieces = pieces.reduce((s, p) => s + (p.stock_pieces ?? 0), 0);
 
 	return `
 ┌─────────────────────────────────────┐
@@ -1118,7 +1118,7 @@ async function getProductDetail(
 ├─────────────────────────────────────┤
 │ Stock:         ${p.stock_pieces} pz
 │               ~${Number(p.stock_kg || 0).toFixed(0)} kg
-│ Promedio:      ${p.stock_pieces > 0 ? (Number(p.stock_kg || 0) / p.stock_pieces).toFixed(2) : "?"} kg/pz
+│ Promedio:      ${(p.stock_pieces ?? 0) > 0 ? (Number(p.stock_kg || 0) / (p.stock_pieces ?? 0)).toFixed(2) : "?"} kg/pz
 │
 ${cutLines ? `│ Despiece:\n${cutLines}\n│` : ""}
 ${variantLines ? `│ Variantes:\n${variantLines}\n│` : ""}
@@ -1268,7 +1268,7 @@ ${variantLines ? `${variantLines}\n` : ""}
 │ Merma: ${merma.toFixed(1)}%
 │ Rendimiento: ${(totalRatio * 100).toFixed(1)}%
 │ Stock actual: ${prod[0].stock_pieces} pz
-│ Si despieza TODO: ${prod[0].stock_pieces * Number(cuts[0]?.pieces || 1)} pz del corte
+│ Si despieza TODO: ${(prod[0].stock_pieces ?? 0) * Number(cuts[0]?.pieces || 1)} pz del corte
 └───────────────────────────────────────┘
 `;
 }
@@ -1314,7 +1314,7 @@ async function getCoverage(userId: string): Promise<string> {
 			const stock = (
 				inventory.find((i) => i.name === product_name) || { stock: 0 }
 			).stock;
-			const shortage = Math.max(0, (total_pz || 0) - stock);
+			const shortage = Math.max(0, (total_pz || 0) - (stock ?? 0));
 			const status = shortage === 0 ? "✅" : "❌";
 
 			let msg = `${status} ${product_name.padEnd(20)} ${total_pz ?? 0} pz`;
@@ -1326,7 +1326,7 @@ async function getCoverage(userId: string): Promise<string> {
 		.join("\n");
 
 	const totalDemand = demand.reduce((s, d) => s + (d.total_pz ?? 0), 0);
-	const totalStock = inventory.reduce((s, i) => s + i.stock, 0);
+	const totalStock = inventory.reduce((s, i) => s + (i.stock ?? 0), 0);
 	const coverageRate =
 		totalStock > 0 ? ((totalStock / totalDemand) * 100).toFixed(1) : "0";
 
@@ -1653,7 +1653,7 @@ export const antonicellaRouter = router({
 					};
 				}
 
-				if (canal[0].stock_pieces < quantity) {
+				if ((canal[0].stock_pieces ?? 0) < quantity) {
 					return {
 						success: false,
 						message: `Stock insuficiente: tienes ${canal[0].stock_pieces} pero pediste ${quantity}`,
@@ -1713,7 +1713,7 @@ export const antonicellaRouter = router({
 					};
 				}
 
-				if (baseProduct[0].stock_pieces < quantity) {
+				if ((baseProduct[0].stock_pieces ?? 0) < quantity) {
 					return {
 						success: false,
 						message: `Stock insuficiente de ${base_product_name}: tienes ${baseProduct[0].stock_pieces} pero pediste convertir ${quantity}`,
