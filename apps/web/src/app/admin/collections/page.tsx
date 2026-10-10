@@ -29,11 +29,13 @@ import {
 	MessageCircleIcon,
 	PencilIcon,
 	Trash2Icon,
+	AlertTriangleIcon,
 } from "lucide-react";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
+import { ScreenHead } from "@/components/screen-head";
 import { TicketModal } from "@/components/ticket-modal";
 
 const fmt = (n: number) =>
@@ -231,35 +233,54 @@ export default function CollectionsPage() {
 	const accountsList = (accounts ?? []) as any[];
 	const conSaldo = accountsList.filter((a) => a.balance > 0.001);
 	const totalPorCobrar = conSaldo.reduce((s, a) => s + a.balance, 0);
+	const vencido60 = conSaldo.filter((a) => a.diasVencido > 60);
+	const totalVencido60 = vencido60.reduce((s, a) => s + a.balance, 0);
 
 	return (
 		<div className="space-y-6 max-w-5xl">
-			<div className="flex items-center justify-between gap-4 flex-wrap">
-				<div>
-					<h1 className="text-2xl font-bold">Cobranza</h1>
-					<p className="text-sm text-muted-foreground">
-						Cuentas por cobrar: pedidos a crédito y tickets viejos. Registra abonos.
-					</p>
-				</div>
-				<Button onClick={() => setChargeOpen(true)}>
-					<PlusIcon className="w-4 h-4 mr-2" />
-					Capturar ticket viejo
-				</Button>
-			</div>
+			<ScreenHead
+				title="Cobranza"
+				desc="Cuentas por cobrar: pedidos a crédito y tickets viejos. Registra abonos."
+				right={
+					<Button onClick={() => setChargeOpen(true)}>
+						<PlusIcon className="w-4 h-4 mr-2" />
+						Capturar ticket viejo
+					</Button>
+				}
+			/>
 
-			{/* Total por cobrar */}
-			<Card>
-				<CardContent className="pt-6 flex items-center justify-between">
-					<div>
+			{/* KPIs de cobranza */}
+			<div className="grid gap-4 sm:grid-cols-3">
+				<Card>
+					<CardContent className="pt-6">
 						<p className="text-xs text-muted-foreground">Total por cobrar</p>
-						<p className="text-3xl font-bold text-red-600">{fmt(totalPorCobrar)}</p>
-					</div>
-					<div className="text-right">
+						<p className="font-display text-3xl text-red-600">
+							{fmt(totalPorCobrar)}
+						</p>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent className="pt-6">
 						<p className="text-xs text-muted-foreground">Clientes con saldo</p>
-						<p className="text-3xl font-bold">{conSaldo.length}</p>
-					</div>
-				</CardContent>
-			</Card>
+						<p className="font-display text-3xl">{conSaldo.length}</p>
+					</CardContent>
+				</Card>
+				<Card className="border-destructive/40 bg-[var(--cg-red-wash)]">
+					<CardContent className="pt-6">
+						<p className="flex items-center gap-1.5 text-destructive text-xs">
+							<AlertTriangleIcon className="h-3.5 w-3.5" />
+							Vencido +60 días
+						</p>
+						<p className="font-display text-3xl text-destructive">
+							{fmt(totalVencido60)}
+						</p>
+						<p className="mt-0.5 text-muted-foreground text-xs">
+							{vencido60.length}{" "}
+							{vencido60.length === 1 ? "cuenta" : "cuentas"} en mora
+						</p>
+					</CardContent>
+				</Card>
+			</div>
 
 			<Card>
 				<CardHeader>
