@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
@@ -24,9 +24,9 @@ const productSchema = z.object({
 	unit: z.string().nullable(),
 	active: z.boolean(),
 	sort_order: z.number().nullable(),
-	in_stock: z.union([z.number(), z.string()]),
+	in_stock: z.union([z.number(), z.string()]).nullable(),
 	category: z.string().nullable(),
-	user_uid: z.string(),
+	user_uid: z.string().nullable(),
 	ncm: z.string().nullable(),
 	cfop: z.string().nullable(),
 	icms_cst: z.string().nullable(),
@@ -34,14 +34,14 @@ const productSchema = z.object({
 	cofins_cst: z.string().nullable(),
 	unit_of_measure: z.string().nullable(),
 	// New Inventory Dual Fields
-	stock_pieces: z.number(),
+	stock_pieces: z.number().nullable(),
 	weighed_pieces: z.number(),
-	stock_kg: z.union([z.number(), z.string()]),
-	is_parent_product: z.boolean(),
+	stock_kg: z.union([z.number(), z.string()]).nullable(),
+	is_parent_product: z.boolean().nullable(),
 	parent_product_id: z.number().nullable(),
-	is_sellable_by_unit: z.boolean(),
-	is_sellable_by_weight: z.boolean(),
-	default_sale_unit: z.string(),
+	is_sellable_by_unit: z.boolean().nullable(),
+	is_sellable_by_weight: z.boolean().nullable(),
+	default_sale_unit: z.string().nullable(),
 	price_per_piece: z.union([z.number(), z.string()]).nullable(),
 	avg_weight_per_piece_kg: z
 		.union([z.number(), z.string()])
@@ -145,7 +145,7 @@ export const productsRouter = router({
 
 			const rows = await db
 				.select({
-					...products,
+					...getTableColumns(products),
 					yield_weight_ratio: productTransformations.yield_weight_ratio,
 				})
 				.from(products)
@@ -235,7 +235,7 @@ export const productsRouter = router({
 					.values({
 						...rest,
 						// in_stock es columna integer (deprecado): enviar entero, no decimal
-						in_stock: String(Math.round(in_stock)),
+						in_stock: Math.round(in_stock),
 						stock_kg: stock_kg.toFixed(3),
 						price_per_kg: price_per_kg?.toFixed(2),
 						price_per_piece: price_per_piece?.toFixed(2),
@@ -316,7 +316,7 @@ export const productsRouter = router({
 			};
 
 			if (in_stock !== undefined)
-				updateData.in_stock = String(Math.round(in_stock));
+				updateData.in_stock = Math.round(in_stock);
 			if (stock_kg !== undefined) updateData.stock_kg = stock_kg.toFixed(3);
 			if (price_per_kg !== undefined)
 				updateData.price_per_kg = price_per_kg.toFixed(2);
@@ -428,7 +428,7 @@ export const productsRouter = router({
 					});
 				}
 
-				if (!useEntryMode && parent.stock_pieces < quantityToProcess) {
+				if (!useEntryMode && (parent.stock_pieces ?? 0) < quantityToProcess) {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
 						message: "Stock de piezas insuficiente",
@@ -437,7 +437,7 @@ export const productsRouter = router({
 
 				const stockKg = Number(parent.stock_kg);
 				const parentAvgWeight =
-					parent.stock_pieces > 0 ? stockKg / parent.stock_pieces : 0;
+					(parent.stock_pieces ?? 0) > 0 ? stockKg / (parent.stock_pieces ?? 0) : 0;
 				const isFullDisassembly = quantityToProcess === parent.stock_pieces;
 				const kgToRemove = useRealWeightMode
 					? isFullDisassembly
@@ -455,7 +455,7 @@ export const productsRouter = router({
 						});
 					}
 
-					const nextPieces = parent.stock_pieces - quantityToProcess;
+					const nextPieces = (parent.stock_pieces ?? 0) - quantityToProcess;
 					const nextWeighedPieces = Math.min(
 						parent.weighed_pieces ?? 0,
 						nextPieces,
@@ -575,7 +575,7 @@ export const productsRouter = router({
 						// Validate that new stock doesn't exceed numeric limits
 						if (newChildStockKg > 9999999.999) {
 							throw new TRPCError({
-								code: "INVALID_DATA",
+								code: "BAD_REQUEST",
 								message: `Stock del producto ${child.name} excedería el límite máximo permitido`,
 							});
 						}
@@ -583,7 +583,7 @@ export const productsRouter = router({
 						await tx
 							.update(products)
 							.set({
-								stock_pieces: child.stock_pieces + childPiecesToAdd,
+								stock_pieces: (child.stock_pieces ?? 0) + childPiecesToAdd,
 								stock_kg: newChildStockKg.toFixed(3),
 								// Note: in_stock is deprecated and kept for compatibility
 								// It should only contain whole kg values (integer)
@@ -646,7 +646,7 @@ export const productsRouter = router({
 					await tx
 						.update(products)
 						.set({
-							stock_pieces: recorteProduct.stock_pieces + quantityToProcess,
+							stock_pieces: (recorteProduct.stock_pieces ?? 0) + quantityToProcess,
 						})
 						.where(eq(products.id, recorteProduct.id));
 
@@ -736,8 +736,8 @@ export const productsRouter = router({
 
 				// Peso por pieza del base: real (stock) o el promedio configurado
 				const baseAvg =
-					base.stock_pieces > 0
-						? Number(base.stock_kg) / base.stock_pieces
+					(base.stock_pieces ?? 0) > 0
+						? Number(base.stock_kg) / (base.stock_pieces ?? 0)
 						: Number(base.avg_weight_per_piece_kg ?? 0);
 				const kgBase = input.pieces * baseAvg;
 				const kgVariant = kgBase * ratio;
@@ -745,14 +745,14 @@ export const productsRouter = router({
 				await tx
 					.update(products)
 					.set({
-						stock_pieces: base.stock_pieces - input.pieces,
+						stock_pieces: (base.stock_pieces ?? 0) - input.pieces,
 						stock_kg: (Number(base.stock_kg) - kgBase).toFixed(3),
 					})
 					.where(eq(products.id, base.id));
 				await tx
 					.update(products)
 					.set({
-						stock_pieces: variant.stock_pieces + input.pieces,
+						stock_pieces: (variant.stock_pieces ?? 0) + input.pieces,
 						stock_kg: (Number(variant.stock_kg) + kgVariant).toFixed(3),
 					})
 					.where(eq(products.id, variant.id));
@@ -870,7 +870,7 @@ export const productsRouter = router({
 						});
 					}
 
-					if (parent.stock_pieces < args.quantityToProcess) {
+					if ((parent.stock_pieces ?? 0) < args.quantityToProcess) {
 						throw new TRPCError({
 							code: "BAD_REQUEST",
 							message: "Stock de piezas insuficiente",
@@ -879,7 +879,7 @@ export const productsRouter = router({
 
 					const stockKg = Number(parent.stock_kg);
 					const parentAvgWeight =
-						parent.stock_pieces > 0 ? stockKg / parent.stock_pieces : 0;
+						(parent.stock_pieces ?? 0) > 0 ? stockKg / (parent.stock_pieces ?? 0) : 0;
 					const isFullDisassembly =
 						args.quantityToProcess === parent.stock_pieces;
 					const kgToRemove = useRealWeightMode
@@ -896,7 +896,7 @@ export const productsRouter = router({
 						});
 					}
 
-					const nextPieces = parent.stock_pieces - args.quantityToProcess;
+					const nextPieces = (parent.stock_pieces ?? 0) - args.quantityToProcess;
 					const nextWeighedPieces = Math.min(
 						parent.weighed_pieces ?? 0,
 						nextPieces,
@@ -987,7 +987,7 @@ export const productsRouter = router({
 						const newChildStockKg = Number(child.stock_kg) + childKgToAdd;
 						if (newChildStockKg > 9999999.999) {
 							throw new TRPCError({
-								code: "INVALID_DATA",
+								code: "BAD_REQUEST",
 								message: `Stock del producto ${child.name} excedería el límite máximo permitido`,
 							});
 						}
@@ -995,7 +995,7 @@ export const productsRouter = router({
 						await tx
 							.update(products)
 							.set({
-								stock_pieces: child.stock_pieces + childPiecesToAdd,
+								stock_pieces: (child.stock_pieces ?? 0) + childPiecesToAdd,
 								stock_kg: newChildStockKg.toFixed(3),
 							})
 							.where(eq(products.id, recipe.child_product_id));
@@ -1049,7 +1049,7 @@ export const productsRouter = router({
 							.update(products)
 							.set({
 								stock_pieces:
-									recorteProduct.stock_pieces + args.quantityToProcess,
+									(recorteProduct.stock_pieces ?? 0) + args.quantityToProcess,
 							})
 							.where(eq(products.id, recorteProduct.id));
 
@@ -1088,7 +1088,7 @@ export const productsRouter = router({
 
 				const canalStockKg = Number(canal.stock_kg);
 				const canalAvgWeight =
-					canal.stock_pieces > 0 ? canalStockKg / canal.stock_pieces : 0;
+					(canal.stock_pieces ?? 0) > 0 ? canalStockKg / (canal.stock_pieces ?? 0) : 0;
 				const isFullDisassembly = input.qtyProcessCanal === canal.stock_pieces;
 				const kgToRemove = useRealWeightMode
 					? isFullDisassembly
@@ -1096,7 +1096,7 @@ export const productsRouter = router({
 						: 0
 					: input.qtyProcessCanal * canalAvgWeight;
 
-				if (canal.stock_pieces < input.qtyProcessCanal) {
+				if ((canal.stock_pieces ?? 0) < input.qtyProcessCanal) {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
 						message: "Stock de canal insuficiente",
@@ -1111,7 +1111,7 @@ export const productsRouter = router({
 					});
 				}
 
-				const nextCanalPieces = canal.stock_pieces - input.qtyProcessCanal;
+				const nextCanalPieces = (canal.stock_pieces ?? 0) - input.qtyProcessCanal;
 				const nextCanalWeighedPieces = Math.min(
 					canal.weighed_pieces ?? 0,
 					nextCanalPieces,
@@ -1212,7 +1212,7 @@ export const productsRouter = router({
 					const newChildStockKg = Number(child.stock_kg) + childKgToAdd;
 					if (newChildStockKg > 9999999.999) {
 						throw new TRPCError({
-							code: "INVALID_DATA",
+							code: "BAD_REQUEST",
 							message: `Stock del producto ${child.name} excedería el límite máximo permitido`,
 						});
 					}
@@ -1220,7 +1220,7 @@ export const productsRouter = router({
 					await tx
 						.update(products)
 						.set({
-							stock_pieces: child.stock_pieces + childPiecesToAdd,
+							stock_pieces: (child.stock_pieces ?? 0) + childPiecesToAdd,
 							stock_kg: newChildStockKg.toFixed(3),
 						})
 						.where(eq(products.id, recipe.child_product_id));
@@ -1327,7 +1327,7 @@ export const productsRouter = router({
 		// Padres con stock (piezas o kg)
 		const inStock = new Set(
 			prods
-				.filter((p) => p.stock_pieces > 0 || Number(p.stock_kg) > 0)
+				.filter((p) => (p.stock_pieces ?? 0) > 0 || Number(p.stock_kg) > 0)
 				.map((p) => p.id),
 		);
 		// Hijos derivables (su padre tiene stock)
@@ -1696,9 +1696,9 @@ export const productsRouter = router({
 				z.object({
 					id: z.number(),
 					name: z.string(),
-					stock_pieces: z.number(),
-					stock_kg: z.union([z.number(), z.string()]),
-					is_parent_product: z.boolean(),
+					stock_pieces: z.number().nullable(),
+					stock_kg: z.union([z.number(), z.string()]).nullable(),
+					is_parent_product: z.boolean().nullable(),
 					transformationTypes: z.array(z.string()),
 				}),
 			),
@@ -1869,7 +1869,7 @@ export const productsRouter = router({
 						id: r.id,
 						childId: r.childId,
 						childName: r.childName,
-						childStockPieces: r.childStockPieces,
+						childStockPieces: r.childStockPieces ?? 0,
 						yieldQuantityPieces: r.yieldQuantityPieces,
 						yieldWeightRatio: r.yieldWeightRatio,
 					});

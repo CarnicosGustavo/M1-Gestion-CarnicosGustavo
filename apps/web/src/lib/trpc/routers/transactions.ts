@@ -7,7 +7,7 @@ import { eq, and } from "drizzle-orm";
 const transactionSchema = z.object({
   id: z.number(),
   description: z.string().nullable(),
-  amount: z.number(),
+  amount: z.number().nullable(),
   type: z.string().nullable(),
   category: z.string().nullable(),
   status: z.string().nullable(),

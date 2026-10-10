@@ -23,7 +23,7 @@ export const ticketsRouter = router({
       customerPhone: z.string().nullable(),
       date: z.date(),
       items: z.array(z.object({
-        productName: z.string(),
+        productName: z.string().nullable(),
         quantity: z.number().nullable(),
         quantityPieces: z.number().nullable(),
         quantityKg: z.string().nullable(),
@@ -35,7 +35,7 @@ export const ticketsRouter = router({
       amountPaid: z.number(),
       amountDue: z.number(),
       paymentStatus: z.enum(["PAGADO", "CREDITO", "PENDIENTE"]),
-      status: z.string(),
+      status: z.string().nullable(),
       notes: z.string().nullable(),
     }))
     .query(async ({ ctx, input }) => {

@@ -11,6 +11,7 @@ import {
 	inventoryTransactions,
 	creditCharges,
 	customerPrices,
+	type OrderItemStatus,
 } from "@/lib/db/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -19,45 +20,45 @@ import { alias } from "drizzle-orm/pg-core";
 const orderWithCustomerSchema = z.object({
 	id: z.number(),
 	customer_id: z.number().nullable(),
-	total_amount: z.union([z.number(), z.string()]),
+	total_amount: z.union([z.number(), z.string()]).nullable(),
 	status: z.string().nullable(),
-	user_uid: z.string(),
-	requires_weighing: z.boolean(),
+	user_uid: z.string().nullable(),
+	requires_weighing: z.boolean().nullable(),
 	whatsapp_message_id: z.string().nullable(),
 	notes: z.string().nullable(),
 	delivery_address: z.string().nullable(),
 	created_at: z.date().nullable(),
-	customer: z.object({ name: z.string() }).nullable(),
+	customer: z.object({ name: z.string().nullable() }).nullable(),
 });
 
 const orderDetailSchema = z.object({
 	id: z.number(),
 	customer_id: z.number().nullable(),
-	total_amount: z.union([z.number(), z.string()]),
+	total_amount: z.union([z.number(), z.string()]).nullable(),
 	status: z.string().nullable(),
-	user_uid: z.string(),
-	requires_weighing: z.boolean(),
+	user_uid: z.string().nullable(),
+	requires_weighing: z.boolean().nullable(),
 	notes: z.string().nullable(),
 	whatsapp_message_id: z.string().nullable(),
 	created_at: z.date().nullable(),
-	customer: z.object({ name: z.string() }).nullable(),
+	customer: z.object({ name: z.string().nullable() }).nullable(),
 	orderItems: z.array(
 		z.object({
 			id: z.number(),
 			product_id: z.number().nullable(),
 			product_name: z.string().nullable(),
-			quantity: z.number(),
+			quantity: z.number().nullable(),
 			quantity_pieces: z.number().nullable(),
 			quantity_kg: z.union([z.number(), z.string()]).nullable(),
-			unit_price: z.union([z.number(), z.string()]),
+			unit_price: z.union([z.number(), z.string()]).nullable(),
 			subtotal: z.union([z.number(), z.string()]).nullable(),
-			status: z.string(),
+			status: z.string().nullable(),
 			product: z
 				.object({
 					name: z.string(),
 					category: z.string().nullable(),
-					is_sellable_by_weight: z.boolean(),
-					is_sellable_by_unit: z.boolean(),
+					is_sellable_by_weight: z.boolean().nullable(),
+					is_sellable_by_unit: z.boolean().nullable(),
 				})
 				.nullable(),
 		}),
@@ -930,7 +931,7 @@ export const ordersRouter = router({
 						});
 					}
 
-					if (parentRow.stock_pieces < args.quantityToProcess) {
+					if ((parentRow.stock_pieces ?? 0) < args.quantityToProcess) {
 						throw new TRPCError({
 							code: "BAD_REQUEST",
 							message: `Stock insuficiente de ${parentRow.name}`,
@@ -939,7 +940,7 @@ export const ordersRouter = router({
 
 					const stockKg = Number(parentRow.stock_kg);
 					const parentAvgWeight =
-						parentRow.stock_pieces > 0 ? stockKg / parentRow.stock_pieces : 0;
+						(parentRow.stock_pieces ?? 0) > 0 ? stockKg / (parentRow.stock_pieces ?? 0) : 0;
 					const kgToRemove = args.quantityToProcess * parentAvgWeight;
 					const newStockKg = stockKg - kgToRemove;
 					if (newStockKg < -0.0005) {
@@ -952,11 +953,11 @@ export const ordersRouter = router({
 					await tx
 						.update(products)
 						.set({
-							stock_pieces: parentRow.stock_pieces - args.quantityToProcess,
+							stock_pieces: (parentRow.stock_pieces ?? 0) - args.quantityToProcess,
 							stock_kg: Math.max(0, newStockKg).toFixed(3),
 							weighed_pieces: Math.min(
 								parentRow.weighed_pieces ?? 0,
-								parentRow.stock_pieces - args.quantityToProcess,
+								(parentRow.stock_pieces ?? 0) - args.quantityToProcess,
 							),
 						})
 						.where(eq(products.id, args.parentProductId));
@@ -1016,7 +1017,7 @@ export const ordersRouter = router({
 						const newChildKg = Number(childRow.stock_kg) + childKgToAdd;
 						if (newChildKg > 9999999.999) {
 							throw new TRPCError({
-								code: "INVALID_DATA",
+								code: "BAD_REQUEST",
 								message: `Stock del producto ${childRow.name} excedería el límite máximo permitido`,
 							});
 						}
@@ -1024,7 +1025,7 @@ export const ordersRouter = router({
 						await tx
 							.update(products)
 							.set({
-								stock_pieces: childRow.stock_pieces + childPiecesToAdd,
+								stock_pieces: (childRow.stock_pieces ?? 0) + childPiecesToAdd,
 								stock_kg: newChildKg.toFixed(3),
 							})
 							.where(eq(products.id, r.child_product_id));
@@ -1142,7 +1143,7 @@ export const ordersRouter = router({
 							message: `Producto ${item.productId} no encontrado`,
 						});
 
-					let itemStatus = "COMPLETADO";
+					let itemStatus: OrderItemStatus = "COMPLETADO";
 					let quantityKg = item.quantityKg;
 					let subtotal = 0;
 
@@ -1189,7 +1190,7 @@ export const ordersRouter = router({
 					.insert(orders)
 					.values({
 						customer_id: input.customerId,
-						total_amount: totalAmount,
+						total_amount: String(totalAmount),
 						user_uid: ctx.user.id,
 						status: orderStatus,
 						requires_weighing: requiresWeighing,
@@ -1203,6 +1204,9 @@ export const ordersRouter = router({
 					processedItems.map((item) => ({
 						order_id: orderData.id,
 						...item,
+						quantity_kg: item.quantity_kg == null ? item.quantity_kg : String(item.quantity_kg),
+						unit_price: String(item.unit_price),
+						subtotal: String(item.subtotal),
 					})),
 				);
 
@@ -1269,7 +1273,7 @@ export const ordersRouter = router({
 					.update(orderItems)
 					.set({
 						quantity_kg: actualWeightKg,
-						subtotal: subtotal,
+						subtotal: String(subtotal),
 						status: "PESADO",
 					})
 					.where(eq(orderItems.id, input.orderItemId));
@@ -1322,7 +1326,7 @@ export const ordersRouter = router({
 				await tx
 					.update(orders)
 					.set({
-						total_amount: newTotal,
+						total_amount: String(newTotal),
 						status: isProduction
 							? allWeighed
 								? "COMPLETADA"
@@ -1392,8 +1396,8 @@ export const ordersRouter = router({
 								: 0;
 							const newStockKg = currentStockKg - itemQuantityKg;
 							const nextPieces = item.quantity_pieces
-								? product.stock_pieces - item.quantity_pieces
-								: product.stock_pieces;
+								? (product.stock_pieces ?? 0) - item.quantity_pieces
+								: (product.stock_pieces ?? 0);
 							const nextWeighedPieces = Math.min(
 								product.weighed_pieces ?? 0,
 								nextPieces,
@@ -1498,8 +1502,8 @@ export const ordersRouter = router({
 								: 0;
 							const newStockKg = currentStockKg - itemQuantityKg;
 							const nextPieces = item.quantity_pieces
-								? product.stock_pieces - item.quantity_pieces
-								: product.stock_pieces;
+								? (product.stock_pieces ?? 0) - item.quantity_pieces
+								: (product.stock_pieces ?? 0);
 							const nextWeighedPieces = Math.min(
 								product.weighed_pieces ?? 0,
 								nextPieces,
@@ -1704,7 +1708,7 @@ export const ordersRouter = router({
 					totalCents += subtotalCents;
 					await tx
 						.update(orderItems)
-						.set({ unit_price: unitPriceCents, subtotal: subtotalCents })
+						.set({ unit_price: String(unitPriceCents), subtotal: String(subtotalCents) })
 						.where(eq(orderItems.id, it.orderItemId));
 
 					if (it.productId && orderData.customer_id) {
@@ -1727,7 +1731,7 @@ export const ordersRouter = router({
 
 				await tx
 					.update(orders)
-					.set({ total_amount: totalCents })
+					.set({ total_amount: String(totalCents) })
 					.where(eq(orders.id, input.orderId));
 
 				// 2. Descontar inventario
@@ -1749,8 +1753,8 @@ export const ordersRouter = router({
 							// Stock puede quedar negativo: se compensa al despiezar.
 							const finalStockKg = Number(product.stock_kg) - itemQuantityKg;
 							const finalPieces = item.quantity_pieces
-								? product.stock_pieces - item.quantity_pieces
-								: product.stock_pieces;
+								? (product.stock_pieces ?? 0) - item.quantity_pieces
+								: (product.stock_pieces ?? 0);
 							await tx
 								.update(products)
 								.set({

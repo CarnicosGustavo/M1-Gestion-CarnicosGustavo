@@ -52,7 +52,7 @@ export const coldInventoryRouter = router({
 					.limit(1);
 				if (!p) throw new TRPCError({ code: "NOT_FOUND", message: "Producto no encontrado" });
 
-				if (Number(p.stock_kg) < input.kg || p.stock_pieces < input.pieces) {
+				if (Number(p.stock_kg) < input.kg || (p.stock_pieces ?? 0) < input.pieces) {
 					throw new TRPCError({
 						code: "PRECONDITION_FAILED",
 						message: "Stock fresco insuficiente para enviar a frío",

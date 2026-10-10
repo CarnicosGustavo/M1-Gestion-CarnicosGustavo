@@ -85,13 +85,13 @@ export default function POSPage() {
 		id: number;
 		quantityKg: number | null;
 		quantityPieces: number;
-		stock_kg: number | string;
-		stock_pieces: number;
+		stock_kg: number | string | null;
+		stock_pieces: number | null;
 	}): "stock" | "despiece" | "faltante" => {
 		const direct =
 			p.quantityKg !== null
 				? p.quantityKg <= Number(p.stock_kg)
-				: p.quantityPieces <= p.stock_pieces;
+				: p.quantityPieces <= (p.stock_pieces ?? 0);
 		if (direct) return "stock";
 		return availMap.get(p.id)?.derivable ? "despiece" : "faltante";
 	};
@@ -130,7 +130,7 @@ export default function POSPage() {
 	} | null>(null);
 	const [selectedCustomer, setSelectedCustomer] = useState<{
 		id: number;
-		name: string;
+		name: string | null;
 	} | null>(null);
 	const [productSearch, setProductSearch] = useState("");
 	const [emitNfce, setEmitNfce] = useState(false);
@@ -249,7 +249,7 @@ export default function POSPage() {
 		if (!product) return;
 
 		// Validar stock dual
-		if (product.stock_pieces <= 0 && product.stock_kg <= 0) {
+		if ((product.stock_pieces ?? 0) <= 0 && Number(product.stock_kg) <= 0) {
 			toast.error(t("outOfStock", { name: product.name }));
 			return;
 		}

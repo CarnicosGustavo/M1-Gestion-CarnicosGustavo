@@ -144,7 +144,13 @@ async function migrateRecipes() {
   }
 
   // Insert all at once
-  await db.insert(productTransformations).values(recipesToInsert).onConflictDoNothing();
+  await db.insert(productTransformations).values(
+    recipesToInsert.map((r) => ({
+      ...r,
+      yield_quantity_pieces: String(r.yield_quantity_pieces),
+      yield_weight_ratio: String(r.yield_weight_ratio),
+    })),
+  ).onConflictDoNothing();
 
   return {
     inserted: recipesToInsert.length,

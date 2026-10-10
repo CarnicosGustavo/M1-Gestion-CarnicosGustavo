@@ -21,10 +21,10 @@ const inventoryStatusSchema = z.object({
 	productId: z.number(),
 	name: z.string(),
 	category: z.string().nullable(),
-	stock_pieces: z.number(),
+	stock_pieces: z.number().nullable(),
 	weighed_pieces: z.number(),
-	stock_kg: z.union([z.number(), z.string()]),
-	in_stock: z.union([z.number(), z.string()]),
+	stock_kg: z.union([z.number(), z.string()]).nullable(),
+	in_stock: z.union([z.number(), z.string()]).nullable(),
 	updated_at: z.date().nullable(),
 });
 
@@ -56,7 +56,7 @@ const recipeSchema = z.object({
 	childProduct: z.object({
 		id: z.number(),
 		name: z.string(),
-		is_parent_product: z.boolean(),
+		is_parent_product: z.boolean().nullable(),
 		avg_weight: z.union([z.string(), z.number()]).nullable(),
 		category: z.string().nullable(),
 	}),
@@ -106,7 +106,7 @@ export const inventoryRouter = router({
 
 				const transactions = allProducts.map((product) => ({
 					product_id: product.id,
-					quantity_change_pieces: -product.stock_pieces,
+					quantity_change_pieces: -(product.stock_pieces ?? 0),
 					quantity_change_kg:
 						product.stock_kg !== null
 							? (-Number(product.stock_kg)).toFixed(3)
@@ -241,7 +241,7 @@ export const inventoryRouter = router({
 
 				const deltaKg = input.applyToInventory ? input.weightKg : 0;
 				if (input.applyToInventory && input.piecesWeighed > 0) {
-					const pendingPieces = Math.max(0, p.stock_pieces - (p.weighed_pieces ?? 0));
+					const pendingPieces = Math.max(0, (p.stock_pieces ?? 0) - (p.weighed_pieces ?? 0));
 					if (input.piecesWeighed > pendingPieces) {
 						throw new TRPCError({
 							code: "BAD_REQUEST",
@@ -254,14 +254,14 @@ export const inventoryRouter = router({
 					const nextKg = currentKg + deltaKg;
 					if (nextKg > 9999999.999) {
 						throw new TRPCError({
-							code: "INVALID_DATA",
+							code: "BAD_REQUEST",
 							message: "Stock excedería el máximo permitido",
 						});
 					}
 
 					const nextWeighedPieces = input.applyToInventory
 						? Math.min(
-								p.stock_pieces,
+								p.stock_pieces ?? 0,
 								(p.weighed_pieces ?? 0) + input.piecesWeighed,
 							)
 						: p.weighed_pieces ?? 0;
@@ -276,7 +276,7 @@ export const inventoryRouter = router({
 						.where(eq(products.id, input.productId));
 				} else if (input.applyToInventory && input.piecesWeighed > 0) {
 					const nextWeighedPieces = Math.min(
-						p.stock_pieces,
+						p.stock_pieces ?? 0,
 						(p.weighed_pieces ?? 0) + input.piecesWeighed,
 					);
 					await tx
@@ -406,7 +406,7 @@ export const inventoryRouter = router({
 				}
 
 				const currentStockKg = Number(p.stock_kg);
-				const nextPieces = p.stock_pieces + deltaPieces;
+				const nextPieces = (p.stock_pieces ?? 0) + deltaPieces;
 				const nextStockKg = currentStockKg + deltaKg;
 				const nextWeighedPieces = Math.min(p.weighed_pieces ?? 0, nextPieces);
 
@@ -1119,7 +1119,7 @@ export const inventoryRouter = router({
 						bestCount = count;
 						bestPrice = price;
 					} else if (count === bestCount && bestPrice !== null) {
-						const last = aliasToLastPrice.get(alias) ?? bestPrice;
+						const last: number = aliasToLastPrice.get(alias) ?? bestPrice;
 						if (price === last) bestPrice = price;
 					}
 				}

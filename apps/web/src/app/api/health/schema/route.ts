@@ -50,7 +50,7 @@ function toSafeError(err: unknown) {
     const detail = typeof anyErr.detail === "string" ? anyErr.detail : undefined;
     const hint = typeof anyErr.hint === "string" ? anyErr.hint : undefined;
     const severity = typeof anyErr.severity === "string" ? anyErr.severity : undefined;
-    const cause = anyErr.cause ? toSafeError(anyErr.cause) : undefined;
+    const cause: unknown = anyErr.cause ? toSafeError(anyErr.cause) : undefined;
     return {
       name,
       code,

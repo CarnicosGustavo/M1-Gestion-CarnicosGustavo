@@ -113,8 +113,8 @@ export default function CustomersPage() {
   ];
 
   const exportColumns: ExportColumn<Customer>[] = [
-    { key: "name", header: tc("name"), getValue: (c) => c.name },
-    { key: "email", header: tc("email"), getValue: (c) => c.email },
+    { key: "name", header: tc("name"), getValue: (c) => c.name ?? "" },
+    { key: "email", header: tc("email"), getValue: (c) => c.email ?? "" },
     { key: "phone", header: tc("phone"), getValue: (c) => c.phone ?? "" },
     { key: "status", header: tc("status"), getValue: (c) => c.status ?? "active" },
   ];
@@ -168,7 +168,7 @@ export default function CustomersPage() {
     validators: {
       onSubmit: ({ value }) => {
         const res = customerFormSchema.safeParse(value);
-        if (!res.success) return res.error.errors.map((e) => e.message).join(", ");
+        if (!res.success) return res.error.issues.map((e) => e.message).join(", ");
         return undefined;
       },
     },
@@ -206,7 +206,7 @@ export default function CustomersPage() {
     return customers.filter((c) => {
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
       const q = searchTerm.toLowerCase();
-      return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || (c.phone ?? "").includes(searchTerm);
+      return (c.name ?? "").toLowerCase().includes(q) || (c.email ?? "").toLowerCase().includes(q) || (c.phone ?? "").includes(searchTerm);
     });
   }, [customers, statusFilter, searchTerm]);
 
@@ -310,7 +310,7 @@ export default function CustomersPage() {
                   <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
                     <Label htmlFor="name">Nombre del negocio</Label>
                     <div className="col-span-3">
-                      <Input id="name" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} placeholder="Ej. Carnicería Balderas" error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map(e => e?.message ?? e).join(", ") : undefined} />
+                      <Input id="name" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} placeholder="Ej. Carnicería Balderas" error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map((e) => (e as { message?: string } | undefined)?.message ?? e).join(", ") : undefined} />
                     </div>
                   </div>
                 )}
@@ -338,7 +338,7 @@ export default function CustomersPage() {
                   <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
                     <Label htmlFor="email">Correo</Label>
                     <div className="col-span-3">
-                      <Input id="email" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map(e => e?.message ?? e).join(", ") : undefined} />
+                      <Input id="email" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} onBlur={field.handleBlur} error={field.state.meta.errors.length > 0 ? field.state.meta.errors.map((e) => (e as { message?: string } | undefined)?.message ?? e).join(", ") : undefined} />
                     </div>
                   </div>
                 )}
