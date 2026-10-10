@@ -405,6 +405,7 @@ export default function ValidacionSaldosPage() {
 										<td
 											className="px-4 py-3 text-right"
 											onClick={(e) => e.stopPropagation()}
+											onKeyDown={(e) => e.stopPropagation()}
 										>
 											{c.validado ? (
 												<span className="inline-flex items-center gap-1 font-semibold text-green-600 text-xs">
