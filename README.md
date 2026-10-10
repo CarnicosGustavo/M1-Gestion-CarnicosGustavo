@@ -85,21 +85,44 @@ Mapa detallado del despiece: [`docs/mapa-despiece-porcino.md`](docs/mapa-despiec
 ### Estructura del monorepo
 
 ```
-dashboard/
-├── apps/web/              App Next.js (admin, POS, API tRPC, login)
-│   └── src/
-│       ├── app/admin/         Páginas del dashboard
-│       ├── components/         Componentes (antonella-chat, admin-layout…)
-│       ├── hooks/              Hooks (useAntonellaHistory…)
-│       └── lib/trpc/routers/   Lógica de negocio (orders, products, yields, antonella…)
+M1-Gestion-CarnicosGustavo/
+├── apps/
+│   ├── web/                   App Next.js (admin, POS, API tRPC, login)
+│   │   ├── src/
+│   │   │   ├── app/admin/         Pantallas del dashboard
+│   │   │   ├── app/api/           Rutas HTTP: tRPC, auth, health, admin (protegidas)
+│   │   │   ├── components/        Componentes (antonella-chat, admin-layout…)
+│   │   │   ├── hooks/             Hooks (useAntonellaHistory…)
+│   │   │   └── lib/trpc/routers/  Lógica de negocio (orders, products, yields, antonella…)
+│   │   │       └── __tests__/     Tests de routers (bun test + PGlite en memoria)
+│   │   ├── drizzle/           Migraciones Drizzle (baseline + no-ops de alineación)
+│   │   └── scripts/           ensure-db, verify-schema-drift…
+│   └── docs/                  Sitio de documentación heredado de FinOpenPOS (no es parte del producto)
 ├── packages/
-│   ├── db/                Esquema Drizzle (fuente de verdad del schema)
-│   ├── api/              Utilidades de API compartidas
-│   ├── auth/             Better-Auth
-│   ├── ui/               Design system (shadcn/ui)
-│   └── fiscal/          Motor fiscal (heredado de FinOpenPOS; NFC-e Brasil, no usado por CG)
-├── sql/                  Scripts SQL manuales (triggers, rebuild) — ver sql/README.md
-└── docs/                Documentación técnica
+│   ├── db/                Esquema Drizzle (`schema.ts`, alineado con la BD real)
+│   ├── api/               Utilidades de API compartidas
+│   ├── auth/              Configuración Better-Auth
+│   ├── env/               Validación de variables de entorno
+│   ├── config/            Configuración TypeScript compartida
+│   └── ui/                Design system (shadcn/ui)
+├── supabase/
+│   ├── migrations/        Historial de migraciones aplicadas en Supabase
+│   └── schema/            Snapshot de estructura de las tablas de la app
+├── sql/                   Scripts SQL manuales (triggers, rebuild) — ver sql/README.md
+├── docs/                  Documentación técnica
+└── .github/workflows/     CI: tests, lint (archivos modificados) y typecheck informativo
+```
+
+### Flujo de datos
+
+```
+Navegador (React + TanStack Query)
+   │  tRPC (HTTP, /api/trpc)            Better-Auth (/api/auth/*)
+   ▼                                        │
+Routers tRPC (apps/web/src/lib/trpc/routers) ◄── sesión + rol (admin / almacén / …)
+   │  Drizzle ORM
+   ▼
+PostgreSQL (Supabase)  ◄── triggers/funciones SQL versionados en supabase/migrations
 ```
 
 ---
@@ -120,19 +143,21 @@ cp apps/web/.env.example apps/web/.env.local
 bun run dev --filter=web      # http://localhost:3001
 ```
 
-### Verificación antes de hacer push (evita fallos de build en Vercel)
+### Verificación antes de hacer push
 
 ```bash
 cd apps/web
-bunx tsc --noEmit            # tipos
-cd ..
-bunx biome check apps/web/src/…   # lint/format de los archivos tocados
-bunx next build             # build real (lo que corre Vercel)
+bun run test                 # tests de routers (PGlite en memoria, no toca la BD)
+bun run db:verify-drift      # schema.ts vs estructura real (PGlite, no toca la BD)
+bunx tsc --noEmit            # tipos (aún hay deuda; ver nota)
+cd ../..
+bunx biome check <archivos tocados>
+bun run build --filter=web   # build real (lo que corre Vercel)
 ```
 
-> El proyecto tiene ~20 errores de tipos **preexistentes** en archivos heredados
-> (fiscal, health). Al validar, filtra por los archivos que tocaste; lo que no
-> debe fallar es la **compilación** (`✓ Compiled successfully`).
+> El CI de GitHub Actions corre tests y lint de los archivos modificados en cada PR;
+> el typecheck es informativo mientras exista deuda de tipos
+> (`next.config.mjs` mantiene `typescript.ignoreBuildErrors: true`).
 
 ---
 
@@ -140,14 +165,19 @@ bunx next build             # build real (lo que corre Vercel)
 
 Plantilla completa en [`apps/web/.env.example`](apps/web/.env.example). Resumen:
 
-| Variable | Para qué | Dónde |
-|----------|----------|-------|
-| `DATABASE_URL` | Conexión a Supabase (Postgres) | Local + Vercel |
-| `BETTER_AUTH_SECRET` | Firma de sesiones | Local + Vercel |
-| `BETTER_AUTH_URL` / `BASE_URL` | URL del despliegue | Local + Vercel |
-| `ANTHROPIC_API_KEY` | Motor de IA de Antonella | Local + **Vercel** ⚠️ |
-| `NEXT_PUBLIC_LOCALE` | Idioma (`es`) | Local + Vercel |
-| `RUN_SEED` | Semilla inicial (siempre `false` en prod) | Local |
+| Variable | Para qué |
+|----------|----------|
+| `DATABASE_URL` | Conexión a Postgres (Supabase) |
+| `DATABASE_URL_MIGRATIONS` | Opcional: conexión para `drizzle-kit migrate` |
+| `BETTER_AUTH_SECRET` | Firma de sesiones |
+| `BETTER_AUTH_URL` / `BASE_URL` / `NEXT_PUBLIC_BASE_URL` | URL del despliegue |
+| `BASE_PATH` | Prefijo de ruta (vacío = raíz) |
+| `ANTHROPIC_API_KEY` | Motor de IA de Antonella |
+| `NEXT_PUBLIC_LOCALE` | Idioma (`es`) |
+| `RUN_SEED` | Semilla demo al arrancar (siempre `false` en prod) |
+| `SEED_TOKEN` / `ADMIN_RESET_PASSWORD` | Protegen rutas y acciones administrativas |
+| `HEALTH_CHECK_TOKEN` / `SEED_ADMIN_PASSWORD` / `ALLOW_PUBLIC_SIGNUP` | Diagnóstico, usuario inicial y registro público (ver `.env.example`) |
+| `CORS_ORIGIN` | Origen permitido (opcional) |
 
 > ⚠️ **Antonella** no funciona sin `ANTHROPIC_API_KEY` configurada en las
 > variables de entorno de Vercel (Production/Preview/Development).
@@ -159,12 +189,14 @@ Plantilla completa en [`apps/web/.env.example`](apps/web/.env.example). Resumen:
 
 ## 🗄️ Base de datos
 
-- El **esquema** es la fuente de verdad en `packages/db/src/schema.ts` (Drizzle).
-- Los **triggers** y datos semilla viven en [`sql/`](sql/) y se aplican a mano en
-  el editor SQL de Supabase (ver [`sql/README.md`](sql/README.md)).
+- El **esquema** está en `packages/db/src/schema.ts` (Drizzle), alineado con la BD
+  real; compruébalo con `bun run db:verify-drift` (desde `apps/web`).
+- **Migraciones:** `supabase/migrations/` guarda el historial aplicado en Supabase;
+  `apps/web/drizzle/` lleva el control de Drizzle. Nunca uses `drizzle-kit push`
+  contra producción. Detalle en [`sql/README.md`](sql/README.md).
 - Tablas clave: `products` (stock dual), `product_transformations` (recetas),
   `orders` / `order_items`, `inventory_transactions` (auditoría),
-  `channel_purchases`, `antonella_config`, `web_orders`.
+  `channel_purchases`, `credit_*` (cobranza), `antonella_*`, `web_orders`.
 
 ---
 

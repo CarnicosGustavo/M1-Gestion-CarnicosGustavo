@@ -22,7 +22,7 @@ con inventario dual (piezas + kg), recetas de despiece y un asistente IA (Antone
 ## 🔗 Relación con el PROYECTO 2 (ui-CarnicosGustavo)
 - El **Proyecto 2** es **una UI nueva** (diseño pixel-perfect, Vite) que **reemplazará**
   a esta UI shadcn cuando esté lista.
-- Ambos **comparten la misma base de datos Supabase** (proyecto `uajezdrnqujmutjokwfo`).
+- Ambos **comparten la misma base de datos Supabase**.
 - El Proyecto 2 **no usa la API tRPC de este repo**; replica su contrato vía funciones
   serverless propias. Por eso **este proyecto es la referencia funcional**: su guía
   `GUIA_UI_UX_PLATAFORMA.md` documenta qué hace cada pantalla/botón.
@@ -34,13 +34,15 @@ con inventario dual (piezas + kg), recetas de despiece y un asistente IA (Antone
 - **Auth:** **Better-Auth**. **UI:** **Tailwind v4 + shadcn/ui** (`@finopenpos/ui`).
 - **IA:** **Anthropic SDK** (Claude) — asistente "Antonella".
 - **Monorepo:** **Turborepo + Bun**. **Deploy:** Vercel.
-- Migraciones: **Drizzle** (`apps/web/drizzle/`: baseline + `0001` no-op de alineación).
+- Migraciones: **Drizzle** (`apps/web/drizzle/`: baseline + `0001`/`0002` no-op de alineación).
   Historial de migraciones aplicadas por Supabase en `supabase/migrations/`; snapshot de
   estructura en `supabase/schema/app_tables.sql`. `schema.ts` está alineado con la BD real:
   verificar con `cd apps/web && bun run db:verify-drift` (PGlite local, no toca prod).
   Nunca `drizzle-kit push` contra producción. Detalle en `sql/README.md`.
-- Nota: `next.config.mjs` tiene `typescript.ignoreBuildErrors: true` (hay deuda de tipos
-  preexistente; la compilación pasa igual).
+- Nota: `next.config.mjs` tiene `typescript.ignoreBuildErrors: true` (queda deuda de tipos;
+  quitarlo solo cuando `bunx tsc --noEmit` en `apps/web` dé 0 errores).
+- **Calidad:** `bun run test` (apps/web; routers con PGlite en memoria) y CI en
+  `.github/workflows/ci.yml` (tests + lint de archivos modificados + typecheck informativo).
 
 ## 📁 Estructura (resumen)
 ```
@@ -54,9 +56,14 @@ M1-Gestion-CarnicosGustavo/
 │       ├── components/        (admin-layout, ticket-modal, order-disassembly-manager…)
 │       └── lib/trpc/routers/  Lógica de negocio (orders, products, yields, inventory,
 │                              collections, customers, customer-prices, dashboard…)
-├── packages/                 db (schema Drizzle), ui (shadcn), auth, api, env, fiscal
+│   ├── drizzle/              migraciones Drizzle
+│   └── scripts/              ensure-db, verify-schema-drift
+├── apps/docs/                sitio de docs heredado de FinOpenPOS (no es parte del producto)
+├── packages/                 db (schema Drizzle), ui (shadcn), auth, api, env, config
+├── supabase/                 migrations/ (historial aplicado) + schema/ (snapshot)
 ├── sql/                      triggers/seed manuales (Supabase SQL editor)
-└── docs/                     documentación técnica
+├── docs/                     documentación técnica
+└── .github/workflows/        CI
 ```
 
 ## ▶️ Cómo correr
@@ -65,14 +72,14 @@ bun install
 cp apps/web/.env.example apps/web/.env.local   # editar con valores reales
 bun run dev --filter=web                        # http://localhost:3001
 ```
-Env clave: `DATABASE_URL` (Supabase), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`/`BASE_URL`,
-`ANTHROPIC_API_KEY` (Antonella), `NEXT_PUBLIC_LOCALE=es`.
+Env: ver `apps/web/.env.example` (solo nombres y marcadores). Clave: `DATABASE_URL`,
+`BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`/`BASE_URL`, `ANTHROPIC_API_KEY` (Antonella).
 
 ## 📚 Documentación clave
 - **`GUIA_UI_UX_PLATAFORMA.md`** — guía funcional **exhaustiva** (cada pantalla, botón,
   input, estado, endpoint). **La referencia para comparar UI/UX.**
 - `README.md` — visión general, módulos, flujo del día.
-- `docs/` — arquitectura, motor fiscal (heredado), esquema de DB, etc.
+- `docs/` — arquitectura, esquema de DB, etc. (algunos documentos son heredados de FinOpenPOS).
 - `docs/mapa-despiece-porcino.md` — dominio del despiece.
 
 ## 🆚 Para comparar UI/UX con el Proyecto 2

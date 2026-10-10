@@ -5,30 +5,11 @@
  * sin ejecutarlo. Debe imprimir "0 statements".
  *
  * Uso (desde apps/web):  bun run db:verify-drift
- *
- * Las tablas declaradas en schema.ts que NO existen en producción se excluyen
- * (ver EXCLUDED); si alguna vez se crean o se borran de schema.ts, actualizar.
  */
 import { PGlite } from "@electric-sql/pglite";
 import { pushSchema } from "drizzle-kit/api";
 import { drizzle } from "drizzle-orm/pglite";
-import * as fullSchema from "../src/lib/db/schema";
-
-const EXCLUDED = [
-	"cities",
-	"fiscalSettings",
-	"invoices",
-	"invoiceItems",
-	"invoiceEvents",
-	"purchaseOrders",
-];
-
-const schema = Object.fromEntries(
-	Object.entries(fullSchema).filter(
-		([key]) =>
-			!EXCLUDED.some((name) => key === name || key === `${name}Relations`),
-	),
-);
+import * as schema from "../src/lib/db/schema";
 
 const snapshotPath = new URL(
 	"../../../supabase/schema/app_tables.sql",
