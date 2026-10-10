@@ -127,7 +127,7 @@ export default function ProfilePage() {
 							<UserCircleIcon className="h-12 w-12" />
 						</span>
 						<div className="min-w-0 flex-1">
-							<div className="font-bold text-lg text-foreground">{name}</div>
+							<div className="font-bold text-foreground text-lg">{name}</div>
 							<div className="mt-0.5 text-muted-foreground text-sm">
 								Administrador · Cárnicos Gustavo
 							</div>
@@ -364,7 +364,11 @@ export default function ProfilePage() {
 						<Button variant="outline" onClick={() => setDeleteOpen(false)}>
 							Cancelar
 						</Button>
-						<Button variant="destructive" onClick={handleDelete} disabled={busy}>
+						<Button
+							variant="destructive"
+							onClick={handleDelete}
+							disabled={busy}
+						>
 							Sí, eliminar mi cuenta
 						</Button>
 					</DialogFooter>
