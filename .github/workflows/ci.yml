@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (bun test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # Tests de routers tRPC sobre PGlite (Postgres en memoria). No usan la BD real.
+      - run: bun run test
+        working-directory: apps/web
+
+  lint:
+    name: Lint (Biome, archivos modificados)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # El repo arrastra deuda de lint; por ahora solo se exige a los archivos
+      # que cambia cada PR (en push a main se revisa el último commit).
+      - name: Biome check (changed files)
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="HEAD~1"
+          fi
+          mapfile -t FILES < <(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD \
+            | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|css)$' || true)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "Sin archivos para revisar."
+            exit 0
+          fi
+          printf '%s\n' "${FILES[@]}"
+          bunx biome check --no-errors-on-unmatched --files-ignore-unknown=true "${FILES[@]}"
+
+  typecheck:
+    name: Typecheck (informativo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Hay deuda de tipos preexistente (next.config: ignoreBuildErrors). Este job
+    # informa el número de errores pero no bloquea el PR.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - name: tsc --noEmit (apps/web)
+        shell: bash
+        working-directory: apps/web
+        run: |
+          set +e
+          bunx tsc --noEmit -p . > tsc.log 2>&1
+          STATUS=$?
+          COUNT=$(grep -c "error TS" tsc.log || true)
+          echo "Errores de TypeScript: $COUNT" | tee -a "$GITHUB_STEP_SUMMARY"
+          tail -n 50 tsc.log
+          exit $STATUS
