@@ -112,7 +112,9 @@ export default function Products() {
 				const ratio = (row as any).yield_weight_ratio;
 				if (ratio !== undefined && ratio !== null) {
 					const percentage = (Number(ratio) * 100).toFixed(1);
-					return <span className="font-medium text-blue-600">{percentage}%</span>;
+					return (
+						<span className="font-medium text-blue-600">{percentage}%</span>
+					);
 				}
 				return <span className="text-muted-foreground text-xs">-</span>;
 			},
@@ -269,9 +271,7 @@ export default function Products() {
 				const p = findByAny(x.match);
 				return p ? { id: String(p.id), label: x.label, name: p.name } : null;
 			})
-			.filter(
-				(x): x is NonNullable<typeof x> => x !== null,
-			);
+			.filter((x): x is NonNullable<typeof x> => x !== null);
 	}, [parentProducts]);
 
 	const selectedHierarchyParentName = useMemo(() => {
@@ -412,7 +412,8 @@ export default function Products() {
 			if (typeFilter === "parent" && !p.is_parent_product) return false;
 			if (typeFilter === "child" && p.is_parent_product) return false;
 			if (stockFilter === "in-stock" && p.stock_pieces === 0) return false;
-			if (stockFilter === "out-of-stock" && (p.stock_pieces ?? 0) > 0) return false;
+			if (stockFilter === "out-of-stock" && (p.stock_pieces ?? 0) > 0)
+				return false;
 			return p.name.toLowerCase().includes(searchTerm.toLowerCase());
 		});
 	}, [products, typeFilter, stockFilter, searchTerm]);
@@ -649,7 +650,11 @@ export default function Products() {
 												error={
 													field.state.meta.errors.length > 0
 														? field.state.meta.errors
-																.map((e) => (e as { message?: string } | undefined)?.message ?? e)
+																.map(
+																	(e) =>
+																		(e as { message?: string } | undefined)
+																			?.message ?? e,
+																)
 																.join(", ")
 														: undefined
 												}
@@ -692,7 +697,11 @@ export default function Products() {
 												error={
 													field.state.meta.errors.length > 0
 														? field.state.meta.errors
-																.map((e) => (e as { message?: string } | undefined)?.message ?? e)
+																.map(
+																	(e) =>
+																		(e as { message?: string } | undefined)
+																			?.message ?? e,
+																)
 																.join(", ")
 														: undefined
 												}
@@ -719,7 +728,11 @@ export default function Products() {
 												error={
 													field.state.meta.errors.length > 0
 														? field.state.meta.errors
-																.map((e) => (e as { message?: string } | undefined)?.message ?? e)
+																.map(
+																	(e) =>
+																		(e as { message?: string } | undefined)
+																			?.message ?? e,
+																)
 																.join(", ")
 														: undefined
 												}

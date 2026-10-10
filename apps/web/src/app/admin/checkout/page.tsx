@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@finopenpos/ui/components/card";
+import {
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+	CardDescription,
+} from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
@@ -12,7 +18,14 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@finopenpos/ui/components/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@finopenpos/ui/components/table";
 import { BanknoteIcon, ReceiptTextIcon } from "lucide-react";
 import { cn } from "@finopenpos/ui/lib/utils";
 import { useTRPC } from "@/lib/trpc/client";
@@ -38,7 +51,9 @@ export default function CheckoutPage() {
 		...trpc.orders.getReadyToCharge.queryOptions(),
 		refetchInterval: 10000,
 	});
-	const { data: paymentMethods } = useQuery(trpc.paymentMethods.list.queryOptions()) as {
+	const { data: paymentMethods } = useQuery(
+		trpc.paymentMethods.list.queryOptions(),
+	) as {
 		data: { id: number; name: string }[] | undefined;
 	};
 
@@ -57,7 +72,10 @@ export default function CheckoutPage() {
 				new URLSearchParams(window.location.search).get("order") ?? "",
 				10,
 			);
-			if (Number.isFinite(ord) && (ordersReady as any[]).some((o) => o.id === ord)) {
+			if (
+				Number.isFinite(ord) &&
+				(ordersReady as any[]).some((o) => o.id === ord)
+			) {
 				setSelectedOrderId(ord);
 				appliedUrlRef.current = true;
 			}
@@ -72,7 +90,8 @@ export default function CheckoutPage() {
 			const next: Record<number, string> = {};
 			for (const it of selectedOrder.items) {
 				const saved = it.savedPriceKg != null ? Number(it.savedPriceKg) : null;
-				const current = it.unitPrice != null ? Number(it.unitPrice) / 100 : null;
+				const current =
+					it.unitPrice != null ? Number(it.unitPrice) / 100 : null;
 				const val = saved ?? current ?? 0;
 				next[it.id] = val > 0 ? String(val) : "";
 			}
@@ -115,7 +134,8 @@ export default function CheckoutPage() {
 		chargeMut.mutate({
 			orderId: selectedOrder.id,
 			paymentType: payType,
-			paymentMethodId: payType === "contado" ? parseInt(methodId) || undefined : undefined,
+			paymentMethodId:
+				payType === "contado" ? parseInt(methodId) || undefined : undefined,
 			items,
 		});
 	}
@@ -180,7 +200,9 @@ export default function CheckoutPage() {
 											<TableRow className="bg-muted/50">
 												<TableHead>Producto</TableHead>
 												<TableHead className="text-center">Kg</TableHead>
-												<TableHead className="text-center w-[28%]">Precio / Kg</TableHead>
+												<TableHead className="text-center w-[28%]">
+													Precio / Kg
+												</TableHead>
 												<TableHead className="text-right">Subtotal</TableHead>
 											</TableRow>
 										</TableHeader>
@@ -190,7 +212,9 @@ export default function CheckoutPage() {
 												const price = parseFloat(prices[it.id] || "0") || 0;
 												return (
 													<TableRow key={it.id}>
-														<TableCell className="font-medium">{it.productName}</TableCell>
+														<TableCell className="font-medium">
+															{it.productName}
+														</TableCell>
 														<TableCell className="text-center font-mono">
 															{kg.toFixed(3)}
 														</TableCell>
@@ -200,7 +224,10 @@ export default function CheckoutPage() {
 																step="0.01"
 																value={prices[it.id] ?? ""}
 																onChange={(e) =>
-																	setPrices((p) => ({ ...p, [it.id]: e.target.value }))
+																	setPrices((p) => ({
+																		...p,
+																		[it.id]: e.target.value,
+																	}))
 																}
 																onFocus={(e) => e.currentTarget.select()}
 																className="h-9 text-center"
@@ -276,7 +303,8 @@ export default function CheckoutPage() {
 									{chargeMut.isPending ? "Cobrando…" : `Cobrar ${money(total)}`}
 								</Button>
 								<p className="text-center text-[11px] text-muted-foreground">
-									Al cobrar se guardan estos precios para el próximo pedido del cliente.
+									Al cobrar se guardan estos precios para el próximo pedido del
+									cliente.
 								</p>
 							</div>
 						</>

@@ -43,7 +43,10 @@ interface SupState {
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmt = (n: number, d = 1) =>
-	n.toLocaleString("es-MX", { minimumFractionDigits: d, maximumFractionDigits: d });
+	n.toLocaleString("es-MX", {
+		minimumFractionDigits: d,
+		maximumFractionDigits: d,
+	});
 
 function supKg(s: SupState) {
 	return s.mode === "total"
@@ -208,7 +211,10 @@ export default function CedisPage() {
 					/>
 				)}
 				{totals.precioReal > 0 && (
-					<Kpi label="precio real / kg" value={`$${fmt(totals.precioReal, 1)}`} />
+					<Kpi
+						label="precio real / kg"
+						value={`$${fmt(totals.precioReal, 1)}`}
+					/>
 				)}
 			</div>
 
@@ -217,7 +223,10 @@ export default function CedisPage() {
 				<div className="rounded-xl border bg-card p-8 text-center text-muted-foreground text-sm">
 					No hay proveedores para este día. Agrégalos aquí abajo o captúralos en
 					la{" "}
-					<Link href="/admin/purchase" className="font-medium text-primary underline">
+					<Link
+						href="/admin/purchase"
+						className="font-medium text-primary underline"
+					>
 						Compra del día
 					</Link>{" "}
 					(así también se calcula la merma).
@@ -395,7 +404,8 @@ function Kpi({
 			className={cn(
 				"rounded-xl border p-3",
 				accent === "primary" && "border-primary/30 bg-primary/5",
-				accent === "amber" && "border-[var(--cg-amber)]/30 bg-[var(--cg-amber-wash)]",
+				accent === "amber" &&
+					"border-[var(--cg-amber)]/30 bg-[var(--cg-amber-wash)]",
 			)}
 		>
 			<div
@@ -499,7 +509,11 @@ function SupplierCard({
 					<div className="flex items-center gap-2">
 						<Input
 							inputMode="decimal"
-							placeholder={s.tara > 0 ? "+ peso báscula (bruto)" : "+ kg de una media canal"}
+							placeholder={
+								s.tara > 0
+									? "+ peso báscula (bruto)"
+									: "+ kg de una media canal"
+							}
 							value={text}
 							onChange={(e) => setText(e.target.value)}
 							onKeyDown={(e) => {
@@ -511,7 +525,11 @@ function SupplierCard({
 						{s.tara > 0 && netPreview != null ? (
 							<span className="text-muted-foreground text-xs">
 								{fmt(grossNum)} − {fmt(s.tara)} ={" "}
-								<b className={netPreview > 0 ? "text-foreground" : "text-red-600"}>
+								<b
+									className={
+										netPreview > 0 ? "text-foreground" : "text-red-600"
+									}
+								>
 									{fmt(netPreview)}
 								</b>{" "}
 								kg media canal
@@ -558,7 +576,9 @@ function SupplierCard({
 								type="number"
 								step="0.001"
 								value={s.totalKg || ""}
-								onChange={(e) => onPatch({ totalKg: Number(e.target.value) || 0 })}
+								onChange={(e) =>
+									onPatch({ totalKg: Number(e.target.value) || 0 })
+								}
 								placeholder="0"
 								className="h-9 w-32"
 							/>
@@ -571,7 +591,9 @@ function SupplierCard({
 							type="number"
 							value={s.totalCanales || ""}
 							onChange={(e) =>
-								onPatch({ totalCanales: Number.parseInt(e.target.value, 10) || 0 })
+								onPatch({
+									totalCanales: Number.parseInt(e.target.value, 10) || 0,
+								})
 							}
 							placeholder="0"
 							className="mt-1 h-9 w-24"

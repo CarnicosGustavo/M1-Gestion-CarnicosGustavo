@@ -72,10 +72,20 @@ export default function POSPage() {
 	);
 	const { data: availability = [] } = useQuery(
 		trpc.products.availabilityMap.queryOptions(),
-	) as { data: { productId: number; stockPieces: number; stockKg: number; derivable: boolean }[] };
+	) as {
+		data: {
+			productId: number;
+			stockPieces: number;
+			stockKg: number;
+			derivable: boolean;
+		}[];
+	};
 
 	const availMap = useMemo(() => {
-		const m = new Map<number, { stockPieces: number; stockKg: number; derivable: boolean }>();
+		const m = new Map<
+			number,
+			{ stockPieces: number; stockKg: number; derivable: boolean }
+		>();
 		for (const a of availability) m.set(a.productId, a);
 		return m;
 	}, [availability]);
@@ -186,7 +196,11 @@ export default function POSPage() {
 	}, [customerPricesQuery.data]);
 
 	// Resuelve el precio de un producto: cliente > lista > base
-	const resolvePrice = (productId: number, baseKg: number, basePiece: number) => {
+	const resolvePrice = (
+		productId: number,
+		baseKg: number,
+		basePiece: number,
+	) => {
 		const cust = customerPriceMap.get(productId);
 		const list = priceOverrides.get(productId);
 		return {
@@ -379,8 +393,12 @@ export default function POSPage() {
 		if (!customerId) return;
 
 		// Clasifica: en stock / vía despiece / faltante
-		const faltantes = selectedProducts.filter((p) => classify(p) === "faltante");
-		const viaDespiece = selectedProducts.filter((p) => classify(p) === "despiece");
+		const faltantes = selectedProducts.filter(
+			(p) => classify(p) === "faltante",
+		);
+		const viaDespiece = selectedProducts.filter(
+			(p) => classify(p) === "despiece",
+		);
 
 		if (viaDespiece.length > 0) {
 			toast.info(
@@ -450,7 +468,10 @@ export default function POSPage() {
 					titulo: "Punto de venta",
 					texto:
 						"Te aviso si una pieza no tiene stock y hay que despiezarla o pesarla. Puedo resolver precios del cliente y estimar el total antes de pesar.",
-					acciones: ["¿Qué piezas faltan en stock?", "¿Cubre mi stock los pedidos?"],
+					acciones: [
+						"¿Qué piezas faltan en stock?",
+						"¿Cubre mi stock los pedidos?",
+					],
 				}}
 			/>
 			<Card className="mb-4">
@@ -665,7 +686,8 @@ export default function POSPage() {
 							)}
 							{selectedProducts.some((p) => classify(p) === "despiece") && (
 								<span className="text-xs font-medium text-blue-600">
-									🔪 Hay piezas que se generan por despiece (hay stock del padre).
+									🔪 Hay piezas que se generan por despiece (hay stock del
+									padre).
 								</span>
 							)}
 							{selectedProducts.some((p) => classify(p) === "faltante") && (

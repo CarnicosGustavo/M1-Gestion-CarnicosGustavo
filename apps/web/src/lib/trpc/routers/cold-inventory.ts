@@ -50,9 +50,16 @@ export const coldInventoryRouter = router({
 					.from(products)
 					.where(eq(products.id, input.productId))
 					.limit(1);
-				if (!p) throw new TRPCError({ code: "NOT_FOUND", message: "Producto no encontrado" });
+				if (!p)
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Producto no encontrado",
+					});
 
-				if (Number(p.stock_kg) < input.kg || (p.stock_pieces ?? 0) < input.pieces) {
+				if (
+					Number(p.stock_kg) < input.kg ||
+					(p.stock_pieces ?? 0) < input.pieces
+				) {
 					throw new TRPCError({
 						code: "PRECONDITION_FAILED",
 						message: "Stock fresco insuficiente para enviar a frío",
@@ -97,9 +104,16 @@ export const coldInventoryRouter = router({
 					.from(products)
 					.where(eq(products.id, input.productId))
 					.limit(1);
-				if (!p) throw new TRPCError({ code: "NOT_FOUND", message: "Producto no encontrado" });
+				if (!p)
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Producto no encontrado",
+					});
 
-				if (Number(p.stock_kg_frozen) < input.kg || p.stock_pieces_frozen < input.pieces) {
+				if (
+					Number(p.stock_kg_frozen) < input.kg ||
+					p.stock_pieces_frozen < input.pieces
+				) {
 					throw new TRPCError({
 						code: "PRECONDITION_FAILED",
 						message: "Stock congelado insuficiente para descongelar",

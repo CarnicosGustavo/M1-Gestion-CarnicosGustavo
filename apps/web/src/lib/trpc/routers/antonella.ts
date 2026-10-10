@@ -113,16 +113,32 @@ export const TOOL_META: Record<
 		danger: true,
 	},
 	remember: { label: "Memorizar un dato", category: "lectura", danger: false },
-	recall: { label: "Recordar (buscar memoria)", category: "lectura", danger: false },
-	list_memories: { label: "Listar recuerdos", category: "lectura", danger: false },
+	recall: {
+		label: "Recordar (buscar memoria)",
+		category: "lectura",
+		danger: false,
+	},
+	list_memories: {
+		label: "Listar recuerdos",
+		category: "lectura",
+		danger: false,
+	},
 	forget: { label: "Olvidar un dato", category: "lectura", danger: false },
 	create_dataset: {
 		label: "Crear tabla de memoria",
 		category: "lectura",
 		danger: false,
 	},
-	add_data: { label: "Agregar dato a tabla", category: "lectura", danger: false },
-	query_dataset: { label: "Leer tabla de memoria", category: "lectura", danger: false },
+	add_data: {
+		label: "Agregar dato a tabla",
+		category: "lectura",
+		danger: false,
+	},
+	query_dataset: {
+		label: "Leer tabla de memoria",
+		category: "lectura",
+		danger: false,
+	},
 	list_datasets: { label: "Listar tablas", category: "lectura", danger: false },
 };
 
@@ -226,7 +242,7 @@ const tools = [
 				customer_name: {
 					type: "string",
 					description:
-						"Nombre del cliente o negocio (ej. \"Carnicería Balderas\")",
+						'Nombre del cliente o negocio (ej. "Carnicería Balderas")',
 				},
 			},
 			required: ["customer_name"],
@@ -256,7 +272,7 @@ const tools = [
 				product_name: {
 					type: "string",
 					description:
-						"Opcional. Producto para resolver su precio (ej. \"LOMO\", \"JAMON\")",
+						'Opcional. Producto para resolver su precio (ej. "LOMO", "JAMON")',
 				},
 			},
 			required: ["customer_name"],
@@ -511,7 +527,10 @@ async function executeTool(
 		case "recall":
 			return await recallMemories(toolInput.query as string, userId);
 		case "list_memories":
-			return await listMemories(toolInput.category as string | undefined, userId);
+			return await listMemories(
+				toolInput.category as string | undefined,
+				userId,
+			);
 		case "forget":
 			return await forgetMemory(toolInput.title as string, userId);
 		case "create_dataset":
@@ -598,9 +617,7 @@ async function getCustomerAccount(
 	];
 	if (limit > 0) {
 		lines.push(`Límite de crédito: ${fmtMoney(limit)}`);
-		lines.push(
-			`Crédito disponible: ${fmtMoney(Math.max(0, limit - balance))}`,
-		);
+		lines.push(`Crédito disponible: ${fmtMoney(Math.max(0, limit - balance))}`);
 	} else {
 		lines.push("Sin límite de crédito configurado.");
 	}
@@ -710,7 +727,9 @@ async function getCustomerPrices(
 				),
 			)
 			.limit(1);
-		let perKg: number | null = ovr?.price_per_kg ? Number(ovr.price_per_kg) : null;
+		let perKg: number | null = ovr?.price_per_kg
+			? Number(ovr.price_per_kg)
+			: null;
 		let perPiece: number | null = ovr?.price_per_piece
 			? Number(ovr.price_per_piece)
 			: null;
@@ -826,10 +845,7 @@ async function rememberFact(
 	return `✅ Recordado: "${title}" (categoría: ${category})`;
 }
 
-async function recallMemories(
-	query: string,
-	userId: string,
-): Promise<string> {
+async function recallMemories(query: string, userId: string): Promise<string> {
 	const q = `%${(query || "").trim()}%`;
 	const rows = await db
 		.select()
@@ -844,7 +860,10 @@ async function recallMemories(
 				),
 			),
 		)
-		.orderBy(desc(antonellaMemories.importance), desc(antonellaMemories.updated_at))
+		.orderBy(
+			desc(antonellaMemories.importance),
+			desc(antonellaMemories.updated_at),
+		)
 		.limit(10);
 
 	if (!rows.length) return `Sin recuerdos relacionados con "${query}".`;
@@ -901,7 +920,9 @@ async function createDataset(
 	const name = String(input.name || "").trim();
 	if (!name) return "❌ Falta el nombre de la tabla.";
 	const description = String(input.description || "").trim();
-	const columns = Array.isArray(input.columns) ? (input.columns as string[]) : [];
+	const columns = Array.isArray(input.columns)
+		? (input.columns as string[])
+		: [];
 	if (!columns.length) return "❌ Indica al menos una columna.";
 
 	const existing = (

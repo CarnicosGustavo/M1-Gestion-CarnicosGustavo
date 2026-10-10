@@ -765,9 +765,7 @@ function SubDespieceControl({
 	return (
 		<div className="mt-1.5 rounded-lg border border-primary/30 bg-primary/5 p-2.5">
 			<div className="flex flex-wrap items-center gap-2">
-				<span className="font-semibold text-xs">
-					✂️ Despiezar {p.childName}
-				</span>
+				<span className="font-semibold text-xs">✂️ Despiezar {p.childName}</span>
 				<input
 					type="number"
 					min="1"
@@ -808,9 +806,7 @@ function SubDespieceControl({
 							Solo hay {p.childStockPieces} {p.childName} en stock — primero
 							despieza{" "}
 							<strong>
-								{Math.ceil(
-									(n - p.childStockPieces) / Math.max(1, p.pieces),
-								)}{" "}
+								{Math.ceil((n - p.childStockPieces) / Math.max(1, p.pieces))}{" "}
 								canal(es)
 							</strong>{" "}
 							más (salen {p.pieces} pz por canal).
@@ -818,9 +814,7 @@ function SubDespieceControl({
 					) : (
 						<>
 							→ produce:{" "}
-							{cuts
-								.map((c) => `${c.childName} ×${n * c.pieces}`)
-								.join(" · ")}
+							{cuts.map((c) => `${c.childName} ×${n * c.pieces}`).join(" · ")}
 						</>
 					)}
 				</p>

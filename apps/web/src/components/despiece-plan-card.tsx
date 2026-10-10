@@ -3,7 +3,12 @@
 import { Button } from "@finopenpos/ui/components/button";
 import { cn } from "@finopenpos/ui/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckIcon, Loader2Icon, ScissorsIcon, SparklesIcon } from "lucide-react";
+import {
+	CheckIcon,
+	Loader2Icon,
+	ScissorsIcon,
+	SparklesIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AntonellaAvatar } from "@/components/antonella-avatar";

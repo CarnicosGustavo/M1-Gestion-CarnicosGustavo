@@ -188,13 +188,14 @@ export const yieldsRouter = router({
 				.map((r) => {
 					const enPieKg = Number(r.total_kg) || 0;
 					const precio = r.price_per_kg != null ? Number(r.price_per_kg) : 0;
-					const detail = (r.cedis_detail as {
-						mode?: "canal" | "total";
-						tara?: number;
-						weights?: number[];
-						totalKg?: number;
-						totalCanales?: number;
-					} | null) ?? null;
+					const detail =
+						(r.cedis_detail as {
+							mode?: "canal" | "total";
+							tara?: number;
+							weights?: number[];
+							totalKg?: number;
+							totalCanales?: number;
+						} | null) ?? null;
 					return {
 						id: r.id,
 						supplier: r.supplier ?? "",
@@ -427,7 +428,9 @@ export const yieldsRouter = router({
 					const [prod] = await tx
 						.select()
 						.from(products)
-						.where(and(eq(products.id, it.productId), eq(products.user_uid, uid)))
+						.where(
+							and(eq(products.id, it.productId), eq(products.user_uid, uid)),
+						)
 						.limit(1);
 					if (!prod) continue;
 
@@ -903,7 +906,8 @@ export const yieldsRouter = router({
 				GROUP BY oi.product_id
 			`)) as unknown as { pid: number; pieces: number }[];
 			const demand = new Map<number, number>();
-			for (const r of demandRows) demand.set(Number(r.pid), Number(r.pieces) || 0);
+			for (const r of demandRows)
+				demand.set(Number(r.pid), Number(r.pieces) || 0);
 			const hasDemand = [...demand.values()].some((v) => v > 0);
 
 			const plan: {

@@ -704,7 +704,8 @@ export default function RecipesPage({
 			const sumPct =
 				s.rows
 					.filter((r) => r.is_variant !== true)
-					.reduce((acc, r) => acc + (Number(r.yield_weight_ratio) || 0), 0) * 100;
+					.reduce((acc, r) => acc + (Number(r.yield_weight_ratio) || 0), 0) *
+				100;
 			const merma = 100 - sumPct;
 			if (sumPct > 0 && (!worst || merma > worst.merma))
 				worst = { canal: s.parent, sumPct, merma };
@@ -1876,8 +1877,8 @@ export default function RecipesPage({
 					{prov && (
 						<div className="flex items-center gap-2 rounded-lg bg-[var(--cg-green-wash)] px-3 py-2.5 text-xs">
 							<TruckIcon className="h-4 w-4 text-[var(--cg-green)]" />
-							Este producto <b>no depende del despiece</b> de un canal: entra por
-							compra a proveedor.
+							Este producto <b>no depende del despiece</b> de un canal: entra
+							por compra a proveedor.
 						</div>
 					)}
 
@@ -1978,7 +1979,9 @@ export default function RecipesPage({
 													(e.target as HTMLInputElement).blur()
 												}
 											/>
-											<span className="text-[10px] text-muted-foreground">kg</span>
+											<span className="text-[10px] text-muted-foreground">
+												kg
+											</span>
 										</div>
 									</div>
 								</div>
@@ -2040,8 +2043,7 @@ export default function RecipesPage({
 							variant="outline"
 							size="sm"
 							className={cn(
-								prov &&
-									"border-[var(--cg-green)] text-[var(--cg-green)]",
+								prov && "border-[var(--cg-green)] text-[var(--cg-green)]",
 							)}
 							onClick={() =>
 								classifyOrphanMut.mutate({ productId, action: "purchased" })
@@ -2070,9 +2072,7 @@ export default function RecipesPage({
 										) !== "ELIMINAR"
 									)
 										return;
-								} else if (
-									!window.confirm(`¿Borrar "${prod.name}"?`)
-								) {
+								} else if (!window.confirm(`¿Borrar "${prod.name}"?`)) {
 									return;
 								}
 								deleteProductMut.mutate({ id: productId });
@@ -2098,10 +2098,7 @@ export default function RecipesPage({
 							tone: "alerta",
 							titulo: "Revisa el cierre de pesos",
 							texto: `El ${mermaAlert.canal} suma ${mermaAlert.sumPct.toFixed(1)}% de su peso en piezas: hay ${mermaAlert.merma.toFixed(1)}% de merma, alto para tu histórico (~8%). Probablemente falta capturar el kg de alguna pieza, o quedó bajo.`,
-							acciones: [
-								"Ver piezas faltantes",
-								"¿Merma aceptable?",
-							],
+							acciones: ["Ver piezas faltantes", "¿Merma aceptable?"],
 						}}
 					/>
 				) : (

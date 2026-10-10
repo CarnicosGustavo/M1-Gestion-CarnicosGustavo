@@ -1,11 +1,7 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
-import {
-	creditAccounts,
-	creditCharges,
-	creditPayments,
-} from "@/lib/db/schema";
+import { creditAccounts, creditCharges, creditPayments } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 
 export const collectionsRouter = router({
@@ -79,7 +75,9 @@ export const collectionsRouter = router({
 					tipo: "cargo" as const,
 					id: c.id,
 					fecha: c.charge_date,
-					concepto: c.concept ?? (c.source === "pedido" ? `Pedido #${c.order_id}` : "Cargo"),
+					concepto:
+						c.concept ??
+						(c.source === "pedido" ? `Pedido #${c.order_id}` : "Cargo"),
 					cargo: Number(c.amount),
 					abono: 0,
 					orderId: c.order_id ?? null,

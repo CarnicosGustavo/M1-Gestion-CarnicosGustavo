@@ -9,23 +9,23 @@ import { createTRPCClient } from "@trpc/client";
 import type { AppRouter } from "@/lib/trpc/router";
 
 export function TRPCReactProvider({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
-  const [trpcClient] = useState(() =>
-    createTRPCClient<AppRouter>({
-      links: [
-        httpBatchLink({
-          url: "/api/trpc",
-          transformer: superjson,
-        }),
-      ],
-    })
-  );
+	const [queryClient] = useState(() => new QueryClient());
+	const [trpcClient] = useState(() =>
+		createTRPCClient<AppRouter>({
+			links: [
+				httpBatchLink({
+					url: "/api/trpc",
+					transformer: superjson,
+				}),
+			],
+		}),
+	);
 
-  return (
-    <QueryClientProvider client={queryClient}>
-      <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
-        {children}
-      </TRPCProvider>
-    </QueryClientProvider>
-  );
+	return (
+		<QueryClientProvider client={queryClient}>
+			<TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
+				{children}
+			</TRPCProvider>
+		</QueryClientProvider>
+	);
 }

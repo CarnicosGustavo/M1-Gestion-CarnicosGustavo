@@ -10,17 +10,17 @@ import { getAuthUser } from "@/lib/auth-guard";
  * /api/health/db sigue siendo público (solo responde ok/error).
  */
 export async function isHealthAuthorized(req: Request): Promise<boolean> {
-  const expected = process.env.HEALTH_CHECK_TOKEN;
-  const provided = req.headers.get("x-health-token");
-  if (expected && provided) {
-    const a = Buffer.from(provided);
-    const b = Buffer.from(expected);
-    if (a.length === b.length && timingSafeEqual(a, b)) return true;
-  }
-  try {
-    const current = await getAuthUser();
-    return current?.role === "admin";
-  } catch {
-    return false;
-  }
+	const expected = process.env.HEALTH_CHECK_TOKEN;
+	const provided = req.headers.get("x-health-token");
+	if (expected && provided) {
+		const a = Buffer.from(provided);
+		const b = Buffer.from(expected);
+		if (a.length === b.length && timingSafeEqual(a, b)) return true;
+	}
+	try {
+		const current = await getAuthUser();
+		return current?.role === "admin";
+	} catch {
+		return false;
+	}
 }

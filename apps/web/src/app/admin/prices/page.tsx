@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@finopenpos/ui/components/card";
+import {
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+} from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
@@ -12,7 +17,14 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@finopenpos/ui/components/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@finopenpos/ui/components/table";
 import { SaveIcon } from "lucide-react";
 import { useTRPC } from "@/lib/trpc/client";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -89,7 +101,9 @@ export default function PricesPage() {
 		const items = rows.map((r) => ({
 			productId: r.productId,
 			pricePerKg: r.pricePerKg.trim() ? parseFloat(r.pricePerKg) : null,
-			pricePerPiece: r.pricePerPiece.trim() ? parseFloat(r.pricePerPiece) : null,
+			pricePerPiece: r.pricePerPiece.trim()
+				? parseFloat(r.pricePerPiece)
+				: null,
 		}));
 		saveMutation.mutate({ customerId: parseInt(customerId), items });
 	}
@@ -100,7 +114,8 @@ export default function PricesPage() {
 				<div>
 					<h1 className="text-2xl font-bold">Precios por Cliente</h1>
 					<p className="text-sm text-muted-foreground">
-						Cada cliente guarda su propia lista de precios. Se usa al generar su pedido y ticket.
+						Cada cliente guarda su propia lista de precios. Se usa al generar su
+						pedido y ticket.
 					</p>
 				</div>
 				<Button onClick={save} disabled={saveMutation.isPending || !customerId}>
@@ -150,7 +165,9 @@ export default function PricesPage() {
 									<TableRow className="bg-muted/50">
 										<TableHead className="w-[50%]">Producto</TableHead>
 										<TableHead className="text-center">Precio / Kg</TableHead>
-										<TableHead className="text-center">Precio / Pieza</TableHead>
+										<TableHead className="text-center">
+											Precio / Pieza
+										</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
@@ -172,7 +189,9 @@ export default function PricesPage() {
 													type="number"
 													value={r.pricePerKg}
 													onChange={(e) =>
-														updateRow(r.productId, { pricePerKg: e.target.value })
+														updateRow(r.productId, {
+															pricePerKg: e.target.value,
+														})
 													}
 													className="h-9 text-center"
 													placeholder="—"
@@ -183,7 +202,9 @@ export default function PricesPage() {
 													type="number"
 													value={r.pricePerPiece}
 													onChange={(e) =>
-														updateRow(r.productId, { pricePerPiece: e.target.value })
+														updateRow(r.productId, {
+															pricePerPiece: e.target.value,
+														})
 													}
 													className="h-9 text-center"
 													placeholder="—"
@@ -195,8 +216,8 @@ export default function PricesPage() {
 							</Table>
 						</div>
 						<p className="mt-3 text-xs text-muted-foreground">
-							Los renglones en verde tienen precio propio guardado para este cliente.
-							Deja en blanco para usar el precio base del producto.
+							Los renglones en verde tienen precio propio guardado para este
+							cliente. Deja en blanco para usar el precio base del producto.
 						</p>
 					</CardContent>
 				</Card>

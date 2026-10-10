@@ -5,118 +5,151 @@ import { transactions, orderItems, products } from "@/lib/db/schema";
 import { eq, and, asc, sum, sql } from "drizzle-orm";
 
 function safeNumber(value: unknown) {
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : 0;
+	const n = typeof value === "number" ? value : Number(value);
+	return Number.isFinite(n) ? n : 0;
 }
 
 export const dashboardRouter = router({
-  stats: protectedProcedure
-    .meta({ openapi: { method: "GET", path: "/dashboard/stats", tags: ["Dashboard"], summary: "Get all dashboard statistics" } })
-    .input(z.void())
-    .output(
-      z.object({
-        totalRevenue: z.number(),
-        totalExpenses: z.number(),
-        totalProfit: z.number(),
-        revenueByCategory: z.record(z.string(), z.number()),
-        expensesByCategory: z.record(z.string(), z.number()),
-        cashFlow: z.array(z.object({ date: z.string(), amount: z.number() })),
-        profitMargin: z.array(z.object({ date: z.string(), margin: z.number() })),
-      })
-    )
-    .query(async ({ ctx }) => {
-      const uid = ctx.user.id;
+	stats: protectedProcedure
+		.meta({
+			openapi: {
+				method: "GET",
+				path: "/dashboard/stats",
+				tags: ["Dashboard"],
+				summary: "Get all dashboard statistics",
+			},
+		})
+		.input(z.void())
+		.output(
+			z.object({
+				totalRevenue: z.number(),
+				totalExpenses: z.number(),
+				totalProfit: z.number(),
+				revenueByCategory: z.record(z.string(), z.number()),
+				expensesByCategory: z.record(z.string(), z.number()),
+				cashFlow: z.array(z.object({ date: z.string(), amount: z.number() })),
+				profitMargin: z.array(
+					z.object({ date: z.string(), margin: z.number() }),
+				),
+			}),
+		)
+		.query(async ({ ctx }) => {
+			const uid = ctx.user.id;
 
-      const allCompleted = await db
-        .select({
-          amount: sql<number>`${transactions.amount}`.mapWith(Number),
-          type: transactions.type,
-          category: transactions.category,
-          created_at: transactions.created_at,
-        })
-        .from(transactions)
-        .where(and(eq(transactions.status, "completed"), eq(transactions.user_uid, uid)))
-        .orderBy(asc(transactions.created_at));
+			const allCompleted = await db
+				.select({
+					amount: sql<number>`${transactions.amount}`.mapWith(Number),
+					type: transactions.type,
+					category: transactions.category,
+					created_at: transactions.created_at,
+				})
+				.from(transactions)
+				.where(
+					and(
+						eq(transactions.status, "completed"),
+						eq(transactions.user_uid, uid),
+					),
+				)
+				.orderBy(asc(transactions.created_at));
 
-      const normalizedCompleted = allCompleted.map((t) => ({
-        ...t,
-        amount: safeNumber(t.amount),
-      }));
+			const normalizedCompleted = allCompleted.map((t) => ({
+				...t,
+				amount: safeNumber(t.amount),
+			}));
 
-      const totalRevenue = allCompleted
-        .filter((t) => t.type === "income")
-        .reduce((s, t) => s + safeNumber(t.amount), 0);
+			const totalRevenue = allCompleted
+				.filter((t) => t.type === "income")
+				.reduce((s, t) => s + safeNumber(t.amount), 0);
 
-      const totalExpenses = allCompleted
-        .filter((t) => t.type === "expense")
-        .reduce((s, t) => s + safeNumber(t.amount), 0);
+			const totalExpenses = allCompleted
+				.filter((t) => t.type === "expense")
+				.reduce((s, t) => s + safeNumber(t.amount), 0);
 
-      const totalProfit = totalRevenue - totalExpenses;
+			const totalProfit = totalRevenue - totalExpenses;
 
-      // New revenue breakdown by product category
-      const revenueByProductCategory = await db
-        .select({
-          category: products.category,
-          total: sum(sql<number>`${orderItems.subtotal}`).mapWith(Number),
-        })
-        .from(orderItems)
-        .innerJoin(products, eq(orderItems.product_id, products.id))
-        .innerJoin(transactions, eq(transactions.order_id, orderItems.order_id))
-        .where(and(eq(transactions.status, "completed"), eq(transactions.user_uid, uid)))
-        .groupBy(products.category);
+			// New revenue breakdown by product category
+			const revenueByProductCategory = await db
+				.select({
+					category: products.category,
+					total: sum(sql<number>`${orderItems.subtotal}`).mapWith(Number),
+				})
+				.from(orderItems)
+				.innerJoin(products, eq(orderItems.product_id, products.id))
+				.innerJoin(transactions, eq(transactions.order_id, orderItems.order_id))
+				.where(
+					and(
+						eq(transactions.status, "completed"),
+						eq(transactions.user_uid, uid),
+					),
+				)
+				.groupBy(products.category);
 
-      const revenueByCategory = Object.fromEntries(
-        revenueByProductCategory.map((r) => [r.category || "otros", safeNumber(r.total)])
-      );
+			const revenueByCategory = Object.fromEntries(
+				revenueByProductCategory.map((r) => [
+					r.category || "otros",
+					safeNumber(r.total),
+				]),
+			);
 
-      const expensesByCategory = normalizedCompleted
-        .filter((t) => t.type === "expense")
-        .reduce<Record<string, number>>((acc, t) => {
-          if (!t.category) return acc;
-          acc[t.category] = (acc[t.category] || 0) + safeNumber(t.amount);
-          return acc;
-        }, {});
+			const expensesByCategory = normalizedCompleted
+				.filter((t) => t.type === "expense")
+				.reduce<Record<string, number>>((acc, t) => {
+					if (!t.category) return acc;
+					acc[t.category] = (acc[t.category] || 0) + safeNumber(t.amount);
+					return acc;
+				}, {});
 
-      const cashFlow = normalizedCompleted.reduce<Record<string, number>>((acc, t) => {
-        const date = t.created_at
-          ? new Date(t.created_at).toISOString().split("T")[0]
-          : "unknown";
-        acc[date] = (acc[date] || 0) + safeNumber(t.amount);
-        return acc;
-      }, {});
+			const cashFlow = normalizedCompleted.reduce<Record<string, number>>(
+				(acc, t) => {
+					const date = t.created_at
+						? new Date(t.created_at).toISOString().split("T")[0]
+						: "unknown";
+					acc[date] = (acc[date] || 0) + safeNumber(t.amount);
+					return acc;
+				},
+				{},
+			);
 
-      const profitMargin = calculateProfitMarginSeries(normalizedCompleted);
+			const profitMargin = calculateProfitMarginSeries(normalizedCompleted);
 
-      return {
-        totalRevenue: safeNumber(totalRevenue),
-        totalExpenses: safeNumber(totalExpenses),
-        totalProfit: safeNumber(totalProfit),
-        revenueByCategory,
-        expensesByCategory,
-        cashFlow: Object.entries(cashFlow).map(([date, amount]) => ({ date, amount })),
-        profitMargin,
-      };
-    }),
+			return {
+				totalRevenue: safeNumber(totalRevenue),
+				totalExpenses: safeNumber(totalExpenses),
+				totalProfit: safeNumber(totalProfit),
+				revenueByCategory,
+				expensesByCategory,
+				cashFlow: Object.entries(cashFlow).map(([date, amount]) => ({
+					date,
+					amount,
+				})),
+				profitMargin,
+			};
+		}),
 });
 
 function calculateProfitMarginSeries(
-  txns: { amount: number; type: string | null; category: string | null; created_at: Date | null }[]
+	txns: {
+		amount: number;
+		type: string | null;
+		category: string | null;
+		created_at: Date | null;
+	}[],
 ) {
-  const dailyData: Record<string, { income: number; expense: number }> = {};
+	const dailyData: Record<string, { income: number; expense: number }> = {};
 
-  for (const t of txns) {
-    const date = t.created_at
-      ? new Date(t.created_at).toISOString().split("T")[0]
-      : "unknown";
-    dailyData[date] ??= { income: 0, expense: 0 };
+	for (const t of txns) {
+		const date = t.created_at
+			? new Date(t.created_at).toISOString().split("T")[0]
+			: "unknown";
+		dailyData[date] ??= { income: 0, expense: 0 };
 
-    if (t.type === "income") dailyData[date].income += t.amount;
-    else if (t.type === "expense") dailyData[date].expense += t.amount;
-  }
+		if (t.type === "income") dailyData[date].income += t.amount;
+		else if (t.type === "expense") dailyData[date].expense += t.amount;
+	}
 
-  return Object.entries(dailyData).map(([date, { income, expense }]) => {
-    const profit = income - expense;
-    const margin = income > 0 ? (profit / income) * 100 : 0;
-    return { date, margin: parseFloat(margin.toFixed(2)) };
-  });
+	return Object.entries(dailyData).map(([date, { income, expense }]) => {
+		const profit = income - expense;
+		const margin = income > 0 ? (profit / income) * 100 : 0;
+		return { date, margin: parseFloat(margin.toFixed(2)) };
+	});
 }

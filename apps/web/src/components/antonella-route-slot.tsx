@@ -26,7 +26,10 @@ const ROUTE_SLOT: Record<string, AntonellaSlotData> = {
 		titulo: "Pedidos",
 		texto:
 			"Vigilo los pedidos abiertos. Puedo calcular qué piezas faltan, sugerir el despiece necesario para cubrirlos y decirte qué se generaría.",
-		acciones: ["¿Qué falta para los pedidos abiertos?", "¿Qué conviene despiezar?"],
+		acciones: [
+			"¿Qué falta para los pedidos abiertos?",
+			"¿Qué conviene despiezar?",
+		],
 	},
 	"/admin/purchase": {
 		tone: "sugerencia",
@@ -87,7 +90,8 @@ const ROUTE_SLOT: Record<string, AntonellaSlotData> = {
 	"/admin/payment-methods": {
 		tone: "ok",
 		titulo: "Métodos de pago",
-		texto: "Aquí defines cómo cobras. Avísame si quieres ordenar o limpiar la lista.",
+		texto:
+			"Aquí defines cómo cobras. Avísame si quieres ordenar o limpiar la lista.",
 		acciones: [],
 	},
 };

@@ -18,7 +18,10 @@ import { useTRPC } from "@/lib/trpc/client";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmt = (n: number, d = 1) =>
-	n.toLocaleString("es-MX", { minimumFractionDigits: d, maximumFractionDigits: d });
+	n.toLocaleString("es-MX", {
+		minimumFractionDigits: d,
+		maximumFractionDigits: d,
+	});
 
 export default function CierrePage() {
 	const trpc = useTRPC();
@@ -202,7 +205,8 @@ function HeroKpi({
 		<div
 			className={cn(
 				"rounded-2xl border p-4 text-center",
-				accent === "green" && "border-[var(--cg-green)]/30 bg-[var(--cg-green-wash)]",
+				accent === "green" &&
+					"border-[var(--cg-green)]/30 bg-[var(--cg-green-wash)]",
 				accent === "red" && "border-red-300 bg-red-50",
 			)}
 		>
@@ -218,7 +222,9 @@ function HeroKpi({
 			>
 				{pz} pz
 			</div>
-			<div className="font-mono text-muted-foreground text-sm">{fmt(kg)} kg</div>
+			<div className="font-mono text-muted-foreground text-sm">
+				{fmt(kg)} kg
+			</div>
 		</div>
 	);
 }
