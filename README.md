@@ -110,7 +110,7 @@ M1-Gestion-CarnicosGustavo/
 │   └── schema/            Snapshot de estructura de las tablas de la app
 ├── sql/                   Scripts SQL manuales (triggers, rebuild) — ver sql/README.md
 ├── docs/                  Documentación técnica
-└── .github/workflows/     CI: tests, lint (archivos modificados) y typecheck informativo
+└── .github/workflows/     CI: tests, lint (archivos modificados) y typecheck
 ```
 
 ### Flujo de datos
@@ -149,15 +149,14 @@ bun run dev --filter=web      # http://localhost:3001
 cd apps/web
 bun run test                 # tests de routers (PGlite en memoria, no toca la BD)
 bun run db:verify-drift      # schema.ts vs estructura real (PGlite, no toca la BD)
-bunx tsc --noEmit            # tipos (aún hay deuda; ver nota)
+bunx tsc --noEmit            # tipos (debe dar 0 errores)
 cd ../..
 bunx biome check <archivos tocados>
 bun run build --filter=web   # build real (lo que corre Vercel)
 ```
 
-> El CI de GitHub Actions corre tests y lint de los archivos modificados en cada PR;
-> el typecheck es informativo mientras exista deuda de tipos
-> (`next.config.mjs` mantiene `typescript.ignoreBuildErrors: true`).
+> El CI de GitHub Actions corre tests, lint de los archivos modificados y typecheck
+> en cada PR. El build de Next.js también falla si hay errores de tipos.
 
 ---
 

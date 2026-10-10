@@ -63,7 +63,23 @@ import type { RouterOutputs } from "@/lib/trpc/router";
 import { formatCurrency } from "@/lib/utils";
 
 type Order = RouterOutputs["orders"]["list"][number];
-type OrderStatus = "completed" | "pending" | "cancelled";
+// Estados que acepta orders.update (ver routers/orders.ts).
+const EDITABLE_ORDER_STATUSES = [
+	"COMPLETADA",
+	"pending",
+	"cancelled",
+	"PENDIENTE_PESAJE",
+	"LISTA_PARA_COBRO",
+] as const;
+type OrderStatus = (typeof EDITABLE_ORDER_STATUSES)[number];
+
+// "completed" es el valor heredado; el flujo actual usa "COMPLETADA".
+function toEditableStatus(status: string | null): OrderStatus | "" {
+	const s = status === "completed" ? "COMPLETADA" : (status ?? "pending");
+	return (EDITABLE_ORDER_STATUSES as readonly string[]).includes(s)
+		? (s as OrderStatus)
+		: "";
+}
 
 // Mapea cualquier estado interno a etiqueta y color visible en la lista
 function getOrderStatusDisplay(status: string): {
@@ -130,7 +146,8 @@ export default function OrdersPage() {
 
 	const orderEditSchema = z.object({
 		total: z.string().min(1, t("totalRequired")),
-		status: z.enum(["completed", "pending", "cancelled"]),
+		// "" = estado no editable desde este diálogo: no se modifica.
+		status: z.union([z.enum(EDITABLE_ORDER_STATUSES), z.literal("")]),
 	});
 
 	const statusFilterOptions: FilterOption[] = [
@@ -318,7 +335,7 @@ export default function OrdersPage() {
 	});
 
 	const form = useForm({
-		defaultValues: { total: "", status: "pending" as OrderStatus },
+		defaultValues: { total: "", status: "pending" as OrderStatus | "" },
 		validators: {
 			onSubmit: ({ value }) => {
 				const res = orderEditSchema.safeParse(value);
@@ -332,7 +349,7 @@ export default function OrdersPage() {
 				updateMutation.mutate({
 					id: editingId,
 					total_amount: Math.round(Number.parseFloat(value.total) * 100),
-					status: value.status,
+					...(value.status ? { status: value.status } : {}),
 				});
 			}
 		},
@@ -340,7 +357,12 @@ export default function OrdersPage() {
 
 	const filteredOrders = useMemo(() => {
 		return orders.filter((o) => {
-			if (statusFilter !== "all" && o.status !== statusFilter) return false;
+			if (
+				statusFilter !== "all" &&
+				o.status !== statusFilter &&
+				!(statusFilter === "completed" && o.status === "COMPLETADA")
+			)
+				return false;
 			const q = searchTerm.toLowerCase();
 			return (
 				(o.customer?.name ?? "").toLowerCase().includes(q) ||
@@ -354,7 +376,7 @@ export default function OrdersPage() {
 		setEditCustomerName(o.customer?.name ?? "");
 		form.reset();
 		form.setFieldValue("total", (Number(o.total_amount) / 100).toString());
-		form.setFieldValue("status", (o.status ?? "pending") as OrderStatus);
+		form.setFieldValue("status", toEditableStatus(o.status));
 		setIsDialogOpen(true);
 	};
 
@@ -670,7 +692,11 @@ export default function OrdersPage() {
 												error={
 													field.state.meta.errors.length > 0
 														? field.state.meta.errors
-																.map((e) => (e as { message?: string } | undefined)?.message ?? e)
+																.map(
+																	(e) =>
+																		(e as { message?: string } | undefined)
+																			?.message ?? e,
+																)
 																.join(", ")
 														: undefined
 												}
@@ -693,13 +719,11 @@ export default function OrdersPage() {
 												<SelectValue placeholder={t("selectStatus")} />
 											</SelectTrigger>
 											<SelectContent>
-												<SelectItem value="completed">
-													{tc("completed")}
-												</SelectItem>
-												<SelectItem value="pending">{tc("pending")}</SelectItem>
-												<SelectItem value="cancelled">
-													{tc("cancelled")}
-												</SelectItem>
+												{EDITABLE_ORDER_STATUSES.map((st) => (
+													<SelectItem key={st} value={st}>
+														{getOrderStatusDisplay(st).label}
+													</SelectItem>
+												))}
 											</SelectContent>
 										</Select>
 									</div>
@@ -755,7 +779,10 @@ export default function OrdersPage() {
 									</button>
 								</div>
 								<Combobox
-									items={customers.map((c) => ({ id: c.id, name: c.name ?? "" }))}
+									items={customers.map((c) => ({
+										id: c.id,
+										name: c.name ?? "",
+									}))}
 									placeholder="Selecciona cliente"
 									value={draftCustomer?.name ?? ""}
 									onSelect={(id) =>
@@ -948,24 +975,24 @@ export default function OrdersPage() {
 						{draftItems.some((p) => p.is_sellable_by_weight) ? (
 							<div className="flex items-center gap-2.5 rounded-xl bg-[var(--cg-amber-wash)] px-3.5 py-3">
 								<ScaleIcon className="h-4 w-4 shrink-0 text-cg-amber" />
-								<span className="text-sm font-semibold text-foreground/80">
-									Este pedido incluye piezas que requieren <b>pesaje</b> antes de
-									cobrar. Se enviarán a la cola de báscula.
+								<span className="font-semibold text-foreground/80 text-sm">
+									Este pedido incluye piezas que requieren <b>pesaje</b> antes
+									de cobrar. Se enviarán a la cola de báscula.
 								</span>
 							</div>
 						) : null}
 
 						{/* Total estimado — del diseño */}
 						<div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-3">
-							<span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+							<span className="font-semibold text-muted-foreground text-xs uppercase tracking-wider">
 								Total estimado
 							</span>
 							<div className="text-right">
-								<div className="text-2xl font-bold">
+								<div className="font-bold text-2xl">
 									{formatCurrency(Math.round(draftTotals.real * 100), locale)}
 								</div>
 								{draftTotals.estimated !== draftTotals.real ? (
-									<div className="text-xs text-muted-foreground">
+									<div className="text-muted-foreground text-xs">
 										Estimado:{" "}
 										{formatCurrency(
 											Math.round(draftTotals.estimated * 100),

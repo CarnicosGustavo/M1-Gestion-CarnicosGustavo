@@ -39,10 +39,10 @@ con inventario dual (piezas + kg), recetas de despiece y un asistente IA (Antone
   estructura en `supabase/schema/app_tables.sql`. `schema.ts` está alineado con la BD real:
   verificar con `cd apps/web && bun run db:verify-drift` (PGlite local, no toca prod).
   Nunca `drizzle-kit push` contra producción. Detalle en `sql/README.md`.
-- Nota: `next.config.mjs` tiene `typescript.ignoreBuildErrors: true` (queda deuda de tipos;
-  quitarlo solo cuando `bunx tsc --noEmit` en `apps/web` dé 0 errores).
+- Tipos: `bunx tsc --noEmit` en `apps/web` debe dar 0 errores (el build ya no ignora
+  errores de TypeScript).
 - **Calidad:** `bun run test` (apps/web; routers con PGlite en memoria) y CI en
-  `.github/workflows/ci.yml` (tests + lint de archivos modificados + typecheck informativo).
+  `.github/workflows/ci.yml` (tests + lint de archivos modificados + typecheck).
 
 ## 📁 Estructura (resumen)
 ```
