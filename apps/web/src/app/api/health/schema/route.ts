@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isHealthAuthorized } from "@/lib/health-auth";
 import postgres from "postgres";
 
 export const runtime = "nodejs";
@@ -63,7 +64,10 @@ function toSafeError(err: unknown) {
   return { name: "Error", message: "Unknown error" };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  if (!(await isHealthAuthorized(req))) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     return NextResponse.json(
