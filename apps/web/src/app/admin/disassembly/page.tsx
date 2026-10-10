@@ -30,7 +30,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertCircleIcon,
 	CheckCircleIcon,
-	LoaderIcon,
 	PackageIcon,
 	PrinterIcon,
 	ScissorsIcon,
@@ -63,8 +62,10 @@ export default function DisassemblyPage() {
 
 	const [isClient, setIsClient] = useState(false);
 
-	const [purchaseWholePigsAmericano, setPurchaseWholePigsAmericano] = useState<number>(0);
-	const [purchaseWholePigsNacional, setPurchaseWholePigsNacional] = useState<number>(0);
+	const [purchaseWholePigsAmericano, setPurchaseWholePigsAmericano] =
+		useState<number>(0);
+	const [purchaseWholePigsNacional, setPurchaseWholePigsNacional] =
+		useState<number>(0);
 	const [purchasePricePerKg, setPurchasePricePerKg] = useState<number>(0);
 	const [purchaseTotalWeightKg, setPurchaseTotalWeightKg] = useState<number>(0);
 	const [purchaseSupplier, setPurchaseSupplier] = useState<string>("");
@@ -167,7 +168,10 @@ export default function DisassemblyPage() {
 				.trim();
 		const score = (name: string) => {
 			const n = normalizeName(name);
-			if (n.includes("canal nacional lomo") || n.includes("canal nacional lado lomo"))
+			if (
+				n.includes("canal nacional lomo") ||
+				n.includes("canal nacional lado lomo")
+			)
 				return 0;
 			if (n.includes("nacional") && n.includes("lomo") && n.includes("canal"))
 				return 1;
@@ -194,7 +198,11 @@ export default function DisassemblyPage() {
 				n.includes("canal nacional lado espilomo")
 			)
 				return 0;
-			if (n.includes("nacional") && n.includes("espilomo") && n.includes("canal"))
+			if (
+				n.includes("nacional") &&
+				n.includes("espilomo") &&
+				n.includes("canal")
+			)
 				return 1;
 			return 999;
 		};
@@ -351,8 +359,10 @@ export default function DisassemblyPage() {
 	const [batchMode, setBatchMode] = useState<"CANAL_COMPLETO" | "MEDIA_CANAL">(
 		"CANAL_COMPLETO",
 	);
-	const [lastPurchaseStockPiecesByProductId, setLastPurchaseStockPiecesByProductId] =
-		useState<Record<number, number>>({});
+	const [
+		lastPurchaseStockPiecesByProductId,
+		setLastPurchaseStockPiecesByProductId,
+	] = useState<Record<number, number>>({});
 
 	const resetPurchaseInputs = () => {
 		setPurchaseWholePigsAmericano(0);
@@ -751,7 +761,10 @@ export default function DisassemblyPage() {
 
 			const candidates = products
 				.map((p) => ({ p, s: score(p.name) }))
-				.filter((x) => x.s !== null) as Array<{ p: (typeof products)[number]; s: number }>;
+				.filter((x) => x.s !== null) as Array<{
+				p: (typeof products)[number];
+				s: number;
+			}>;
 
 			candidates.sort((a, b) => a.s - b.s || a.p.id - b.p.id);
 			return candidates[0]?.p ?? null;
@@ -793,7 +806,9 @@ export default function DisassemblyPage() {
 			if ((p.stock_pieces ?? 0) <= 0) return false;
 			if (p.transformationTypes.length > 0) return false;
 			const n = normalizeProductName(p.name);
-			return n.includes("pierna") || n.includes("espaldilla") || n.includes("cabeza");
+			return (
+				n.includes("pierna") || n.includes("espaldilla") || n.includes("cabeza")
+			);
 		});
 
 		if (!parentsNeeding.length) {
@@ -869,16 +884,19 @@ export default function DisassemblyPage() {
 				}
 
 				if (n.includes("cabeza")) {
-					const headChildren: Array<{ name: string; pieces: number; tokens: string[] }> =
-						[
-							{ name: "MASCARA COMPLETA", pieces: 1, tokens: ["mascara"] },
-							{ name: "PAPADA", pieces: 1, tokens: ["papada"] },
-							{ name: "CACHETE", pieces: 2, tokens: ["cachete"] },
-							{ name: "LENGUA", pieces: 1, tokens: ["lengua"] },
-							{ name: "OREJAS", pieces: 2, tokens: ["orejas"] },
-							{ name: "TROMPA", pieces: 1, tokens: ["trompa"] },
-							{ name: "SESOS", pieces: 1, tokens: ["sesos"] },
-						];
+					const headChildren: Array<{
+						name: string;
+						pieces: number;
+						tokens: string[];
+					}> = [
+						{ name: "MASCARA COMPLETA", pieces: 1, tokens: ["mascara"] },
+						{ name: "PAPADA", pieces: 1, tokens: ["papada"] },
+						{ name: "CACHETE", pieces: 2, tokens: ["cachete"] },
+						{ name: "LENGUA", pieces: 1, tokens: ["lengua"] },
+						{ name: "OREJAS", pieces: 2, tokens: ["orejas"] },
+						{ name: "TROMPA", pieces: 1, tokens: ["trompa"] },
+						{ name: "SESOS", pieces: 1, tokens: ["sesos"] },
+					];
 
 					for (const c of headChildren) {
 						const child = findBestProductByTokens({ include: c.tokens });
@@ -915,7 +933,8 @@ export default function DisassemblyPage() {
 					include: ["pulpa"],
 					exclude: ["espaldilla", "jamon"],
 				});
-				if (!pulpaPierna && !pulpaFallback) missingTargets.push("PULPA DE PIERNA");
+				if (!pulpaPierna && !pulpaFallback)
+					missingTargets.push("PULPA DE PIERNA");
 			}
 			if (hasEspaldilla) {
 				const pulpaEspaldilla = findBestProductByTokens({
@@ -1251,7 +1270,7 @@ export default function DisassemblyPage() {
 			product: (typeof parentProducts)[number];
 			qty: number;
 			style: string;
-			rows: Array<(typeof canalAmerican.data extends Array<infer T> ? T : never)>;
+			rows: Array<typeof canalAmerican.data extends Array<infer T> ? T : never>;
 		}> = [];
 		if (mediasAmerican > 0 && canalAmericanoProduct) {
 			steps.push({
@@ -1474,7 +1493,8 @@ export default function DisassemblyPage() {
 									placeholder="Ej: 85.00"
 								/>
 								<div className="text-[10px] text-muted-foreground">
-									Se actualizará el costo del canal para estimar precios de piezas.
+									Se actualizará el costo del canal para estimar precios de
+									piezas.
 								</div>
 							</div>
 						</div>
@@ -1482,8 +1502,12 @@ export default function DisassemblyPage() {
 						{purchaseWholePigsAmericano > 0 || purchaseWholePigsNacional > 0 ? (
 							<div className="text-muted-foreground text-xs">
 								Genera:{" "}
-								{purchaseWholePigsAmericano > 0 ? `${purchaseWholePigsAmericano * 2} medias (Americano) ` : ""}
-								{purchaseWholePigsNacional > 0 ? `${purchaseWholePigsNacional} medias lado Lomo + ${purchaseWholePigsNacional} medias lado Espilomo (Nacional)` : ""}
+								{purchaseWholePigsAmericano > 0
+									? `${purchaseWholePigsAmericano * 2} medias (Americano) `
+									: ""}
+								{purchaseWholePigsNacional > 0
+									? `${purchaseWholePigsNacional} medias lado Lomo + ${purchaseWholePigsNacional} medias lado Espilomo (Nacional)`
+									: ""}
 							</div>
 						) : null}
 
@@ -1501,7 +1525,11 @@ export default function DisassemblyPage() {
 								<Button
 									size="sm"
 									onClick={() => {
-										if ((purchaseWholePigsAmericano <= 0 && purchaseWholePigsNacional <= 0) || purchaseTotalWeightKg <= 0)
+										if (
+											(purchaseWholePigsAmericano <= 0 &&
+												purchaseWholePigsNacional <= 0) ||
+											purchaseTotalWeightKg <= 0
+										)
 											return;
 										purchaseMutation.mutate({
 											purchaseMode: "CANAL_COMPLETO",
@@ -1510,13 +1538,15 @@ export default function DisassemblyPage() {
 											qtyNacionalLomo: 0,
 											qtyNacionalEspilomo: 0,
 											totalWeightKg: purchaseTotalWeightKg,
-											pricePerKg: purchasePricePerKg > 0 ? purchasePricePerKg : undefined,
+											pricePerKg:
+												purchasePricePerKg > 0 ? purchasePricePerKg : undefined,
 											supplier: purchaseSupplier || undefined,
 											notes: purchaseNotes || undefined,
 										});
 									}}
 									disabled={
-										(purchaseWholePigsAmericano <= 0 && purchaseWholePigsNacional <= 0) ||
+										(purchaseWholePigsAmericano <= 0 &&
+											purchaseWholePigsNacional <= 0) ||
 										purchaseTotalWeightKg <= 0 ||
 										purchaseMutation.isPending
 									}
@@ -1652,8 +1682,8 @@ export default function DisassemblyPage() {
 									{batchMode === "CANAL_COMPLETO"
 										? "Canal completo"
 										: "Media canal"}{" "}
-									| US: {mediasAmerican} medias | MX Lomo: {npLomoQty} medias | MX
-									Espilomo: {npEspilomoQty} medias
+									| US: {mediasAmerican} medias | MX Lomo: {npLomoQty} medias |
+									MX Espilomo: {npEspilomoQty} medias
 								</div>
 
 								<div className="space-y-4 border-t pt-4">
@@ -1940,7 +1970,10 @@ export default function DisassemblyPage() {
 										const effectiveType = fixed ?? type;
 										const disabled =
 											!effectiveType || qty <= 0 || qty > (p.stock_pieces ?? 0);
-										const leaveCompleteQty = Math.max(0, (p.stock_pieces ?? 0) - qty);
+										const leaveCompleteQty = Math.max(
+											0,
+											(p.stock_pieces ?? 0) - qty,
+										);
 										const byType = dashboardRecipesByParent.get(p.id);
 										const isCanal = isCanalName(p.name);
 
@@ -1957,7 +1990,10 @@ export default function DisassemblyPage() {
 											? effectiveChildrenForParent(p.id, effectiveType)
 											: [];
 										for (const r of selectedRecipes) {
-											const addPieces = expectedPieces(r.yieldQuantityPieces, qty);
+											const addPieces = expectedPieces(
+												r.yieldQuantityPieces,
+												qty,
+											);
 											const prev = outputMap.get(r.childId);
 											outputMap.set(r.childId, {
 												childId: r.childId,
@@ -1974,8 +2010,8 @@ export default function DisassemblyPage() {
 											(typeLower.includes("cuero") ||
 												parentNameLower.includes("panza") ||
 												parentNameLower.includes("cuero"));
-										const hasRecorte = Array.from(outputMap.values()).some((x) =>
-											x.childName.toLowerCase().includes("recorte"),
+										const hasRecorte = Array.from(outputMap.values()).some(
+											(x) => x.childName.toLowerCase().includes("recorte"),
 										);
 										if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
 											const prev = outputMap.get(recorteProduct.id);
@@ -2109,8 +2145,11 @@ export default function DisassemblyPage() {
 																/>
 																<div className="text-muted-foreground text-xs">
 																	Procesar:{" "}
-																	{Math.max(0, Math.min(qty, p.stock_pieces ?? 0))} ·
-																	Dejar: {leaveCompleteQty}
+																	{Math.max(
+																		0,
+																		Math.min(qty, p.stock_pieces ?? 0),
+																	)}{" "}
+																	· Dejar: {leaveCompleteQty}
 																</div>
 															</div>
 														) : (
@@ -2243,7 +2282,8 @@ export default function DisassemblyPage() {
 																							childId: recorteProduct.id,
 																							childName: recorteProduct.name,
 																							childStockPieces:
-																								recorteProduct.stock_pieces ?? 0,
+																								recorteProduct.stock_pieces ??
+																								0,
 																							addPieces:
 																								(prev?.addPieces ?? 0) +
 																								toSplit,
@@ -2338,7 +2378,9 @@ export default function DisassemblyPage() {
 																								<Button
 																									type="button"
 																									size="sm"
-																									variant={auto ? "default" : "outline"}
+																									variant={
+																										auto ? "default" : "outline"
+																									}
 																									onClick={() =>
 																										setDashboardIntermediateAuto(
 																											(prev) => ({
@@ -2348,7 +2390,9 @@ export default function DisassemblyPage() {
 																										)
 																									}
 																								>
-																									{auto ? "Auto-separar: Sí" : "Auto-separar: No"}
+																									{auto
+																										? "Auto-separar: Sí"
+																										: "Auto-separar: No"}
 																								</Button>
 																							</div>
 																						</div>
@@ -2360,10 +2404,12 @@ export default function DisassemblyPage() {
 																								<Select
 																									value={intermediateType}
 																									onValueChange={(v) =>
-																										setDashboardType((prev) => ({
-																											...prev,
-																											[o.childId]: v,
-																										}))
+																										setDashboardType(
+																											(prev) => ({
+																												...prev,
+																												[o.childId]: v,
+																											}),
+																										)
 																									}
 																									disabled={!auto}
 																								>
@@ -2371,11 +2417,16 @@ export default function DisassemblyPage() {
 																										<SelectValue />
 																									</SelectTrigger>
 																									<SelectContent>
-																										{availableInternalTypes.map((t) => (
-																											<SelectItem key={t} value={t}>
-																												{displayType(t)}
-																											</SelectItem>
-																										))}
+																										{availableInternalTypes.map(
+																											(t) => (
+																												<SelectItem
+																													key={t}
+																													value={t}
+																												>
+																													{displayType(t)}
+																												</SelectItem>
+																											),
+																										)}
 																									</SelectContent>
 																								</Select>
 																							) : (
@@ -2476,7 +2527,10 @@ export default function DisassemblyPage() {
 																				→ {r.childName}
 																			</div>
 																			<div className="shrink-0 text-muted-foreground">
-																				{yieldPiecesPerOne(r.yieldQuantityPieces)} pza(s)
+																				{yieldPiecesPerOne(
+																					r.yieldQuantityPieces,
+																				)}{" "}
+																				pza(s)
 																			</div>
 																		</div>
 																	))
@@ -2565,7 +2619,10 @@ export default function DisassemblyPage() {
 											type,
 										);
 										for (const r of selectedRecipes) {
-											const addPieces = expectedPieces(r.yieldQuantityPieces, 1);
+											const addPieces = expectedPieces(
+												r.yieldQuantityPieces,
+												1,
+											);
 											const prev = outputMap.get(r.childId);
 											outputMap.set(r.childId, {
 												childId: r.childId,
@@ -2582,8 +2639,8 @@ export default function DisassemblyPage() {
 											(typeLower.includes("cuero") ||
 												parentNameLower.includes("panza") ||
 												parentNameLower.includes("cuero"));
-										const hasRecorte = Array.from(outputMap.values()).some((x) =>
-											x.childName.toLowerCase().includes("recorte"),
+										const hasRecorte = Array.from(outputMap.values()).some(
+											(x) => x.childName.toLowerCase().includes("recorte"),
 										);
 										if (shouldAutoRecorte && !hasRecorte && recorteProduct) {
 											const prev = outputMap.get(recorteProduct.id);

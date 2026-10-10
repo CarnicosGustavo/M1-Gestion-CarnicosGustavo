@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
+import {
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@finopenpos/ui/components/card";
 import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
 import {
 	Select,
 	SelectContent,
@@ -12,13 +16,21 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@finopenpos/ui/components/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
-import { BanknoteIcon, ReceiptTextIcon } from "lucide-react";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@finopenpos/ui/components/table";
 import { cn } from "@finopenpos/ui/lib/utils";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BanknoteIcon, ReceiptTextIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { TicketModal } from "@/components/ticket-modal";
+import { useTRPC } from "@/lib/trpc/client";
 
 const money = (n: number) =>
 	n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -38,7 +50,9 @@ export default function CheckoutPage() {
 		...trpc.orders.getReadyToCharge.queryOptions(),
 		refetchInterval: 10000,
 	});
-	const { data: paymentMethods } = useQuery(trpc.paymentMethods.list.queryOptions()) as {
+	const { data: paymentMethods } = useQuery(
+		trpc.paymentMethods.list.queryOptions(),
+	) as {
 		data: { id: number; name: string }[] | undefined;
 	};
 
@@ -53,11 +67,14 @@ export default function CheckoutPage() {
 	useEffect(() => {
 		if (appliedUrlRef.current || !ordersReady) return;
 		try {
-			const ord = parseInt(
+			const ord = Number.parseInt(
 				new URLSearchParams(window.location.search).get("order") ?? "",
 				10,
 			);
-			if (Number.isFinite(ord) && (ordersReady as any[]).some((o) => o.id === ord)) {
+			if (
+				Number.isFinite(ord) &&
+				(ordersReady as any[]).some((o) => o.id === ord)
+			) {
 				setSelectedOrderId(ord);
 				appliedUrlRef.current = true;
 			}
@@ -72,7 +89,8 @@ export default function CheckoutPage() {
 			const next: Record<number, string> = {};
 			for (const it of selectedOrder.items) {
 				const saved = it.savedPriceKg != null ? Number(it.savedPriceKg) : null;
-				const current = it.unitPrice != null ? Number(it.unitPrice) / 100 : null;
+				const current =
+					it.unitPrice != null ? Number(it.unitPrice) / 100 : null;
 				const val = saved ?? current ?? 0;
 				next[it.id] = val > 0 ? String(val) : "";
 			}
@@ -100,7 +118,7 @@ export default function CheckoutPage() {
 		if (!selectedOrder) return 0;
 		return selectedOrder.items.reduce((sum: number, it: any) => {
 			const kg = Number(it.quantityKg) || 0;
-			const price = parseFloat(prices[it.id] || "0") || 0;
+			const price = Number.parseFloat(prices[it.id] || "0") || 0;
 			return sum + kg * price;
 		}, 0);
 	}, [selectedOrder, prices]);
@@ -110,12 +128,15 @@ export default function CheckoutPage() {
 		const items = selectedOrder.items.map((it: any) => ({
 			orderItemId: it.id,
 			productId: it.productId,
-			pricePerKg: parseFloat(prices[it.id] || "0") || 0,
+			pricePerKg: Number.parseFloat(prices[it.id] || "0") || 0,
 		}));
 		chargeMut.mutate({
 			orderId: selectedOrder.id,
 			paymentType: payType,
-			paymentMethodId: payType === "contado" ? parseInt(methodId) || undefined : undefined,
+			paymentMethodId:
+				payType === "contado"
+					? Number.parseInt(methodId) || undefined
+					: undefined,
 			items,
 		});
 	}
@@ -143,6 +164,7 @@ export default function CheckoutPage() {
 							<div className="divide-y">
 								{list.map((o) => (
 									<button
+										type="button"
 										key={o.id}
 										onClick={() => setSelectedOrderId(o.id)}
 										className={cn(
@@ -180,17 +202,22 @@ export default function CheckoutPage() {
 											<TableRow className="bg-muted/50">
 												<TableHead>Producto</TableHead>
 												<TableHead className="text-center">Kg</TableHead>
-												<TableHead className="text-center w-[28%]">Precio / Kg</TableHead>
+												<TableHead className="text-center w-[28%]">
+													Precio / Kg
+												</TableHead>
 												<TableHead className="text-right">Subtotal</TableHead>
 											</TableRow>
 										</TableHeader>
 										<TableBody>
 											{selectedOrder.items.map((it: any) => {
 												const kg = Number(it.quantityKg) || 0;
-												const price = parseFloat(prices[it.id] || "0") || 0;
+												const price =
+													Number.parseFloat(prices[it.id] || "0") || 0;
 												return (
 													<TableRow key={it.id}>
-														<TableCell className="font-medium">{it.productName}</TableCell>
+														<TableCell className="font-medium">
+															{it.productName}
+														</TableCell>
 														<TableCell className="text-center font-mono">
 															{kg.toFixed(3)}
 														</TableCell>
@@ -200,7 +227,10 @@ export default function CheckoutPage() {
 																step="0.01"
 																value={prices[it.id] ?? ""}
 																onChange={(e) =>
-																	setPrices((p) => ({ ...p, [it.id]: e.target.value }))
+																	setPrices((p) => ({
+																		...p,
+																		[it.id]: e.target.value,
+																	}))
 																}
 																onFocus={(e) => e.currentTarget.select()}
 																className="h-9 text-center"
@@ -276,7 +306,8 @@ export default function CheckoutPage() {
 									{chargeMut.isPending ? "Cobrando…" : `Cobrar ${money(total)}`}
 								</Button>
 								<p className="text-center text-[11px] text-muted-foreground">
-									Al cobrar se guardan estos precios para el próximo pedido del cliente.
+									Al cobrar se guardan estos precios para el próximo pedido del
+									cliente.
 								</p>
 							</div>
 						</>

@@ -15,6 +15,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@finopenpos/ui/components/tooltip";
+import { cn } from "@finopenpos/ui/lib/utils";
 import {
 	BanknoteIcon,
 	BookOpenIcon,
@@ -49,10 +50,9 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useId, useState } from "react";
 import { logout } from "@/app/login/actions";
-import { cn } from "@finopenpos/ui/lib/utils";
 import { AntonellaProvider } from "@/components/antonella-dock";
-import { NotificationBell } from "@/components/notification-bell";
 import { RouteAntonellaSlot } from "@/components/antonella-route-slot";
+import { NotificationBell } from "@/components/notification-bell";
 import { type Palette, useTheme } from "@/components/theme-provider";
 import { CLIENT_NAME } from "@/lib/constants";
 
@@ -149,7 +149,11 @@ function ThemeControl() {
 
 	const palettes: { id: Palette; name: string; swatch: string[] }[] = [
 		{ id: "warm", name: "Cálida", swatch: ["#9E3326", "#211C19", "#ECE5D8"] },
-		{ id: "neutral", name: "Neutra", swatch: ["#C0271C", "#161616", "#E7E7E5"] },
+		{
+			id: "neutral",
+			name: "Neutra",
+			swatch: ["#C0271C", "#161616", "#E7E7E5"],
+		},
 	];
 
 	return (
@@ -209,10 +213,12 @@ function ThemeControl() {
 							Modo
 						</p>
 						<div className="flex gap-2">
-							{([
-								["light", "Claro", SunIcon],
-								["dark", "Oscuro", MoonIcon],
-							] as const).map(([id, lab, Ic]) => (
+							{(
+								[
+									["light", "Claro", SunIcon],
+									["dark", "Oscuro", MoonIcon],
+								] as const
+							).map(([id, lab, Ic]) => (
 								<button
 									key={id}
 									type="button"

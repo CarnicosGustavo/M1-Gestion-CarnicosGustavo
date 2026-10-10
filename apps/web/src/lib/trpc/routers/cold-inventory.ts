@@ -1,9 +1,9 @@
-import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
-import { db } from "@/lib/db";
-import { products, inventoryTransactions } from "@/lib/db/schema";
-import { eq, and, sql, or, gt } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { and, eq, gt, or, sql } from "drizzle-orm";
+import { z } from "zod/v4";
+import { db } from "@/lib/db";
+import { inventoryTransactions, products } from "@/lib/db/schema";
+import { protectedProcedure, router } from "../init";
 
 export const coldInventoryRouter = router({
 	// Productos con stock fresco o congelado
@@ -50,9 +50,16 @@ export const coldInventoryRouter = router({
 					.from(products)
 					.where(eq(products.id, input.productId))
 					.limit(1);
-				if (!p) throw new TRPCError({ code: "NOT_FOUND", message: "Producto no encontrado" });
+				if (!p)
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Producto no encontrado",
+					});
 
-				if (Number(p.stock_kg) < input.kg || (p.stock_pieces ?? 0) < input.pieces) {
+				if (
+					Number(p.stock_kg) < input.kg ||
+					(p.stock_pieces ?? 0) < input.pieces
+				) {
 					throw new TRPCError({
 						code: "PRECONDITION_FAILED",
 						message: "Stock fresco insuficiente para enviar a frío",
@@ -97,9 +104,16 @@ export const coldInventoryRouter = router({
 					.from(products)
 					.where(eq(products.id, input.productId))
 					.limit(1);
-				if (!p) throw new TRPCError({ code: "NOT_FOUND", message: "Producto no encontrado" });
+				if (!p)
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Producto no encontrado",
+					});
 
-				if (Number(p.stock_kg_frozen) < input.kg || p.stock_pieces_frozen < input.pieces) {
+				if (
+					Number(p.stock_kg_frozen) < input.kg ||
+					p.stock_pieces_frozen < input.pieces
+				) {
 					throw new TRPCError({
 						code: "PRECONDITION_FAILED",
 						message: "Stock congelado insuficiente para descongelar",

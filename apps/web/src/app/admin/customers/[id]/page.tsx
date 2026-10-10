@@ -1,13 +1,13 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@finopenpos/ui/components/card";
-import { Button } from "@finopenpos/ui/components/button";
 import { Badge } from "@finopenpos/ui/components/badge";
-import { Skeleton } from "@finopenpos/ui/components/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
-import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
+import { Button } from "@finopenpos/ui/components/button";
+import {
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+} from "@finopenpos/ui/components/card";
 import {
 	Dialog,
 	DialogContent,
@@ -15,6 +15,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
 import {
 	Select,
 	SelectContent,
@@ -22,23 +24,33 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@finopenpos/ui/components/select";
+import { Skeleton } from "@finopenpos/ui/components/skeleton";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@finopenpos/ui/components/table";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ArrowLeftIcon,
-	PhoneIcon,
-	MapPinIcon,
-	ReceiptTextIcon,
-	TagIcon,
-	HandCoinsIcon,
-	PrinterIcon,
 	BanknoteIcon,
 	CheckIcon,
+	HandCoinsIcon,
+	MapPinIcon,
+	PhoneIcon,
+	PrinterIcon,
+	ReceiptTextIcon,
+	TagIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCrudMutation } from "@/hooks/use-crud-mutation";
-import { TicketModal } from "@/components/ticket-modal";
+import { use, useEffect, useState } from "react";
 import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
+import { TicketModal } from "@/components/ticket-modal";
+import { useCrudMutation } from "@/hooks/use-crud-mutation";
+import { useTRPC } from "@/lib/trpc/client";
 
 const money = (cents: number) =>
 	(cents / 100).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -59,9 +71,13 @@ function statusLabel(s: string): { label: string; color: string } {
 	}
 }
 
-export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function CustomerDetailPage({
+	params,
+}: {
+	params: Promise<{ id: string }>;
+}) {
 	const { id } = use(params);
-	const customerId = parseInt(id);
+	const customerId = Number.parseInt(id);
 	const trpc = useTRPC();
 	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
 	const [receiptPaymentId, setReceiptPaymentId] = useState<number | null>(null);
@@ -132,7 +148,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 						</Button>
 					</Link>
 					<div>
-						<h1 className="text-2xl font-bold">{c.name ?? `Cliente #${c.id}`}</h1>
+						<h1 className="text-2xl font-bold">
+							{c.name ?? `Cliente #${c.id}`}
+						</h1>
 						<div className="flex items-center gap-3 text-sm text-muted-foreground">
 							{c.phone && (
 								<span className="flex items-center gap-1">
@@ -149,8 +167,15 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 				</div>
 				<div className="flex gap-2">
 					{waPhone && (
-						<a href={`https://wa.me/${waPhone}`} target="_blank" rel="noreferrer">
-							<Button variant="outline" className="border-[#25D366] text-[#1da851]">
+						<a
+							href={`https://wa.me/${waPhone}`}
+							target="_blank"
+							rel="noreferrer"
+						>
+							<Button
+								variant="outline"
+								className="border-[#25D366] text-[#1da851]"
+							>
 								WhatsApp
 							</Button>
 						</a>
@@ -185,8 +210,13 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 				<Card>
 					<CardContent className="pt-6">
 						<p className="text-xs text-muted-foreground">Saldo por cobrar</p>
-						<p className={`text-2xl font-bold ${data.balance > 0 ? "text-red-600" : ""}`}>
-							{data.balance.toLocaleString("es-MX", { style: "currency", currency: "MXN" })}
+						<p
+							className={`text-2xl font-bold ${data.balance > 0 ? "text-red-600" : ""}`}
+						>
+							{data.balance.toLocaleString("es-MX", {
+								style: "currency",
+								currency: "MXN",
+							})}
 						</p>
 					</CardContent>
 				</Card>
@@ -210,7 +240,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 								Este cliente tiene saldo pendiente. Registra un abono.
 							</span>
 						</span>
-						<Button size="sm" variant="outline" className="border-red-300 text-red-700">
+						<Button
+							size="sm"
+							variant="outline"
+							className="border-red-300 text-red-700"
+						>
 							<BanknoteIcon className="w-4 h-4 mr-2" />
 							Abonar
 						</Button>
@@ -246,18 +280,25 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 										return (
 											<TableRow key={o.id}>
 												<TableCell className="font-medium">
-													<Link href={`/admin/orders/${o.id}`} className="hover:underline">
+													<Link
+														href={`/admin/orders/${o.id}`}
+														className="hover:underline"
+													>
 														#{o.id}
 													</Link>
 												</TableCell>
 												<TableCell>
-													{o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "—"}
+													{o.createdAt
+														? new Date(o.createdAt).toLocaleDateString()
+														: "—"}
 												</TableCell>
 												<TableCell className="text-right font-semibold">
 													{money(o.totalAmount)}
 												</TableCell>
 												<TableCell className="text-center">
-													<Badge className={`${st.color} border-0`}>{st.label}</Badge>
+													<Badge className={`${st.color} border-0`}>
+														{st.label}
+													</Badge>
 												</TableCell>
 												<TableCell className="text-center">
 													<Button
@@ -438,10 +479,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 							Nuevo saldo
 						</span>
 						<span className="text-xl font-bold text-red-600">
-							{(data.balance - (Number.parseFloat(montoAbono) || 0)).toLocaleString(
-								"es-MX",
-								{ style: "currency", currency: "MXN" },
-							)}
+							{(
+								data.balance - (Number.parseFloat(montoAbono) || 0)
+							).toLocaleString("es-MX", { style: "currency", currency: "MXN" })}
 						</span>
 					</div>
 					<DialogFooter>

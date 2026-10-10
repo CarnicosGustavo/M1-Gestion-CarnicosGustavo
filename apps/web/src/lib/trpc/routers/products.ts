@@ -315,8 +315,7 @@ export const productsRouter = router({
 				updated_at: new Date(),
 			};
 
-			if (in_stock !== undefined)
-				updateData.in_stock = Math.round(in_stock);
+			if (in_stock !== undefined) updateData.in_stock = Math.round(in_stock);
 			if (stock_kg !== undefined) updateData.stock_kg = stock_kg.toFixed(3);
 			if (price_per_kg !== undefined)
 				updateData.price_per_kg = price_per_kg.toFixed(2);
@@ -437,7 +436,9 @@ export const productsRouter = router({
 
 				const stockKg = Number(parent.stock_kg);
 				const parentAvgWeight =
-					(parent.stock_pieces ?? 0) > 0 ? stockKg / (parent.stock_pieces ?? 0) : 0;
+					(parent.stock_pieces ?? 0) > 0
+						? stockKg / (parent.stock_pieces ?? 0)
+						: 0;
 				const isFullDisassembly = quantityToProcess === parent.stock_pieces;
 				const kgToRemove = useRealWeightMode
 					? isFullDisassembly
@@ -646,7 +647,8 @@ export const productsRouter = router({
 					await tx
 						.update(products)
 						.set({
-							stock_pieces: (recorteProduct.stock_pieces ?? 0) + quantityToProcess,
+							stock_pieces:
+								(recorteProduct.stock_pieces ?? 0) + quantityToProcess,
 						})
 						.where(eq(products.id, recorteProduct.id));
 
@@ -879,7 +881,9 @@ export const productsRouter = router({
 
 					const stockKg = Number(parent.stock_kg);
 					const parentAvgWeight =
-						(parent.stock_pieces ?? 0) > 0 ? stockKg / (parent.stock_pieces ?? 0) : 0;
+						(parent.stock_pieces ?? 0) > 0
+							? stockKg / (parent.stock_pieces ?? 0)
+							: 0;
 					const isFullDisassembly =
 						args.quantityToProcess === parent.stock_pieces;
 					const kgToRemove = useRealWeightMode
@@ -896,7 +900,8 @@ export const productsRouter = router({
 						});
 					}
 
-					const nextPieces = (parent.stock_pieces ?? 0) - args.quantityToProcess;
+					const nextPieces =
+						(parent.stock_pieces ?? 0) - args.quantityToProcess;
 					const nextWeighedPieces = Math.min(
 						parent.weighed_pieces ?? 0,
 						nextPieces,
@@ -1088,7 +1093,9 @@ export const productsRouter = router({
 
 				const canalStockKg = Number(canal.stock_kg);
 				const canalAvgWeight =
-					(canal.stock_pieces ?? 0) > 0 ? canalStockKg / (canal.stock_pieces ?? 0) : 0;
+					(canal.stock_pieces ?? 0) > 0
+						? canalStockKg / (canal.stock_pieces ?? 0)
+						: 0;
 				const isFullDisassembly = input.qtyProcessCanal === canal.stock_pieces;
 				const kgToRemove = useRealWeightMode
 					? isFullDisassembly
@@ -1111,7 +1118,8 @@ export const productsRouter = router({
 					});
 				}
 
-				const nextCanalPieces = (canal.stock_pieces ?? 0) - input.qtyProcessCanal;
+				const nextCanalPieces =
+					(canal.stock_pieces ?? 0) - input.qtyProcessCanal;
 				const nextCanalWeighedPieces = Math.min(
 					canal.weighed_pieces ?? 0,
 					nextCanalPieces,

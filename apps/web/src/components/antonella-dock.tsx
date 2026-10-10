@@ -23,7 +23,8 @@ const Ctx = createContext<AntonellaCtx | null>(null);
 
 export function useAntonella() {
 	const ctx = useContext(Ctx);
-	if (!ctx) throw new Error("useAntonella debe usarse dentro de AntonellaProvider");
+	if (!ctx)
+		throw new Error("useAntonella debe usarse dentro de AntonellaProvider");
 	return ctx;
 }
 
@@ -62,7 +63,8 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 	}, [history.isLoading]);
 
 	useEffect(() => {
-		if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+		if (bodyRef.current)
+			bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
 	}, [messages, open]);
 
 	const chatMutation = useMutation(
@@ -216,7 +218,11 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 						Conoce inventario · despiece · pesaje · pedidos · cobranza
 					</p>
 					{messages.map((m) => (
-						<MessageBubble key={m.id} msg={m} onConfirm={() => confirmAction(m)} />
+						<MessageBubble
+							key={m.id}
+							msg={m}
+							onConfirm={() => confirmAction(m)}
+						/>
 					))}
 					{isLoading && (
 						<div className="mb-3 flex items-center gap-2 text-muted-foreground text-sm">

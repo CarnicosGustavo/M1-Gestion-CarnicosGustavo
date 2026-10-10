@@ -11,9 +11,9 @@ import {
 	productTransformations,
 } from "@/lib/db/schema";
 import {
-	protectedProcedure,
 	adminProcedure,
 	almacenProcedure,
+	protectedProcedure,
 	router,
 } from "../init";
 
@@ -157,7 +157,10 @@ export const inventoryRouter = router({
 				process.env.SEED_TOKEN?.trim() ??
 				"";
 			if (!expected || input.adminPassword.trim() !== expected) {
-				throw new TRPCError({ code: "UNAUTHORIZED", message: "Contraseña inválida" });
+				throw new TRPCError({
+					code: "UNAUTHORIZED",
+					message: "Contraseña inválida",
+				});
 			}
 
 			// Sufijo de fecha/hora solo con dígitos (seguro para nombre de tabla)
@@ -179,7 +182,9 @@ export const inventoryRouter = router({
 					"transactions",
 				]) {
 					await tx.execute(
-						sql.raw(`CREATE TABLE IF NOT EXISTS bkp_${t}_${suffix} AS TABLE ${t}`),
+						sql.raw(
+							`CREATE TABLE IF NOT EXISTS bkp_${t}_${suffix} AS TABLE ${t}`,
+						),
 					);
 				}
 
@@ -241,7 +246,10 @@ export const inventoryRouter = router({
 
 				const deltaKg = input.applyToInventory ? input.weightKg : 0;
 				if (input.applyToInventory && input.piecesWeighed > 0) {
-					const pendingPieces = Math.max(0, (p.stock_pieces ?? 0) - (p.weighed_pieces ?? 0));
+					const pendingPieces = Math.max(
+						0,
+						(p.stock_pieces ?? 0) - (p.weighed_pieces ?? 0),
+					);
 					if (input.piecesWeighed > pendingPieces) {
 						throw new TRPCError({
 							code: "BAD_REQUEST",
@@ -264,7 +272,7 @@ export const inventoryRouter = router({
 								p.stock_pieces ?? 0,
 								(p.weighed_pieces ?? 0) + input.piecesWeighed,
 							)
-						: p.weighed_pieces ?? 0;
+						: (p.weighed_pieces ?? 0);
 
 					await tx
 						.update(products)
@@ -529,7 +537,10 @@ export const inventoryRouter = router({
 				.where(
 					and(
 						input?.parentProductId
-							? eq(productTransformations.parent_product_id, input.parentProductId)
+							? eq(
+									productTransformations.parent_product_id,
+									input.parentProductId,
+								)
 							: undefined,
 						input?.transformationType && input.transformationType !== "all"
 							? eq(
@@ -814,11 +825,7 @@ export const inventoryRouter = router({
 					.from(products);
 				// Match por nombre sin acentos/Ñ y en mayúsculas (CAÑA == CANA)
 				const norm = (s: string) =>
-					s
-						.normalize("NFD")
-						.replace(/[̀-ͯ]/g, "")
-						.trim()
-						.toUpperCase();
+					s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase();
 				const byName = new Map(all.map((p) => [norm(p.name), p.id]));
 				const missing = new Set<string>();
 				const findId = (name: string): number | undefined => {

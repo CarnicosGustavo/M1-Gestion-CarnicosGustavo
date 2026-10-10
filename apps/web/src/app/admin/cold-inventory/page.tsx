@@ -1,10 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Card, CardContent } from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
-import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
+import { Card, CardContent } from "@finopenpos/ui/components/card";
 import {
 	Dialog,
 	DialogContent,
@@ -12,10 +9,13 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
-import { SnowflakeIcon, FlameIcon } from "lucide-react";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FlameIcon, SnowflakeIcon } from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useTRPC } from "@/lib/trpc/client";
 
 type Dir = "toFrozen" | "toFresh";
 
@@ -76,8 +76,8 @@ export default function ColdInventoryPage() {
 		if (!dialog) return;
 		const payload = {
 			productId: dialog.product.id,
-			kg: parseFloat(kg) || 0,
-			pieces: parseInt(pieces) || 0,
+			kg: Number.parseFloat(kg) || 0,
+			pieces: Number.parseInt(pieces) || 0,
 		};
 		if (payload.kg <= 0 && payload.pieces <= 0) {
 			toast.error("Indica kg o piezas a transferir");
@@ -92,8 +92,8 @@ export default function ColdInventoryPage() {
 			<div>
 				<h1 className="text-2xl font-bold">Inventario Frío</h1>
 				<p className="text-sm text-muted-foreground">
-					Solo el inventario fresco se vende. Lo que no se vende se envía a frío; para vender de
-					frío, primero descongélalo a fresco.
+					Solo el inventario fresco se vende. Lo que no se vende se envía a
+					frío; para vender de frío, primero descongélalo a fresco.
 				</p>
 			</div>
 
@@ -123,7 +123,9 @@ export default function ColdInventoryPage() {
 							{/* Estado dual: Fresco (ámbar) | Frío (azul) — del diseño */}
 							<div className="mb-4 grid grid-cols-2 gap-3">
 								<div className="rounded-lg border border-cg-amber bg-cg-amber-wash p-3 text-center">
-									<div className="text-[11px] text-muted-foreground">Fresco</div>
+									<div className="text-[11px] text-muted-foreground">
+										Fresco
+									</div>
 									<div className="text-xl font-bold text-cg-amber">
 										{Number(p.stockKg).toFixed(1)}
 									</div>
@@ -149,8 +151,7 @@ export default function ColdInventoryPage() {
 									className="border-cg-blue text-cg-blue hover:bg-cg-blue-wash"
 									onClick={() => openDialog("toFrozen", p)}
 								>
-									<SnowflakeIcon className="mr-1 h-4 w-4" />
-									A frío
+									<SnowflakeIcon className="mr-1 h-4 w-4" />A frío
 								</Button>
 								<Button
 									variant="outline"
@@ -158,8 +159,7 @@ export default function ColdInventoryPage() {
 									className="border-cg-amber text-cg-amber hover:bg-cg-amber-wash"
 									onClick={() => openDialog("toFresh", p)}
 								>
-									<FlameIcon className="mr-1 h-4 w-4" />
-									A fresco
+									<FlameIcon className="mr-1 h-4 w-4" />A fresco
 								</Button>
 							</div>
 						</Card>
@@ -172,8 +172,10 @@ export default function ColdInventoryPage() {
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>
-							{dialog?.dir === "toFrozen" ? "Enviar a frío" : "Descongelar a fresco"} —{" "}
-							{dialog?.product?.name}
+							{dialog?.dir === "toFrozen"
+								? "Enviar a frío"
+								: "Descongelar a fresco"}{" "}
+							— {dialog?.product?.name}
 						</DialogTitle>
 					</DialogHeader>
 					<div className="grid gap-4 py-2">
@@ -184,7 +186,12 @@ export default function ColdInventoryPage() {
 						</div>
 						<div className="space-y-1">
 							<Label>Kg a transferir</Label>
-							<Input type="number" value={kg} onChange={(e) => setKg(e.target.value)} placeholder="0.0" />
+							<Input
+								type="number"
+								value={kg}
+								onChange={(e) => setKg(e.target.value)}
+								placeholder="0.0"
+							/>
 						</div>
 						<div className="space-y-1">
 							<Label>Piezas a transferir</Label>
