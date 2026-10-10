@@ -34,7 +34,11 @@ con inventario dual (piezas + kg), recetas de despiece y un asistente IA (Antone
 - **Auth:** **Better-Auth**. **UI:** **Tailwind v4 + shadcn/ui** (`@finopenpos/ui`).
 - **IA:** **Anthropic SDK** (Claude) — asistente "Antonella".
 - **Monorepo:** **Turborepo + Bun**. **Deploy:** Vercel.
-- Migraciones: **Drizzle** (`apps/web/drizzle/`, baseline adoptado). Triggers/seed en `sql/`.
+- Migraciones: **Drizzle** (`apps/web/drizzle/`: baseline + `0001` no-op de alineación).
+  Historial de migraciones aplicadas por Supabase en `supabase/migrations/`; snapshot de
+  estructura en `supabase/schema/app_tables.sql`. `schema.ts` está alineado con la BD real:
+  verificar con `cd apps/web && bun run db:verify-drift` (PGlite local, no toca prod).
+  Nunca `drizzle-kit push` contra producción. Detalle en `sql/README.md`.
 - Nota: `next.config.mjs` tiene `typescript.ignoreBuildErrors: true` (hay deuda de tipos
   preexistente; la compilación pasa igual).
 
