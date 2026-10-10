@@ -11,6 +11,7 @@ triggers que viven en la base de datos.
 |---------|----------|-----------------|
 | `01_sync_web_orders_trigger.sql` | Trigger que sincroniza `web_orders` → `orders` cuando llega un pedido del sitio web / app de pedidos. Vincula `web_order_id`, busca `product_id` por nombre, calcula `requires_weighing`. | Una vez (ya aplicado). Re-ejecutar solo si se modifica el trigger. |
 | `02_fix_trigger_pedidos_app.sql` | Parche al trigger anterior: acepta también `source='pedidos-app'` (pedidos.carnicosgustavo.com), no solo `'website'`. | Una vez (ya aplicado, 30 may 2026). |
+| `03_security_hardening.sql` | Cierra huecos del advisor de seguridad: RLS en `bkp_uid_migration_20260618`, `credit_balances` → `security_invoker` + sin acceso anon/authenticated, revoca EXECUTE de anon/authenticated/PUBLIC en las funciones SECURITY DEFINER (`importar_saldo_legacy`, `validar_saldo_legacy`, `sync_web_order_to_dashboard`), fija `search_path` en funciones de staging. No destructivo; incluye verificación y rollback. | Una vez (ya aplicado en producción el 10 oct 2026, migración `security_hardening_20261010`). |
 
 ## Rebuild (reconstrucción del catálogo — históricos)
 
