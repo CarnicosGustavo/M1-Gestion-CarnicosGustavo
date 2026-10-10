@@ -37,7 +37,7 @@ Contexto de negocio:
 - Productos: CANALES (americano, nacional lomo, nacional espilomo)
 - Despiece: CANALES → PIERNAS, LOMOS, CUEROS, etc.
 - Segundo nivel: PIERNA → JAMON (+ variantes S/H, C/G, PINTO)
-- Demanda: órdenes abiertas (status != CANCELADA/COMPLETADA/etc)
+- Demanda: órdenes abiertas (status NOT IN cancelled/completed/COMPLETADA/delivered/paid)
 - Stock: pieces (pz) + kg calculados
 - Recetas: definidas en product_transformations`;
 
@@ -816,7 +816,7 @@ async function getDemand(period: string, userId: string): Promise<string> {
 			and(
 				eq(orders.user_uid, userId),
 				// Status NOT IN (cancelled, completed, delivered, paid)
-				sql`${orders.status} NOT IN ('CANCELADA', 'COMPLETADA', 'ENTREGADA', 'COBRADA')`,
+				sql`${orders.status} NOT IN ('cancelled', 'completed', 'COMPLETADA', 'delivered', 'paid')`,
 				sql`${orders.created_at} >= ${startDate}`,
 			),
 		);
@@ -952,7 +952,7 @@ async function getCoverage(userId: string): Promise<string> {
 		.where(
 			and(
 				eq(orders.user_uid, userId),
-				sql`${orders.status} NOT IN ('CANCELADA', 'COMPLETADA', 'ENTREGADA', 'COBRADA')`,
+				sql`${orders.status} NOT IN ('cancelled', 'completed', 'COMPLETADA', 'delivered', 'paid')`,
 			),
 		)
 		.groupBy(products.name);
@@ -1023,7 +1023,7 @@ async function forecastDemand(days: number, userId: string): Promise<string> {
 			and(
 				eq(orders.user_uid, userId),
 				sql`${orders.created_at} >= ${fourWeeksAgo}`,
-				sql`${orders.status} NOT IN ('CANCELADA')`,
+				sql`${orders.status} NOT IN ('cancelled')`,
 			),
 		)
 		.groupBy(products.name, orders.created_at);
