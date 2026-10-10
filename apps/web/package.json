@@ -23,7 +23,6 @@
     "@finopenpos/api": "workspace:*",
     "@finopenpos/auth": "workspace:*",
     "@finopenpos/db": "workspace:*",
-    "@finopenpos/fiscal": "workspace:*",
     "@finopenpos/ui": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
