@@ -9,6 +9,7 @@ import {
 	yieldSheetItems,
 	yieldSheets,
 } from "@/lib/db/schema";
+import { despieceRecipeFilter } from "@/lib/recipes/effective-recipes";
 import { protectedProcedure, router } from "../init";
 
 const itemInput = z.object({
@@ -779,8 +780,9 @@ export const yieldsRouter = router({
 			childStockPieces: prodMap.get(r.childId)?.stockPieces ?? 0,
 			childStockKg: Number(prodMap.get(r.childId)?.stockKg ?? 0),
 		});
+		// Nivel 1 (lo que genera despiezar el canal): sin variantes.
 		const recipes = allRecRows
-			.filter((r) => canalIdSet.has(r.parentId))
+			.filter((r) => canalIdSet.has(r.parentId) && r.isVariant !== true)
 			.map(mapRec);
 		// Sub-despieces de cualquier pieza no-canal (la UI los busca por parentId)
 		const subRecipes = allRecRows
@@ -891,7 +893,12 @@ export const yieldsRouter = router({
 					type: productTransformations.transformation_type,
 				})
 				.from(productTransformations)
-				.where(eq(productTransformations.is_active, true));
+				.where(
+					and(
+						eq(productTransformations.is_active, true),
+						despieceRecipeFilter(),
+					),
+				);
 			const canalIdSet = new Set(canalIds);
 
 			// Demanda viva por pieza
@@ -984,7 +991,12 @@ export const yieldsRouter = router({
 					ratio: productTransformations.yield_weight_ratio,
 				})
 				.from(productTransformations)
-				.where(eq(productTransformations.is_active, true));
+				.where(
+					and(
+						eq(productTransformations.is_active, true),
+						despieceRecipeFilter(),
+					),
+				);
 
 			const prods = await db
 				.select({
