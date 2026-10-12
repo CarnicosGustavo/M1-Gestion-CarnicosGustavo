@@ -9,7 +9,12 @@ import {
 	yieldSheetItems,
 	yieldSheets,
 } from "@/lib/db/schema";
-import { protectedProcedure, router } from "../init";
+import {
+	adminProcedure,
+	almacenProcedure,
+	protectedProcedure,
+	router,
+} from "../init";
 
 const itemInput = z.object({
 	productId: z.number().nullable().optional(),
@@ -232,7 +237,7 @@ export const yieldsRouter = router({
 	// Agrega un proveedor al día directamente desde CEDIS (sin pasar por la
 	// Compra del día). Crea un renglón de channel_purchases con solo el nombre;
 	// el peso en pie (para la merma) se completa luego en la Compra del día.
-	addCedisSupplier: protectedProcedure
+	addCedisSupplier: almacenProcedure
 		.input(z.object({ date: z.string(), supplier: z.string().min(1) }))
 		.output(z.object({ id: z.number() }))
 		.mutation(async ({ ctx, input }) => {
@@ -248,7 +253,7 @@ export const yieldsRouter = router({
 		}),
 
 	// Guarda la verificación CEDIS: calcula verified_canales/_kg y persiste detalle.
-	saveCedis: protectedProcedure
+	saveCedis: almacenProcedure
 		.input(
 			z.object({
 				rows: z.array(
@@ -298,7 +303,7 @@ export const yieldsRouter = router({
 		}),
 
 	// Guarda la compra en pie de un día: reemplaza los renglones de esa fecha
-	savePurchases: protectedProcedure
+	savePurchases: adminProcedure
 		.input(
 			z.object({
 				date: z.string(),
@@ -402,7 +407,7 @@ export const yieldsRouter = router({
 	// Registra una compra de productos de proveedor: suma al inventario (piezas
 	// y/o kg) y deja una transacción COMPRA por auditoría. No idempotente: cada
 	// llamada AGREGA (igual que registrar una factura de compra).
-	recordSupplierPurchase: protectedProcedure
+	recordSupplierPurchase: almacenProcedure
 		.input(
 			z.object({
 				date: z.string(),
@@ -617,7 +622,7 @@ export const yieldsRouter = router({
 	//  - Para piezas del canal (1er nivel): % = kg de la pieza / kg del canal.
 	//  - Para sub-piezas (2º nivel): % = kg de la pieza / kg de su pieza padre
 	//    (solo si el padre también se pesó). Lo no pesado se conserva.
-	calibrateFromDay: protectedProcedure
+	calibrateFromDay: adminProcedure
 		.input(z.object({ date: z.string() }))
 		.mutation(async ({ ctx, input }) => {
 			// Peso de canal del día (verificado si existe, si no el comprado)
@@ -664,6 +669,7 @@ export const yieldsRouter = router({
 					id: productTransformations.id,
 					parentId: productTransformations.parent_product_id,
 					childId: productTransformations.child_product_id,
+					isVariant: productTransformations.is_variant,
 				})
 				.from(productTransformations)
 				.where(eq(productTransformations.is_active, true));
@@ -673,6 +679,9 @@ export const yieldsRouter = router({
 
 			let updated = 0;
 			for (const t of txns) {
+				// Las variantes (conversión 1:1 de presentación) no tienen
+				// rendimiento de despiece: no se recalibran.
+				if (t.isVariant) continue;
 				const childKg = realW.get(t.childId);
 				if (!childKg || childKg <= 0) continue;
 				let newRatio: number;
@@ -1146,16 +1155,19 @@ export const yieldsRouter = router({
 		}));
 	}),
 
-	// Detalle de una hoja con sus renglones
+	// Detalle de una hoja con sus renglones (solo su dueño o un admin)
 	get: protectedProcedure
 		.input(z.object({ id: z.number() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
 			const [sheet] = await db
 				.select()
 				.from(yieldSheets)
 				.where(eq(yieldSheets.id, input.id))
 				.limit(1);
 			if (!sheet) return null;
+			if (ctx.user.role !== "admin" && sheet.user_uid !== ctx.user.id) {
+				return null;
+			}
 			const items = await db
 				.select()
 				.from(yieldSheetItems)
@@ -1165,41 +1177,39 @@ export const yieldsRouter = router({
 		}),
 
 	// Crear hoja nueva con sus renglones
-	create: protectedProcedure
-		.input(sheetInput)
-		.mutation(async ({ ctx, input }) => {
-			return db.transaction(async (tx) => {
-				const [sheet] = await tx
-					.insert(yieldSheets)
-					.values({
-						sheet_date: input.sheetDate ?? undefined,
-						num_canales: input.numCanales,
-						kg_comprado: input.kgComprado.toFixed(3),
-						supplier: input.supplier,
-						notes: input.notes,
-						user_uid: ctx.user.id,
-					})
-					.returning();
+	create: adminProcedure.input(sheetInput).mutation(async ({ ctx, input }) => {
+		return db.transaction(async (tx) => {
+			const [sheet] = await tx
+				.insert(yieldSheets)
+				.values({
+					sheet_date: input.sheetDate ?? undefined,
+					num_canales: input.numCanales,
+					kg_comprado: input.kgComprado.toFixed(3),
+					supplier: input.supplier,
+					notes: input.notes,
+					user_uid: ctx.user.id,
+				})
+				.returning();
 
-				if (input.items.length > 0) {
-					await tx.insert(yieldSheetItems).values(
-						input.items.map((it, idx) => ({
-							sheet_id: sheet.id,
-							product_id: it.productId ?? null,
-							product_name: it.productName,
-							pieces: it.pieces,
-							kg_total: it.kgTotal.toFixed(3),
-							weighed: it.weighed,
-							sort_order: it.sortOrder ?? idx,
-						})),
-					);
-				}
-				return { id: sheet.id };
-			});
-		}),
+			if (input.items.length > 0) {
+				await tx.insert(yieldSheetItems).values(
+					input.items.map((it, idx) => ({
+						sheet_id: sheet.id,
+						product_id: it.productId ?? null,
+						product_name: it.productName,
+						pieces: it.pieces,
+						kg_total: it.kgTotal.toFixed(3),
+						weighed: it.weighed,
+						sort_order: it.sortOrder ?? idx,
+					})),
+				);
+			}
+			return { id: sheet.id };
+		});
+	}),
 
 	// Actualizar hoja: reemplaza cabecera + renglones
-	update: protectedProcedure
+	update: adminProcedure
 		.input(sheetInput.extend({ id: z.number() }))
 		.mutation(async ({ input }) => {
 			return db.transaction(async (tx) => {
@@ -1236,7 +1246,7 @@ export const yieldsRouter = router({
 			});
 		}),
 
-	delete: protectedProcedure
+	delete: adminProcedure
 		.input(z.object({ id: z.number() }))
 		.mutation(async ({ input }) => {
 			await db.delete(yieldSheets).where(eq(yieldSheets.id, input.id));
