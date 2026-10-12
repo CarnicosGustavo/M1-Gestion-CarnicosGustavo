@@ -1311,8 +1311,9 @@ export const productsRouter = router({
 			});
 		}),
 
-	// Mapa de disponibilidad: por producto, stock directo y si es derivable de
-	// una pieza padre con stock (vía despiece).
+	// Mapa de disponibilidad: por producto, stock directo, si es derivable de
+	// una pieza padre con stock vía despiece (recetas NO variante) y, aparte,
+	// si se obtiene por conversión de presentación (recetas is_variant).
 	availabilityMap: protectedProcedure.input(z.void()).query(async ({ ctx }) => {
 		const uid = ctx.user.id;
 		const prods = await db
@@ -1328,6 +1329,7 @@ export const productsRouter = router({
 			.select({
 				child: productTransformations.child_product_id,
 				parent: productTransformations.parent_product_id,
+				isVariant: productTransformations.is_variant,
 			})
 			.from(productTransformations)
 			.where(eq(productTransformations.is_active, true));
@@ -1338,10 +1340,14 @@ export const productsRouter = router({
 				.filter((p) => (p.stock_pieces ?? 0) > 0 || Number(p.stock_kg) > 0)
 				.map((p) => p.id),
 		);
-		// Hijos derivables (su padre tiene stock)
+		// Hijos derivables por despiece (su padre tiene stock). Las variantes no
+		// cuentan como despiece: se marcan aparte como "por conversión".
 		const derivable = new Set<number>();
+		const byConversion = new Set<number>();
 		for (const t of trans) {
-			if (inStock.has(t.parent)) derivable.add(t.child);
+			if (!inStock.has(t.parent)) continue;
+			if (t.isVariant) byConversion.add(t.child);
+			else derivable.add(t.child);
 		}
 
 		return prods.map((p) => ({
@@ -1349,6 +1355,7 @@ export const productsRouter = router({
 			stockPieces: p.stock_pieces,
 			stockKg: Number(p.stock_kg),
 			derivable: derivable.has(p.id),
+			porConversion: !derivable.has(p.id) && byConversion.has(p.id),
 		}));
 	}),
 

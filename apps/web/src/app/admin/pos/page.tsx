@@ -78,32 +78,42 @@ export default function POSPage() {
 			stockPieces: number;
 			stockKg: number;
 			derivable: boolean;
+			porConversion: boolean;
 		}[];
 	};
 
 	const availMap = useMemo(() => {
 		const m = new Map<
 			number,
-			{ stockPieces: number; stockKg: number; derivable: boolean }
+			{
+				stockPieces: number;
+				stockKg: number;
+				derivable: boolean;
+				porConversion: boolean;
+			}
 		>();
 		for (const a of availability) m.set(a.productId, a);
 		return m;
 	}, [availability]);
 
-	// Clasifica cada producto del pedido: en stock / vía despiece / faltante
+	// Clasifica cada producto del pedido: en stock / vía despiece /
+	// por conversión de presentación (variante) / faltante
 	const classify = (p: {
 		id: number;
 		quantityKg: number | null;
 		quantityPieces: number;
 		stock_kg: number | string | null;
 		stock_pieces: number | null;
-	}): "stock" | "despiece" | "faltante" => {
+	}): "stock" | "despiece" | "conversion" | "faltante" => {
 		const direct =
 			p.quantityKg !== null
 				? p.quantityKg <= Number(p.stock_kg)
 				: p.quantityPieces <= (p.stock_pieces ?? 0);
 		if (direct) return "stock";
-		return availMap.get(p.id)?.derivable ? "despiece" : "faltante";
+		const a = availMap.get(p.id);
+		if (a?.derivable) return "despiece";
+		if (a?.porConversion) return "conversion";
+		return "faltante";
 	};
 	const t = useTranslations("pos");
 	const tc = useTranslations("common");
@@ -400,6 +410,14 @@ export default function POSPage() {
 			(p) => classify(p) === "despiece",
 		);
 
+		const viaConversion = selectedProducts.filter(
+			(p) => classify(p) === "conversion",
+		);
+		if (viaConversion.length > 0) {
+			toast.info(
+				`${viaConversion.length} pieza(s) se obtienen por conversión de presentación: ${viaConversion.map((p) => p.name).join(", ")}`,
+			);
+		}
 		if (viaDespiece.length > 0) {
 			toast.info(
 				`${viaDespiece.length} pieza(s) se generarán por despiece: ${viaDespiece.map((p) => p.name).join(", ")}`,
@@ -688,6 +706,12 @@ export default function POSPage() {
 								<span className="text-xs font-medium text-blue-600">
 									🔪 Hay piezas que se generan por despiece (hay stock del
 									padre).
+								</span>
+							)}
+							{selectedProducts.some((p) => classify(p) === "conversion") && (
+								<span className="font-medium text-blue-600 text-xs">
+									🔁 Hay piezas que se obtienen por conversión de presentación
+									(hay stock de la pieza base).
 								</span>
 							)}
 							{selectedProducts.some((p) => classify(p) === "faltante") && (
