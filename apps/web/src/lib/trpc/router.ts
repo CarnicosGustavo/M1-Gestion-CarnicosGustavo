@@ -12,6 +12,7 @@ import { paymentMethodsRouter } from "./routers/payment-methods";
 import { productsRouter } from "./routers/products";
 import { ticketsRouter } from "./routers/tickets";
 import { transactionsRouter } from "./routers/transactions";
+import { validacionRouter } from "./routers/validacion";
 import { yieldsRouter } from "./routers/yields";
 
 export const appRouter = router({
@@ -27,6 +28,7 @@ export const appRouter = router({
 	customerPrices: customerPricesRouter,
 	coldInventory: coldInventoryRouter,
 	collections: collectionsRouter,
+	validacion: validacionRouter,
 	antonella: antonicellaRouter,
 });
 
