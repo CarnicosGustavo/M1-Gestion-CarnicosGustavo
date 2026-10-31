@@ -133,6 +133,94 @@ Respuestas (JSON):
 - No hay staging: `dashboard.carnicosgustavo.com` es producción. Los previews de
   Vercel pueden tener protección de despliegue (ver preguntas abiertas).
 
+## Lectura directa desde la PC (Web Serial)
+
+> Esta sección actualiza la nota de *Arquitectura*: además del gateway T-RSS3, ahora el navegador sí puede hablar con la báscula cuando hay una PC junto a ella.
+
+Como alternativa al gateway ESP32 T-RSS3, la báscula **Rhino I-QY** puede conectarse directamente a la PC mediante RS-232 o un adaptador USB-serial. La pantalla **Báscula** (`/admin/weighing-station`) utiliza la Web Serial API para leerla.
+
+### Compatibilidad y conexión
+
+- Solo funciona en **Chrome o Edge de escritorio**.
+- Requiere una página servida por **HTTPS** o `localhost`.
+- No se necesita instalar controladores ni software adicional.
+- La primera vez, el operador presiona **Conectar báscula** y selecciona el puerto.
+- Las conexiones posteriores se recuperan mediante `getPorts`.
+- Si se desconecta el cable, la conexión se reintenta con un intervalo progresivo de **1 s a 10 s**.
+
+### Ajustes
+
+Los ajustes se guardan en el navegador, en `localStorage`, con la clave `cg.scale.webserial.v1`:
+
+- **9600 8N1** por defecto.
+- Baudios disponibles: **1200–9600**.
+- Modos:
+  - **Continuo (`ot-cont`)**: solo lee.
+  - **Por petición (`ot-req`)**: envía `P` cada 300–500 ms, con terminador ninguno, CR o CRLF.
+- Unidad predeterminada para tramas que no la incluyen.
+- Resolución en gramos para mejorar la estabilidad por software.
+- Simulador con un puerto falso.
+
+### Parser y diagnóstico
+
+El parser es tolerante, ya que el formato real aún no está confirmado:
+
+- Separa líneas por CR, LF o CRLF.
+- Toma el primer número con signo; una sola coma sin punto se interpreta como decimal.
+- Reconoce las unidades `kg`, `g`, `lb` y `lbs`.
+- Interpreta las banderas:
+  - `ST` / `S`: estable.
+  - `US` / `U` / `M`: inestable.
+  - `GS` / `G`: bruto.
+  - `NT` / `N`: neto.
+  - `OL` / `OVER`: sobrecarga.
+- Si no hay bandera, considera estable una lectura cuando los valores permanecen dentro de ± la resolución durante al menos **800 ms**.
+
+El panel **Diagnóstico** muestra las últimas **30 tramas** en texto y hex, con un botón **Copiar** para capturar el formato real y ajustar el parser.
+
+### Captura
+
+La captura aplica la misma lógica que el firmware T-RSS3:
+
+- Se realiza una sola captura automática por colocación cuando el peso está estable y es mayor o igual a **100 g**.
+- Se rearma cuando el peso vuelve a estar dentro de ±50 g del cero.
+- El botón **Capturar** permite una captura manual y también exige volver a cero para habilitar la siguiente captura automática.
+- **Deshacer última** realiza el borrado lógico de la captura.
+
+### Asignación y peso bruto
+
+El operador debe elegir el pedido y el renglón antes de pesar. Cada captura se guarda asociada al renglón, junto con su número de piezas.
+
+La pantalla muestra el peso en vivo y la lista de capturas del renglón. Al capturar, el campo **Peso bruto** se llena con el total ajustado para que la tara del recipiente se reste una vez por captura:
+
+`bruto = Σ capturas − (n − 1) · tara`
+
+La página resta la tara una vez al registrar, así que el neto queda en Σ capturas − n · tara. Finalmente, el operador presiona **Registrar**, como en el flujo actual.
+
+### Guardado
+
+Las capturas se guardan mediante la mutación tRPC `scaleSerial.capture`, usando la sesión del usuario y no un token de dispositivo. Se almacenan en la misma tabla `scale_readings` con:
+
+- `source = 'pc-webserial'`
+- `device_id = 'pc-webserial'`
+- `net = false`, por tratarse de peso bruto
+- `captured_by` = usuario
+
+Cada captura incluye un `event_id` UUID generado en el navegador para hacer idempotente el guardado.
+
+Si no hay conexión de red, la captura se encola en IndexedDB, en la base `cg-scale-webserial`. La cola se procesa en orden FIFO y se reintenta con un backoff de **2 s a 60 s**. También se reintenta al recuperar la conexión mediante el evento `online`.
+
+La mutación `scaleSerial.void` anula una captura (`voided_at`, idempotente; no se puede anular una lectura ya consumida) y la consulta `scaleSerial.lineCaptures` lista las capturas no anuladas de un renglón.
+
+### Requisito de migraciones
+
+Esta función requiere las migraciones **0003** y **0004**, que están pendientes. Mientras no se apliquen, el guardado falla y las capturas permanecen en la cola del navegador; el peso en vivo sigue funcionando.
+
+### Preguntas abiertas
+
+- Confirmar el formato real de la trama del I-QY mediante el panel de diagnóstico.
+- Determinar si el indicador ya resta la tara (trama con `NT`). Si llega una trama neta, la pantalla muestra un aviso para no restarla dos veces.
+
 ## Preguntas abiertas (hardware)
 
 1. **Rhino I-QY:** modo `ot-cont` (continuo) u `ot-req` (responde a `P`), baudios
