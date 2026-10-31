@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import postgres from "postgres";
+import { pgConnectionOptions } from "@/lib/db/connection-options";
 import { isHealthAuthorized } from "@/lib/health-auth";
 
 export const runtime = "nodejs";
@@ -85,10 +86,7 @@ export async function GET(req: Request) {
 		);
 	}
 
-	const client = postgres(databaseUrl, {
-		ssl: "require",
-		...(databaseUrl.includes("pooler.supabase") ? { prepare: false } : null),
-	});
+	const client = postgres(databaseUrl, pgConnectionOptions(databaseUrl));
 
 	try {
 		const info = await client<
