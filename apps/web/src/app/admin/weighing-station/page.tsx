@@ -45,6 +45,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AntonellaSlot } from "@/components/antonella-slot";
+import { ScaleSerialPanel } from "@/components/scale-serial/scale-serial-panel";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
 
@@ -187,7 +188,7 @@ export default function WeighingStationPage() {
 	// según el artículo actual).
 	useEffect(() => {
 		setCurrentItemIndex(0);
-	}, [selectedOrderId]);
+	}, []);
 
 	// ---------------------------------------------------------------------------
 	// Cálculo de tara / neto
@@ -201,6 +202,37 @@ export default function WeighingStationPage() {
 	const grossKg = Number.parseFloat(actualWeight) || 0;
 	const netKg = Math.max(0, grossKg - tareKg);
 	const hasValidWeight = netKg > 0;
+
+	// Báscula por cable (Web Serial): renglón activo y total de capturas.
+	const serialLine = useMemo(() => {
+		if (!selectedOrder || !currentItem) {
+			return null;
+		}
+
+		return {
+			orderId: selectedOrder.id,
+			orderItemId: currentItem.id,
+			productName: currentItem.product_name ?? currentItem.product?.name ?? "",
+			requestedPieces: currentItem.quantity_pieces,
+		};
+	}, [selectedOrder, currentItem]);
+
+	const handleSerialCapturesTotal = useCallback(
+		(totalGrossKg: number, count: number) => {
+			if (count === 0) {
+				// Conservamos el peso solicitado precargado cuando no hay capturas.
+				return;
+			}
+
+			// Cada captura es una colocación en el mismo recipiente, por lo que la tara
+			// debe descontarse una vez por captura. Como la página resta la tara una
+			// sola vez al calcular el neto, compensamos las colocaciones anteriores.
+			const adjustedGrossKg = Math.max(0, totalGrossKg - (count - 1) * tareKg);
+
+			setActualWeight(adjustedGrossKg.toFixed(3));
+		},
+		[tareKg],
+	);
 
 	// ---------------------------------------------------------------------------
 	// Mutations
@@ -475,6 +507,12 @@ export default function WeighingStationPage() {
 					Agregar pesaje a producto
 				</Button>
 			</div>
+
+			<ScaleSerialPanel
+				line={serialLine}
+				tareKg={tareKg}
+				onCapturesTotal={handleSerialCapturesTotal}
+			/>
 
 			<div className="grid h-[calc(100vh-160px)] grid-cols-1 gap-6 lg:grid-cols-3">
 				{/* ----------------------------------------------------------------- */}
