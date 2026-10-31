@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import { scaleReadings } from "@/lib/db/schema";
@@ -69,6 +69,8 @@ export const scaleRouter = router({
 						eq(scaleReadings.device_id, input.deviceId),
 						eq(scaleReadings.stable, true),
 						isNull(scaleReadings.consumed_at),
+						isNull(scaleReadings.voided_at),
+						ne(scaleReadings.source, "pc-webserial"),
 						gt(
 							scaleReadings.received_at,
 							sql`now() - make_interval(mins => ${SCALE_READING_MAX_AGE_MINUTES})`,

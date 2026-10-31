@@ -29,6 +29,13 @@
       "when": 1791675977869,
       "tag": "0003_scale_readings",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793436190770,
+      "tag": "0004_scale_readings_webserial",
+      "breakpoints": true
     }
   ]
 }

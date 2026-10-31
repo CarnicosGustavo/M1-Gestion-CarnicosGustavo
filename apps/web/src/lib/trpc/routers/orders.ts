@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
@@ -1392,6 +1392,8 @@ export const ordersRouter = router({
 							and(
 								eq(scaleReadings.id, input.scaleReadingId),
 								isNull(scaleReadings.consumed_at),
+								isNull(scaleReadings.voided_at),
+								ne(scaleReadings.source, "pc-webserial"),
 							),
 						)
 						.returning({ id: scaleReadings.id });

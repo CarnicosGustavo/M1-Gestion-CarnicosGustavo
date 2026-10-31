@@ -11,6 +11,7 @@ import { ordersRouter } from "./routers/orders";
 import { paymentMethodsRouter } from "./routers/payment-methods";
 import { productsRouter } from "./routers/products";
 import { scaleRouter } from "./routers/scale";
+import { scaleSerialRouter } from "./routers/scale-serial";
 import { ticketsRouter } from "./routers/tickets";
 import { transactionsRouter } from "./routers/transactions";
 import { yieldsRouter } from "./routers/yields";
@@ -29,6 +30,7 @@ export const appRouter = router({
 	coldInventory: coldInventoryRouter,
 	collections: collectionsRouter,
 	antonella: antonicellaRouter,
+	scaleSerial: scaleSerialRouter,
 	scale: scaleRouter,
 });
 

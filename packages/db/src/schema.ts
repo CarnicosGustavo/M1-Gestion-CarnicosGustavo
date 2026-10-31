@@ -791,10 +791,21 @@ export const scaleReadings = pgTable(
 		consumed_at: tstz("consumed_at"),
 		consumed_by: varchar("consumed_by", { length: 255 }),
 		consumed_order_item_id: integer("consumed_order_item_id"),
+		// Origen: "trss3" (gateway ESP32) o "pc-webserial" (PC con Web Serial).
+		source: varchar("source", { length: 32 }).notNull().default("trss3"),
+		// Usuario (Better-Auth) que capturó desde la PC; null para el gateway.
+		captured_by: varchar("captured_by", { length: 255 }),
+		// "Deshacer" la captura (borrado lógico).
+		voided_at: tstz("voided_at"),
+		voided_by: varchar("voided_by", { length: 255 }),
+		// Recipiente y tara aplicados específicamente a esta captura.
+		container_id: varchar("container_id", { length: 32 }),
+		tare_g: integer("tare_g"),
 	},
 	(t) => [
 		unique("scale_readings_event_id_key").on(t.event_id),
 		index("idx_scale_readings_device_id").on(t.device_id, t.id),
+		index("idx_scale_readings_order_item").on(t.order_item_id, t.id),
 		foreignKey({
 			name: "scale_readings_consumed_order_item_id_fkey",
 			columns: [t.consumed_order_item_id],
