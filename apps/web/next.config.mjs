@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
@@ -19,5 +20,13 @@ const nextConfig = {
 		];
 	},
 };
+
+// En Docker standalone se incluye la raíz del monorepo para el trazado de archivos.
+if (process.env.NEXT_OUTPUT === "standalone") {
+	nextConfig.output = "standalone";
+	nextConfig.outputFileTracingRoot = fileURLToPath(
+		new URL("../..", import.meta.url),
+	);
+}
 
 export default withNextIntl(nextConfig);
