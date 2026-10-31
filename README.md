@@ -168,6 +168,8 @@ Plantilla completa en [`apps/web/.env.example`](apps/web/.env.example). Resumen:
 |----------|----------|
 | `DATABASE_URL` | Conexión a Postgres (Supabase) |
 | `DATABASE_URL_MIGRATIONS` | Opcional: conexión para `drizzle-kit migrate` |
+| `DATABASE_SSL` | Opcional: `require` (por defecto) \| `prefer` \| `disable` |
+| `DATABASE_PREPARE` | Opcional: `true` \| `false` (vacío = `false` solo con `pooler.supabase`) |
 | `BETTER_AUTH_SECRET` | Firma de sesiones |
 | `BETTER_AUTH_URL` / `BASE_URL` / `NEXT_PUBLIC_BASE_URL` | URL del despliegue |
 | `BASE_PATH` | Prefijo de ruta (vacío = raíz) |
@@ -177,6 +179,8 @@ Plantilla completa en [`apps/web/.env.example`](apps/web/.env.example). Resumen:
 | `SEED_TOKEN` / `ADMIN_RESET_PASSWORD` | Protegen rutas y acciones administrativas |
 | `HEALTH_CHECK_TOKEN` / `SEED_ADMIN_PASSWORD` / `ALLOW_PUBLIC_SIGNUP` | Diagnóstico, usuario inicial y registro público (ver `.env.example`) |
 | `CORS_ORIGIN` | Origen permitido (opcional) |
+
+> ⚠️ Un valor inválido en `DATABASE_SSL` o `DATABASE_PREPARE` hace que la app **falle al arrancar a propósito** (el error se lanza al cargar `lib/db`, sin mostrar la URL). Así una configuración mal escrita no pasa desapercibida ni se conecta sin TLS por accidente.
 
 > ⚠️ **Antonella** no funciona sin `ANTHROPIC_API_KEY` configurada en las
 > variables de entorno de Vercel (Production/Preview/Development).
