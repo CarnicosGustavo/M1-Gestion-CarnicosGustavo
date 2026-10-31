@@ -1,32 +1,9 @@
 import { NextResponse } from "next/server";
 import { isHealthAuthorized } from "@/lib/health-auth";
+import { originMatchesRequest } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function getUrl(value: string | undefined): URL | null {
-	if (!value) {
-		return null;
-	}
-
-	try {
-		return new URL(value);
-	} catch {
-		return null;
-	}
-}
-
-function matchesRequestHost(
-	value: string | undefined,
-	request: Request,
-): boolean | null {
-	const url = getUrl(value);
-	if (!url) {
-		return null;
-	}
-
-	return url.host === new URL(request.url).host;
-}
 
 export async function GET(request: Request) {
 	const headers = {
@@ -40,8 +17,11 @@ export async function GET(request: Request) {
 		);
 	}
 
-	const baseMatchesRequest = matchesRequestHost(process.env.BASE_URL, request);
-	const betterAuthMatchesRequest = matchesRequestHost(
+	const baseMatchesRequest = originMatchesRequest(
+		process.env.BASE_URL,
+		request,
+	);
+	const betterAuthMatchesRequest = originMatchesRequest(
 		process.env.BETTER_AUTH_URL,
 		request,
 	);
