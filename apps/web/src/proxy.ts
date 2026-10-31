@@ -42,6 +42,8 @@ export async function proxy(request: NextRequest) {
 		!pathname.startsWith("/api/auth") &&
 		!pathname.startsWith("/api/admin/seed") &&
 		!pathname.startsWith("/api/health") &&
+		// Básculas (ESP32): sin sesión, autenticadas con token por dispositivo.
+		pathname !== "/api/scale/ingest" &&
 		!pathname.startsWith("/api/docs") &&
 		!pathname.startsWith("/api/openapi.json")
 	) {

@@ -119,7 +119,7 @@ Respuestas (JSON):
 | 201 | `{"status":"stored","id":N}` | Entregado; quitar de la cola. |
 | 200 | `{"status":"duplicate","id":N}` | `event_id` ya existía → entregado. |
 | 400 | `{"error":"invalid_body", ...}` | No reintentar; registrar y descartar. |
-| 401 | `{"error":"unauthorized"}` | Token inválido. No reintentar en bucle; alertar. |
+| 401 | `{"error":"unauthorized"}` | Falta el token o es inválido para ese `X-Device-Id`. No reintentar en bucle; alertar. |
 | 403 | `{"error":"forbidden"}` | Dispositivo desconocido o `X-Device-Id` ≠ `device_id`. Alertar. |
 | 409 | `{"error":"event_id_conflict"}` | El `event_id` ya existe para OTRO dispositivo. Descartar. |
 | 413 | `{"error":"payload_too_large"}` | Descartar. |
