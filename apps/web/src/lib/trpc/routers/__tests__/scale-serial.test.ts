@@ -246,3 +246,128 @@ describe("scaleSerialRouter", () => {
 		expect(result).toEqual([]);
 	});
 });
+
+describe("scaleSerialRouter · tara por captura", () => {
+	it("guarda container_id y tare_g", async () => {
+		const input = captureInput({
+			containerId: "tambo_azul",
+			tareG: 2500,
+		});
+
+		await callerAs("u1").capture(input);
+
+		const [reading] = await db
+			.select({
+				containerId: scaleReadings.container_id,
+				tareG: scaleReadings.tare_g,
+			})
+			.from(scaleReadings)
+			.where(eq(scaleReadings.event_id, input.eventId));
+
+		expect(reading?.containerId).toBe("tambo_azul");
+		expect(reading?.tareG).toBe(2500);
+	});
+
+	it("mezcla recipientes por captura y calcula el neto de la línea", async () => {
+		const [order] = await db
+			.insert(orders)
+			.values({
+				user_uid: "u1",
+				status: "PENDIENTE_PESAJE",
+				requires_weighing: true,
+				total_amount: "0",
+			})
+			.returning();
+		const [orderItem] = await db
+			.insert(orderItems)
+			.values({
+				order_id: order.id,
+				product_name: "Costilla",
+				status: "PENDIENTE_PESAJE",
+				quantity_pieces: 5,
+				unit_price: "100",
+			})
+			.returning();
+
+		const caller = callerAs("u1");
+		const inputs = [
+			captureInput({
+				orderItemId: orderItem.id,
+				weight: 1,
+				weightG: 1000,
+				containerId: "ninguno",
+				tareG: 0,
+			}),
+			captureInput({
+				orderItemId: orderItem.id,
+				weight: 2.2,
+				weightG: 2200,
+				containerId: "tara",
+				tareG: 1200,
+			}),
+			captureInput({
+				orderItemId: orderItem.id,
+				weight: 3.5,
+				weightG: 3500,
+				containerId: "tambo_azul",
+				tareG: 2500,
+			}),
+		];
+
+		for (const input of inputs) {
+			await caller.capture(input);
+		}
+
+		const captures = await caller.lineCaptures({
+			orderItemId: orderItem.id,
+		});
+
+		expect(captures).toHaveLength(3);
+		expect(captures.map((capture) => capture.containerId)).toEqual([
+			"ninguno",
+			"tara",
+			"tambo_azul",
+		]);
+		expect(captures.map((capture) => capture.tareG)).toEqual([0, 1200, 2500]);
+
+		const { computeLineTotals } = await import(
+			"@/lib/scale/webserial/line-totals"
+		);
+		const totals = computeLineTotals(captures);
+
+		expect(totals).toEqual({
+			count: 3,
+			pieces: 9, // captureInput usa pieceCount 3 por captura
+			grossG: 6700,
+			tareG: 3700,
+			netG: 3000,
+		});
+	});
+
+	it("guarda null cuando se omiten containerId y tareG", async () => {
+		const input = captureInput();
+
+		await callerAs("u1").capture(input);
+
+		const [reading] = await db
+			.select({
+				containerId: scaleReadings.container_id,
+				tareG: scaleReadings.tare_g,
+			})
+			.from(scaleReadings)
+			.where(eq(scaleReadings.event_id, input.eventId));
+
+		expect(reading?.containerId).toBeNull();
+		expect(reading?.tareG).toBeNull();
+	});
+
+	it("rechaza un containerId inválido", async () => {
+		const input = captureInput({
+			containerId: "Tambo Azul",
+		});
+
+		await expect(callerAs("u1").capture(input)).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+		});
+	});
+});

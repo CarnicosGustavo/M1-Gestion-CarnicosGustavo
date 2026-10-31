@@ -1,5 +1,5 @@
 {
-  "id": "94917bb7-7b3d-4092-95f2-5eebd4575464",
+  "id": "f5d3b730-656a-48d2-bf48-360cecf7f7d2",
   "prevId": "36ba0f4a-54ef-471c-8d41-bd6f8f572f3e",
   "version": "7",
   "dialect": "postgresql",
@@ -2295,6 +2295,18 @@
         "voided_by": {
           "name": "voided_by",
           "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "container_id": {
+          "name": "container_id",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tare_g": {
+          "name": "tare_g",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         }

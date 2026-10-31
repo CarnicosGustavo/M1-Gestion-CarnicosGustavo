@@ -23,6 +23,15 @@ const captureInput = z.object({
 	raw: z.string().max(128).nullable(),
 	capturedAt: z.iso.datetime({ offset: true }),
 	seq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+	containerId: z
+		.string()
+		.trim()
+		.min(1)
+		.max(32)
+		.regex(/^[a-z0-9_-]+$/)
+		.nullable()
+		.default(null),
+	tareG: z.number().int().min(0).max(2_000_000).nullable().default(null),
 });
 
 async function getOwnedOrderItem(orderItemId: number, userId: string) {
@@ -83,6 +92,8 @@ export const scaleSerialRouter = router({
 					order_item_id: orderItem.id,
 					piece_count: input.pieceCount,
 					captured_by: ctx.user.id,
+					container_id: input.containerId,
+					tare_g: input.tareG,
 				})
 				.onConflictDoNothing({ target: scaleReadings.event_id })
 				.returning({ id: scaleReadings.id });
@@ -211,6 +222,8 @@ export const scaleSerialRouter = router({
 					source: scaleReadings.source,
 					capturedAt: scaleReadings.captured_at,
 					receivedAt: scaleReadings.received_at,
+					containerId: scaleReadings.container_id,
+					tareG: scaleReadings.tare_g,
 				})
 				.from(scaleReadings)
 				.where(

@@ -798,6 +798,9 @@ export const scaleReadings = pgTable(
 		// "Deshacer" la captura (borrado lógico).
 		voided_at: tstz("voided_at"),
 		voided_by: varchar("voided_by", { length: 255 }),
+		// Recipiente y tara aplicados específicamente a esta captura.
+		container_id: varchar("container_id", { length: 32 }),
+		tare_g: integer("tare_g"),
 	},
 	(t) => [
 		unique("scale_readings_event_id_key").on(t.event_id),
