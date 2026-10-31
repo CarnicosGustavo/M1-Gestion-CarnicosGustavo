@@ -1,5 +1,6 @@
 import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { pgConnectionOptions } from "./connection-options";
 import * as schema from "./schema";
 
 // Cargar variables de entorno para scripts fuera de Next.js
@@ -21,8 +22,7 @@ if (!databaseUrl) {
 
 export const db = drizzlePostgres(
 	postgres(databaseUrl, {
-		ssl: "require",
-		...(databaseUrl.includes("pooler.supabase") ? { prepare: false } : null),
+		...pgConnectionOptions(databaseUrl),
 		connection: { options: "-c search_path=public" },
 	}),
 	{ schema },

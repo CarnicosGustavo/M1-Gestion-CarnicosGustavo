@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import postgres from "postgres";
 import { db } from "@/lib/db";
+import { pgConnectionOptions } from "@/lib/db/connection-options";
 
 export const runtime = "nodejs";
 
@@ -53,10 +54,7 @@ export async function GET() {
 
 	try {
 		const drizzleResult = await (db as any).execute(sql`select 1 as ok`);
-		const client = postgres(databaseUrl, {
-			ssl: "require",
-			...(databaseUrl.includes("pooler.supabase") ? { prepare: false } : null),
-		});
+		const client = postgres(databaseUrl, pgConnectionOptions(databaseUrl));
 		const rawResult = await client`select 1 as ok`;
 		await client.end({ timeout: 2 });
 		return NextResponse.json({ ok: true, drizzleResult, rawResult });

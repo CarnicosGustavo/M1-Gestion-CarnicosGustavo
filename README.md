@@ -168,6 +168,8 @@ Plantilla completa en [`apps/web/.env.example`](apps/web/.env.example). Resumen:
 |----------|----------|
 | `DATABASE_URL` | Conexión a Postgres (Supabase) |
 | `DATABASE_URL_MIGRATIONS` | Opcional: conexión para `drizzle-kit migrate` |
+| `DATABASE_SSL` | Opcional: `require` (por defecto) \| `prefer` \| `disable` |
+| `DATABASE_PREPARE` | Opcional: `true` \| `false` (vacío = `false` solo con `pooler.supabase`) |
 | `BETTER_AUTH_SECRET` | Firma de sesiones |
 | `BETTER_AUTH_URL` / `BASE_URL` / `NEXT_PUBLIC_BASE_URL` | URL del despliegue |
 | `BASE_PATH` | Prefijo de ruta (vacío = raíz) |
