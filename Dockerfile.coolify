@@ -1,0 +1,65 @@
+# syntax=docker/dockerfile:1
+
+# deps: dependencias del monorepo instaladas sin ejecutar scripts.
+FROM node:22-alpine AS deps
+RUN apk add --no-cache libc6-compat
+RUN npm i -g bun@1.3.5
+WORKDIR /app
+
+COPY package.json bun.lock ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/docs/package.json ./apps/docs/package.json
+COPY packages/api/package.json ./packages/api/package.json
+COPY packages/auth/package.json ./packages/auth/package.json
+COPY packages/config/package.json ./packages/config/package.json
+COPY packages/db/package.json ./packages/db/package.json
+COPY packages/env/package.json ./packages/env/package.json
+COPY packages/ui/package.json ./packages/ui/package.json
+
+# --ignore-scripts evita el postinstall de apps/docs que requiere sus fuentes.
+RUN bun install --frozen-lockfile --ignore-scripts
+
+# builder: compila Next.js con salida standalone.
+FROM node:22-alpine AS builder
+WORKDIR /app
+
+COPY --from=deps /app ./
+COPY . .
+
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_OUTPUT=standalone
+
+# Placeholders no secretos solo para la fase de build.
+ENV DATABASE_URL=postgres://build:build@localhost:5432/build
+ENV BETTER_AUTH_SECRET=build-placeholder-not-a-secret
+
+ARG BASE_PATH=""
+ENV BASE_PATH=$BASE_PATH
+
+# Se invoca next build directamente para no ejecutar ensure-db.
+RUN cd apps/web && ./node_modules/.bin/next build
+
+# runner: imagen final mínima y sin privilegios.
+FROM node:22-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+RUN addgroup --system --gid 1001 nodejs \
+	&& adduser --system --uid 1001 --ingroup nodejs nextjs
+
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
+
+USER nextjs
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+	CMD wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1
+
+CMD ["node", "apps/web/server.js"]
