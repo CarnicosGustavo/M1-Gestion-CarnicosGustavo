@@ -187,15 +187,25 @@ La captura aplica la misma lógica que el firmware T-RSS3:
 - El botón **Capturar** permite una captura manual y también exige volver a cero para habilitar la siguiente captura automática.
 - **Deshacer última** realiza el borrado lógico de la captura.
 
-### Asignación y peso bruto
+### Asignación, recipiente y peso neto
 
-El operador debe elegir el pedido y el renglón antes de pesar. Cada captura se guarda asociada al renglón, junto con su número de piezas.
+El operador elige el pedido y el renglón antes de pesar. Cada captura se guarda ligada al renglón, con su número de piezas y con el recipiente seleccionado en ese momento (`container_id`: ninguno, tara, tambo_azul, cubeta u otro) y su tara en gramos (`tare_g`). La tara puede ser la tomada con **Capturar tara** o la tara manual al seleccionar **Otro**.
 
-La pantalla muestra el peso en vivo y la lista de capturas del renglón. Al capturar, el campo **Peso bruto** se llena con el total ajustado para que la tara del recipiente se reste una vez por captura:
+Cambiar de recipiente solo afecta las capturas siguientes; no modifica las capturas ya registradas.
 
-`bruto = Σ capturas − (n − 1) · tara`
+La lista muestra, por captura, el peso bruto, el recipiente, la tara y el peso neto. Al final se muestran los totales.
 
-La página resta la tara una vez al registrar, así que el neto queda en Σ capturas − n · tara. Finalmente, el operador presiona **Registrar**, como en el flujo actual.
+El neto del renglón se calcula como:
+
+`neto del renglón = Σ max(0, bruto_i − tara_i)`
+
+Si el renglón tiene capturas, la página registra directamente ese neto. No se resta una tara global adicional ni se cambia el recipiente seleccionado, que continúa aplicándose a las siguientes capturas.
+
+Si el operador teclea un peso —ya sea mediante un campo de entrada o el teclado en pantalla—, el renglón pasa a **peso manual** y se aplica el flujo habitual:
+
+`neto = bruto − tara del recipiente`
+
+El botón **Usar peso manual** / **Usar neto de capturas** alterna entre ambos modos. Al llegar una captura nueva o cambiar de renglón, el modo vuelve a **neto de capturas**.
 
 ### Guardado
 
@@ -205,6 +215,7 @@ Las capturas se guardan mediante la mutación tRPC `scaleSerial.capture`, usando
 - `device_id = 'pc-webserial'`
 - `net = false`, por tratarse de peso bruto
 - `captured_by` = usuario
+- `container_id` y `tare_g` = recipiente y tara de esa captura
 
 Cada captura incluye un `event_id` UUID generado en el navegador para hacer idempotente el guardado.
 

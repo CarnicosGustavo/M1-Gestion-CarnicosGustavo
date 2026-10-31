@@ -25,6 +25,8 @@ export type CapturePayload = {
 	raw: string | null;
 	capturedAt: string;
 	seq: number;
+	containerId: string | null;
+	tareG: number | null;
 };
 
 type QueuePayload = CapturePayload | { eventId: string };

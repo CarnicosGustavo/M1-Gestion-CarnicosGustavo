@@ -36,6 +36,11 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+	captureNetG,
+	computeLineTotals,
+	type LineTotals,
+} from "@/lib/scale/webserial/line-totals";
 import { BAUD_RATES, type ScaleSettings } from "@/lib/scale/webserial/settings";
 import { useTRPC } from "@/lib/trpc/client";
 
@@ -53,8 +58,13 @@ interface ScaleSerialPanelProps {
 		productName: string;
 		requestedPieces: number | null;
 	} | null;
-	tareKg: number;
-	onCapturesTotal?: (totalGrossKg: number, count: number) => void;
+	container: {
+		id: string;
+		label: string;
+		tareKg: number;
+	};
+	containerLabels?: Record<string, string>;
+	onCapturesTotal?: (totals: LineTotals) => void;
 }
 
 interface LocalCapture {
@@ -62,6 +72,8 @@ interface LocalCapture {
 	orderItemId: number;
 	weightG: number;
 	pieceCount: number | null;
+	containerId: string | null;
+	tareG: number | null;
 	pending: boolean;
 	at: number;
 }
@@ -70,6 +82,8 @@ interface MergedCapture {
 	eventId: string;
 	weightG: number;
 	pieceCount: number | null;
+	containerId: string | null;
+	tareG: number | null;
 	pending: boolean;
 	at: number;
 	source: string;
@@ -77,7 +91,8 @@ interface MergedCapture {
 
 export function ScaleSerialPanel({
 	line,
-	tareKg,
+	container,
+	containerLabels,
 	onCapturesTotal,
 }: ScaleSerialPanelProps) {
 	const trpc = useTRPC();
@@ -105,16 +120,15 @@ export function ScaleSerialPanel({
 	const [copied, setCopied] = useState(false);
 	const lineRef = useRef(line);
 	const pieceCountRef = useRef(pieceCount);
+	const containerRef = useRef(container);
 	const notifiedWithoutLineRef = useRef(false);
 	const armedRef = useRef(armed);
-	const lastTotalRef = useRef<{
-		totalGrossKg: number;
-		count: number;
-	} | null>(null);
+	const lastTotalsRef = useRef<LineTotals | null>(null);
 	const lineIdRef = useRef<number | null>(null);
 
 	lineRef.current = line;
 	pieceCountRef.current = pieceCount;
+	containerRef.current = container;
 
 	const lineCapturesQuery = useQuery({
 		...trpc.scaleSerial.lineCaptures.queryOptions({
@@ -132,7 +146,7 @@ export function ScaleSerialPanel({
 			setPieceCount(1);
 			pieceCountRef.current = 1;
 			notifiedWithoutLineRef.current = false;
-			lastTotalRef.current = null;
+			lastTotalsRef.current = null;
 		}
 	}, [line?.orderItemId]);
 
@@ -159,6 +173,9 @@ export function ScaleSerialPanel({
 			const eventId = createEventId();
 			const capturedAt = Date.now();
 			const currentPieceCount = pieceCountRef.current;
+			const currentContainer = containerRef.current;
+			const containerId = currentContainer.id;
+			const tareG = Math.max(0, Math.round(currentContainer.tareKg * 1000));
 			const payload: CapturePayload = {
 				eventId,
 				orderItemId: currentLine.orderItemId,
@@ -171,6 +188,8 @@ export function ScaleSerialPanel({
 				raw: reading.raw.slice(0, 128),
 				capturedAt: new Date(capturedAt).toISOString(),
 				seq: capturedAt,
+				containerId,
+				tareG,
 			};
 
 			setLocalCaptures((current) => [
@@ -180,6 +199,8 @@ export function ScaleSerialPanel({
 					orderItemId: currentLine.orderItemId,
 					weightG: reading.weightG,
 					pieceCount: currentPieceCount,
+					containerId,
+					tareG,
 					pending: true,
 					at: capturedAt,
 				},
@@ -233,6 +254,8 @@ export function ScaleSerialPanel({
 				eventId: capture.eventId,
 				weightG: serverCapture?.weightG ?? capture.weightG,
 				pieceCount: serverCapture?.pieceCount ?? capture.pieceCount,
+				containerId: serverCapture?.containerId ?? capture.containerId,
+				tareG: serverCapture?.tareG ?? capture.tareG,
 				pending: !serverCapture,
 				at: serverCapture?.capturedAt?.getTime() ?? capture.at,
 				source: serverCapture?.source ?? "PC",
@@ -245,6 +268,8 @@ export function ScaleSerialPanel({
 				eventId: capture.eventId,
 				weightG: capture.weightG,
 				pieceCount: capture.pieceCount,
+				containerId: capture.containerId,
+				tareG: capture.tareG,
 				pending: false,
 				at: capture.capturedAt?.getTime() ?? capture.receivedAt.getTime(),
 				source: capture.source,
@@ -254,20 +279,8 @@ export function ScaleSerialPanel({
 		return merged.sort((a, b) => a.at - b.at);
 	}, [line, localCaptures, serverCaptures, undoneIds]);
 
-	const grossTotalKg = useMemo(
-		() =>
-			mergedCaptures.reduce(
-				(total, capture) => total + capture.weightG / 1000,
-				0,
-			),
-		[mergedCaptures],
-	);
-	const piecesTotal = useMemo(
-		() =>
-			mergedCaptures.reduce(
-				(total, capture) => total + (capture.pieceCount ?? 0),
-				0,
-			),
+	const totals = useMemo<LineTotals>(
+		() => computeLineTotals(mergedCaptures),
 		[mergedCaptures],
 	);
 
@@ -276,21 +289,21 @@ export function ScaleSerialPanel({
 			return;
 		}
 
-		const lastTotal = lastTotalRef.current;
+		const lastTotals = lastTotalsRef.current;
 		if (
-			lastTotal &&
-			lastTotal.totalGrossKg === grossTotalKg &&
-			lastTotal.count === mergedCaptures.length
+			lastTotals &&
+			lastTotals.count === totals.count &&
+			lastTotals.pieces === totals.pieces &&
+			lastTotals.grossG === totals.grossG &&
+			lastTotals.tareG === totals.tareG &&
+			lastTotals.netG === totals.netG
 		) {
 			return;
 		}
 
-		lastTotalRef.current = {
-			totalGrossKg: grossTotalKg,
-			count: mergedCaptures.length,
-		};
-		onCapturesTotal?.(grossTotalKg, mergedCaptures.length);
-	}, [grossTotalKg, line, mergedCaptures.length, onCapturesTotal]);
+		lastTotalsRef.current = totals;
+		onCapturesTotal?.(totals);
+	}, [line, onCapturesTotal, totals]);
 
 	const statusLabel = getStatusLabel(status, supported, settings.simulator);
 	const canManualCapture =
@@ -299,6 +312,14 @@ export function ScaleSerialPanel({
 		!live.overload &&
 		live.weightG !== null &&
 		live.weightG >= 1;
+	const currentTareG = Math.max(0, Math.round(container.tareKg * 1000));
+	const estimatedLiveNetKg =
+		live?.weightG === null || live?.weightG === undefined
+			? 0
+			: captureNetG({
+					weightG: live.weightG,
+					tareG: currentTareG,
+				}) / 1000;
 
 	const handleManualCapture = () => {
 		if (!line) {
@@ -473,7 +494,8 @@ export function ScaleSerialPanel({
 					</div>
 
 					<p className="mt-2 text-muted-foreground text-sm">
-						Bruto · neto estimado = bruto − tara ({formatKg(tareKg * 1000)} kg)
+						Bruto · neto estimado con el recipiente actual:{" "}
+						{formatKg(Math.round(estimatedLiveNetKg * 1000))} kg
 					</p>
 
 					{live?.net === true ? (
@@ -502,6 +524,10 @@ export function ScaleSerialPanel({
 						<div>
 							<strong>Pesando:</strong> {line.productName} · pedido #
 							{line.orderId}
+						</div>
+						<div className="text-muted-foreground text-sm">
+							Recipiente actual: {container.label} (tara{" "}
+							{formatKg(currentTareG)} kg) — se aplica a las siguientes capturas
 						</div>
 
 						<div className="flex flex-wrap items-end gap-3">
@@ -553,19 +579,8 @@ export function ScaleSerialPanel({
 				)}
 
 				<div className="rounded-lg border p-3">
-					<div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+					<div className="mb-3">
 						<h3 className="font-medium">Capturas del renglón</h3>
-						{line ? (
-							<span className="text-muted-foreground text-sm">
-								{mergedCaptures.length} capturas · {piecesTotal} piezas ·{" "}
-								{formatKg(grossTotalKg * 1000)} kg bruto · neto estimado{" "}
-								{formatKg(
-									Math.max(0, grossTotalKg - tareKg * mergedCaptures.length) *
-										1000,
-								)}{" "}
-								kg
-							</span>
-						) : null}
 					</div>
 
 					{mergedCaptures.length === 0 ? (
@@ -579,7 +594,10 @@ export function ScaleSerialPanel({
 								<thead>
 									<tr className="border-b text-left">
 										<th className="py-2 pr-3 font-medium">#</th>
-										<th className="py-2 pr-3 font-medium">Peso</th>
+										<th className="py-2 pr-3 font-medium">Bruto</th>
+										<th className="py-2 pr-3 font-medium">Recipiente</th>
+										<th className="py-2 pr-3 font-medium">Tara</th>
+										<th className="py-2 pr-3 font-medium">Neto</th>
 										<th className="py-2 pr-3 font-medium">Piezas</th>
 										<th className="py-2 pr-3 font-medium">Hora</th>
 										<th className="py-2 pr-3 font-medium">Origen</th>
@@ -593,7 +611,19 @@ export function ScaleSerialPanel({
 										>
 											<td className="py-2 pr-3">{index + 1}</td>
 											<td className="py-2 pr-3 font-mono tabular-nums">
-												{formatKg(capture.weightG)}
+												{formatKg(capture.weightG)} kg
+											</td>
+											<td className="py-2 pr-3">
+												{capture.containerId === null
+													? "—"
+													: (containerLabels?.[capture.containerId] ??
+														capture.containerId)}
+											</td>
+											<td className="py-2 pr-3 font-mono tabular-nums">
+												{formatKg(capture.tareG)} kg
+											</td>
+											<td className="py-2 pr-3 font-mono tabular-nums">
+												{formatKg(captureNetG(capture))} kg
 											</td>
 											<td className="py-2 pr-3">{capture.pieceCount ?? "—"}</td>
 											<td className="py-2 pr-3 tabular-nums">
@@ -611,6 +641,29 @@ export function ScaleSerialPanel({
 										</tr>
 									))}
 								</tbody>
+								<tfoot className="border-t font-medium">
+									<tr>
+										<td className="py-2 pr-3">Totales</td>
+										<td className="py-2 pr-3">{totals.count} capturas</td>
+										<td className="py-2 pr-3" />
+										<td className="py-2 pr-3 font-mono tabular-nums">
+											{formatKg(totals.tareG)} kg
+										</td>
+										<td className="py-2 pr-3 font-mono tabular-nums">
+											{formatKg(totals.netG)} kg
+										</td>
+										<td className="py-2 pr-3">{totals.pieces} piezas</td>
+										<td className="py-2 pr-3" />
+										<td className="py-2 pr-3" />
+									</tr>
+									<tr>
+										<td className="py-2 pr-3" />
+										<td className="py-2 pr-3 font-mono tabular-nums">
+											{formatKg(totals.grossG)} kg bruto
+										</td>
+										<td className="py-2 pr-3" colSpan={6} />
+									</tr>
+								</tfoot>
 							</table>
 						</div>
 					)}
