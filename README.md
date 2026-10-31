@@ -180,6 +180,8 @@ Plantilla completa en [`apps/web/.env.example`](apps/web/.env.example). Resumen:
 | `HEALTH_CHECK_TOKEN` / `SEED_ADMIN_PASSWORD` / `ALLOW_PUBLIC_SIGNUP` | Diagnóstico, usuario inicial y registro público (ver `.env.example`) |
 | `CORS_ORIGIN` | Origen permitido (opcional) |
 
+> ⚠️ Un valor inválido en `DATABASE_SSL` o `DATABASE_PREPARE` hace que la app **falle al arrancar a propósito** (el error se lanza al cargar `lib/db`, sin mostrar la URL). Así una configuración mal escrita no pasa desapercibida ni se conecta sin TLS por accidente.
+
 > ⚠️ **Antonella** no funciona sin `ANTHROPIC_API_KEY` configurada en las
 > variables de entorno de Vercel (Production/Preview/Development).
 >
