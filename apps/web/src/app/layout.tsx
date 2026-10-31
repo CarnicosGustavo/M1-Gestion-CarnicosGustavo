@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Anton, Archivo, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { Toaster } from "sonner";
@@ -9,20 +9,71 @@ import { TRPCReactProvider } from "@/components/trpc-provider";
 import "./globals.css";
 import { CLIENT_NAME } from "@/lib/constants";
 
-// Tipografía de marca Cárnicos Gustavo
-const archivo = Archivo({
-	subsets: ["latin"],
-	weight: ["400", "500", "600", "700", "800"],
+// Fuentes OFL de fontsource empaquetadas localmente para que el build no dependa de la red.
+const archivo = localFont({
+	src: [
+		{
+			path: "./fonts/archivo-latin-400-normal.woff2",
+			weight: "400",
+			style: "normal",
+		},
+		{
+			path: "./fonts/archivo-latin-500-normal.woff2",
+			weight: "500",
+			style: "normal",
+		},
+		{
+			path: "./fonts/archivo-latin-600-normal.woff2",
+			weight: "600",
+			style: "normal",
+		},
+		{
+			path: "./fonts/archivo-latin-700-normal.woff2",
+			weight: "700",
+			style: "normal",
+		},
+		{
+			path: "./fonts/archivo-latin-800-normal.woff2",
+			weight: "800",
+			style: "normal",
+		},
+	],
+	display: "swap",
+	fallback: ["ui-sans-serif", "system-ui", "sans-serif"],
 	variable: "--font-archivo",
 });
-const anton = Anton({
-	subsets: ["latin"],
-	weight: "400",
+const anton = localFont({
+	src: [
+		{
+			path: "./fonts/anton-latin-400-normal.woff2",
+			weight: "400",
+			style: "normal",
+		},
+	],
+	display: "swap",
+	fallback: ["ui-sans-serif", "system-ui", "sans-serif"],
 	variable: "--font-anton",
 });
-const jetbrains = JetBrains_Mono({
-	subsets: ["latin"],
-	weight: ["400", "500", "700"],
+const jetbrains = localFont({
+	src: [
+		{
+			path: "./fonts/jetbrains-mono-latin-400-normal.woff2",
+			weight: "400",
+			style: "normal",
+		},
+		{
+			path: "./fonts/jetbrains-mono-latin-500-normal.woff2",
+			weight: "500",
+			style: "normal",
+		},
+		{
+			path: "./fonts/jetbrains-mono-latin-700-normal.woff2",
+			weight: "700",
+			style: "normal",
+		},
+	],
+	display: "swap",
+	fallback: ["ui-monospace", "monospace"],
 	variable: "--font-jetbrains",
 });
 
