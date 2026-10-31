@@ -81,6 +81,8 @@ igual la migración para mantener el historial consistente.
   actualizar `supabase/schema/app_tables.sql` (mientras tanto `db:verify-drift`
   muestra el `CREATE TABLE` pendiente).
 
+- `0004_scale_readings_webserial` — **PENDIENTE, no aplicada**; agrega a `scale_readings` las columnas `source` (default `trss3`), `captured_by`, `voided_at` y `voided_by`, además del índice `(order_item_id, id)` para la lectura por Web Serial. Aplicar después de `0003`.
+
 ## Triggers y datos semilla
 
 Los triggers SQL y seeds siguen viviendo en [`../../../sql/`](../../../sql/) y se
