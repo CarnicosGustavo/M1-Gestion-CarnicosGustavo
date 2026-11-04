@@ -1,63 +1,66 @@
+import { TRPCError } from "@trpc/server";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
-import { protectedProcedure, router, almacenProcedure } from "../init";
 import { db } from "@/lib/db";
 import {
-	orders,
-	orderItems,
-	transactions,
-	customers,
-	products,
-	productTransformations,
-	inventoryTransactions,
 	creditCharges,
 	customerPrices,
+	customers,
+	inventoryTransactions,
+	type OrderItemStatus,
+	orderItems,
+	orders,
+	products,
+	productTransformations,
+	scaleReadings,
+	transactions,
 } from "@/lib/db/schema";
-import { eq, and, inArray, sql } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import { alias } from "drizzle-orm/pg-core";
+import { almacenProcedure, protectedProcedure, router } from "../init";
 
 const orderWithCustomerSchema = z.object({
 	id: z.number(),
 	customer_id: z.number().nullable(),
-	total_amount: z.union([z.number(), z.string()]),
+	total_amount: z.union([z.number(), z.string()]).nullable(),
 	status: z.string().nullable(),
-	user_uid: z.string(),
-	requires_weighing: z.boolean(),
+	user_uid: z.string().nullable(),
+	requires_weighing: z.boolean().nullable(),
 	whatsapp_message_id: z.string().nullable(),
 	notes: z.string().nullable(),
 	delivery_address: z.string().nullable(),
 	created_at: z.date().nullable(),
-	customer: z.object({ name: z.string() }).nullable(),
+	customer: z.object({ name: z.string().nullable() }).nullable(),
 });
 
 const orderDetailSchema = z.object({
 	id: z.number(),
 	customer_id: z.number().nullable(),
-	total_amount: z.union([z.number(), z.string()]),
+	total_amount: z.union([z.number(), z.string()]).nullable(),
 	status: z.string().nullable(),
-	user_uid: z.string(),
-	requires_weighing: z.boolean(),
+	user_uid: z.string().nullable(),
+	requires_weighing: z.boolean().nullable(),
 	notes: z.string().nullable(),
 	whatsapp_message_id: z.string().nullable(),
 	created_at: z.date().nullable(),
-	customer: z.object({ name: z.string() }).nullable(),
+	customer: z.object({ name: z.string().nullable() }).nullable(),
 	orderItems: z.array(
 		z.object({
 			id: z.number(),
 			product_id: z.number().nullable(),
 			product_name: z.string().nullable(),
-			quantity: z.number(),
+			quantity: z.number().nullable(),
 			quantity_pieces: z.number().nullable(),
 			quantity_kg: z.union([z.number(), z.string()]).nullable(),
-			unit_price: z.union([z.number(), z.string()]),
+			unit_price: z.union([z.number(), z.string()]).nullable(),
 			subtotal: z.union([z.number(), z.string()]).nullable(),
-			status: z.string(),
+			status: z.string().nullable(),
 			product: z
 				.object({
 					name: z.string(),
 					category: z.string().nullable(),
-					is_sellable_by_weight: z.boolean(),
-					is_sellable_by_unit: z.boolean(),
+					is_sellable_by_weight: z.boolean().nullable(),
+					is_sellable_by_unit: z.boolean().nullable(),
+					stock_pieces: z.number().nullable().optional(),
 				})
 				.nullable(),
 		}),
@@ -129,7 +132,7 @@ export const ordersRouter = router({
 			const result = await db.query.orders.findFirst({
 				where: and(
 					eq(orders.id, input.id),
-					inArray(orders.user_uid, [ctx.user.id, "system"])
+					inArray(orders.user_uid, [ctx.user.id, "system"]),
 				),
 				with: {
 					customer: { columns: { name: true } },
@@ -141,6 +144,7 @@ export const ordersRouter = router({
 									category: true,
 									is_sellable_by_weight: true,
 									is_sellable_by_unit: true,
+									stock_pieces: true,
 								},
 							},
 						},
@@ -236,7 +240,10 @@ export const ordersRouter = router({
 			const uid = ctx.user.id;
 
 			const order = await db.query.orders.findFirst({
-				where: and(eq(orders.id, input.orderId), inArray(orders.user_uid, [uid, "system"])),
+				where: and(
+					eq(orders.id, input.orderId),
+					inArray(orders.user_uid, [uid, "system"]),
+				),
 				with: {
 					orderItems: {
 						with: {
@@ -275,16 +282,16 @@ export const ordersRouter = router({
 			};
 
 			const normalizeProductName = (name: string) =>
-				name.toLowerCase().replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "").trim();
+				name
+					.toLowerCase()
+					.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+					.trim();
 
 			const canalCandidates = await db
 				.select({ id: products.id, name: products.name })
 				.from(products)
 				.where(
-					and(
-						eq(products.user_uid, uid),
-						eq(products.is_parent_product, true),
-					),
+					and(eq(products.user_uid, uid), eq(products.is_parent_product, true)),
 				);
 
 			const scoreCanalSpecific = (name: string, ttype: string): number => {
@@ -324,14 +331,12 @@ export const ordersRouter = router({
 							columns: { id: true, name: true },
 						})
 					: (() => {
-							const sorted = canalCandidates
-								.slice()
-								.sort((a, b) => {
-									const sa = scoreCanalSpecific(a.name, input.transformationType);
-									const sb = scoreCanalSpecific(b.name, input.transformationType);
-									if (sa !== sb) return sa - sb;
-									return a.id - b.id;
-								});
+							const sorted = canalCandidates.slice().sort((a, b) => {
+								const sa = scoreCanalSpecific(a.name, input.transformationType);
+								const sb = scoreCanalSpecific(b.name, input.transformationType);
+								if (sa !== sb) return sa - sb;
+								return a.id - b.id;
+							});
 							const best = sorted[0];
 							return best &&
 								scoreCanalSpecific(best.name, input.transformationType) < 999
@@ -358,14 +363,20 @@ export const ordersRouter = router({
 					childName: child.name,
 				})
 				.from(productTransformations)
-				.innerJoin(parent, eq(parent.id, productTransformations.parent_product_id))
+				.innerJoin(
+					parent,
+					eq(parent.id, productTransformations.parent_product_id),
+				)
 				.innerJoin(child, eq(child.id, productTransformations.child_product_id))
 				.where(
 					and(
 						eq(parent.user_uid, uid),
 						eq(child.user_uid, uid),
 						eq(productTransformations.is_active, true),
-						eq(productTransformations.transformation_type, input.transformationType),
+						eq(
+							productTransformations.transformation_type,
+							input.transformationType,
+						),
 					),
 				);
 
@@ -483,7 +494,11 @@ export const ordersRouter = router({
 					}
 
 					const path = buildPath(productId);
-					const isBlocked = path && path.some(step => input.productsToLeaveWhole?.includes(step.childId));
+					const isBlocked =
+						path &&
+						path.some((step) =>
+							input.productsToLeaveWhole?.includes(step.childId),
+						);
 
 					if (isBlocked) {
 						return {
@@ -526,7 +541,8 @@ export const ordersRouter = router({
 				method: "POST",
 				path: "/orders/{orderId}/prepare-disassembly",
 				tags: ["Orders"],
-				summary: "Generate required disassembly for an order (by style) and move to PENDIENTE_PESAJE",
+				summary:
+					"Generate required disassembly for an order (by style) and move to PENDIENTE_PESAJE",
 			},
 		})
 		.input(
@@ -585,16 +601,16 @@ export const ordersRouter = router({
 			};
 
 			const normalizeProductName = (name: string) =>
-				name.toLowerCase().replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "").trim();
+				name
+					.toLowerCase()
+					.replace(/^\s*[a-z]{2}\d+\s*-\s*/i, "")
+					.trim();
 
 			const canalCandidates = await db
 				.select({ id: products.id, name: products.name })
 				.from(products)
 				.where(
-					and(
-						eq(products.user_uid, uid),
-						eq(products.is_parent_product, true),
-					),
+					and(eq(products.user_uid, uid), eq(products.is_parent_product, true)),
 				);
 
 			const scoreCanalSpecific = (name: string, ttype: string): number => {
@@ -634,14 +650,12 @@ export const ordersRouter = router({
 							columns: { id: true, name: true },
 						})
 					: (() => {
-							const sorted = canalCandidates
-								.slice()
-								.sort((a, b) => {
-									const sa = scoreCanalSpecific(a.name, input.transformationType);
-									const sb = scoreCanalSpecific(b.name, input.transformationType);
-									if (sa !== sb) return sa - sb;
-									return a.id - b.id;
-								});
+							const sorted = canalCandidates.slice().sort((a, b) => {
+								const sa = scoreCanalSpecific(a.name, input.transformationType);
+								const sb = scoreCanalSpecific(b.name, input.transformationType);
+								if (sa !== sb) return sa - sb;
+								return a.id - b.id;
+							});
 							const best = sorted[0];
 							return best &&
 								scoreCanalSpecific(best.name, input.transformationType) < 999
@@ -668,14 +682,20 @@ export const ordersRouter = router({
 					childName: child.name,
 				})
 				.from(productTransformations)
-				.innerJoin(parent, eq(parent.id, productTransformations.parent_product_id))
+				.innerJoin(
+					parent,
+					eq(parent.id, productTransformations.parent_product_id),
+				)
 				.innerJoin(child, eq(child.id, productTransformations.child_product_id))
 				.where(
 					and(
 						eq(parent.user_uid, uid),
 						eq(child.user_uid, uid),
 						eq(productTransformations.is_active, true),
-						eq(productTransformations.transformation_type, input.transformationType),
+						eq(
+							productTransformations.transformation_type,
+							input.transformationType,
+						),
 					),
 				);
 
@@ -754,7 +774,10 @@ export const ordersRouter = router({
 				return out;
 			};
 
-			const requiredParentsForDemand = (demandPieces: number, yieldPieces: number) => {
+			const requiredParentsForDemand = (
+				demandPieces: number,
+				yieldPieces: number,
+			) => {
 				if (!Number.isFinite(yieldPieces) || yieldPieces <= 0) return 0;
 				if (demandPieces <= 0) return 0;
 				const approx = Math.max(0, Math.ceil(demandPieces / yieldPieces));
@@ -770,10 +793,16 @@ export const ordersRouter = router({
 			};
 
 			const demandedDirect = new Map<number, number>();
-			const intermediateDemands = new Map<number, Map<number, { demand: number; yieldPieces: number }>>();
+			const intermediateDemands = new Map<
+				number,
+				Map<number, { demand: number; yieldPieces: number }>
+			>();
 			const missing: Array<{ productName: string; reason: string }> = [];
 
-			const productsById = new Map<number, (typeof order.orderItems)[number]["product"]>();
+			const productsById = new Map<
+				number,
+				(typeof order.orderItems)[number]["product"]
+			>();
 			for (const i of order.orderItems) {
 				if (i.product && i.product.user_uid === uid) {
 					productsById.set(i.product.id, i.product);
@@ -793,7 +822,8 @@ export const ordersRouter = router({
 				}
 
 				const demandByPieces = item.quantity_pieces ?? null;
-				const demandByKg = item.quantity_kg !== null ? Number(item.quantity_kg) : null;
+				const demandByKg =
+					item.quantity_kg !== null ? Number(item.quantity_kg) : null;
 				const isWeight = p.is_sellable_by_weight === true;
 
 				let demandPieces = 0;
@@ -827,9 +857,14 @@ export const ordersRouter = router({
 					continue;
 				}
 
-				const isBlocked = path.some(step => input.productsToLeaveWhole?.includes(step.childId));
+				const isBlocked = path.some((step) =>
+					input.productsToLeaveWhole?.includes(step.childId),
+				);
 				if (isBlocked) {
-					missing.push({ productName: p.name, reason: "BLOQUEADO_POR_USUARIO" });
+					missing.push({
+						productName: p.name,
+						reason: "BLOQUEADO_POR_USUARIO",
+					});
 					continue;
 				}
 
@@ -910,7 +945,8 @@ export const ordersRouter = router({
 					quantityToProcess: number;
 					transformationType: string;
 				}) => {
-					if (args.quantityToProcess <= 0) return { parentName: "", processed: 0 };
+					if (args.quantityToProcess <= 0)
+						return { parentName: "", processed: 0 };
 
 					const [parentRow] = await tx
 						.select()
@@ -930,7 +966,7 @@ export const ordersRouter = router({
 						});
 					}
 
-					if (parentRow.stock_pieces < args.quantityToProcess) {
+					if ((parentRow.stock_pieces ?? 0) < args.quantityToProcess) {
 						throw new TRPCError({
 							code: "BAD_REQUEST",
 							message: `Stock insuficiente de ${parentRow.name}`,
@@ -939,7 +975,9 @@ export const ordersRouter = router({
 
 					const stockKg = Number(parentRow.stock_kg);
 					const parentAvgWeight =
-						parentRow.stock_pieces > 0 ? stockKg / parentRow.stock_pieces : 0;
+						(parentRow.stock_pieces ?? 0) > 0
+							? stockKg / (parentRow.stock_pieces ?? 0)
+							: 0;
 					const kgToRemove = args.quantityToProcess * parentAvgWeight;
 					const newStockKg = stockKg - kgToRemove;
 					if (newStockKg < -0.0005) {
@@ -952,11 +990,12 @@ export const ordersRouter = router({
 					await tx
 						.update(products)
 						.set({
-							stock_pieces: parentRow.stock_pieces - args.quantityToProcess,
+							stock_pieces:
+								(parentRow.stock_pieces ?? 0) - args.quantityToProcess,
 							stock_kg: Math.max(0, newStockKg).toFixed(3),
 							weighed_pieces: Math.min(
 								parentRow.weighed_pieces ?? 0,
-								parentRow.stock_pieces - args.quantityToProcess,
+								(parentRow.stock_pieces ?? 0) - args.quantityToProcess,
 							),
 						})
 						.where(eq(products.id, args.parentProductId));
@@ -964,7 +1003,8 @@ export const ordersRouter = router({
 					await tx.insert(inventoryTransactions).values({
 						product_id: args.parentProductId,
 						quantity_change_pieces: -args.quantityToProcess,
-						quantity_change_kg: kgToRemove !== 0 ? (-kgToRemove).toFixed(3) : null,
+						quantity_change_kg:
+							kgToRemove !== 0 ? (-kgToRemove).toFixed(3) : null,
 						transaction_type: "DESPIECE",
 						reference_id: input.orderId,
 						notes: `Salida por despiece ${args.transformationType} pedido #${input.orderId}`,
@@ -975,8 +1015,14 @@ export const ordersRouter = router({
 						.from(productTransformations)
 						.where(
 							and(
-								eq(productTransformations.parent_product_id, args.parentProductId),
-								eq(productTransformations.transformation_type, args.transformationType),
+								eq(
+									productTransformations.parent_product_id,
+									args.parentProductId,
+								),
+								eq(
+									productTransformations.transformation_type,
+									args.transformationType,
+								),
 								eq(productTransformations.is_active, true),
 							),
 						);
@@ -997,8 +1043,10 @@ export const ordersRouter = router({
 						if (childPiecesToAdd <= 0) continue;
 
 						const yieldRatio = Number(r.yield_weight_ratio);
-						const ratio = Number.isFinite(yieldRatio) && yieldRatio > 0 ? yieldRatio : 0;
-						const childKgToAdd = ratio * parentAvgWeight * args.quantityToProcess;
+						const ratio =
+							Number.isFinite(yieldRatio) && yieldRatio > 0 ? yieldRatio : 0;
+						const childKgToAdd =
+							ratio * parentAvgWeight * args.quantityToProcess;
 
 						const [childRow] = await tx
 							.select()
@@ -1016,7 +1064,7 @@ export const ordersRouter = router({
 						const newChildKg = Number(childRow.stock_kg) + childKgToAdd;
 						if (newChildKg > 9999999.999) {
 							throw new TRPCError({
-								code: "INVALID_DATA",
+								code: "BAD_REQUEST",
 								message: `Stock del producto ${childRow.name} excedería el límite máximo permitido`,
 							});
 						}
@@ -1024,7 +1072,7 @@ export const ordersRouter = router({
 						await tx
 							.update(products)
 							.set({
-								stock_pieces: childRow.stock_pieces + childPiecesToAdd,
+								stock_pieces: (childRow.stock_pieces ?? 0) + childPiecesToAdd,
 								stock_kg: newChildKg.toFixed(3),
 							})
 							.where(eq(products.id, r.child_product_id));
@@ -1032,14 +1080,18 @@ export const ordersRouter = router({
 						await tx.insert(inventoryTransactions).values({
 							product_id: r.child_product_id,
 							quantity_change_pieces: childPiecesToAdd,
-							quantity_change_kg: childKgToAdd !== 0 ? childKgToAdd.toFixed(3) : null,
+							quantity_change_kg:
+								childKgToAdd !== 0 ? childKgToAdd.toFixed(3) : null,
 							transaction_type: "DESPIECE",
 							reference_id: input.orderId,
 							notes: `Entrada por despiece ${args.transformationType} de ${parentRow.name} pedido #${input.orderId}`,
 						});
 					}
 
-					return { parentName: parentRow.name, processed: args.quantityToProcess };
+					return {
+						parentName: parentRow.name,
+						processed: args.quantityToProcess,
+					};
 				};
 
 				const intermediatesProcessed: Array<{
@@ -1142,7 +1194,7 @@ export const ordersRouter = router({
 							message: `Producto ${item.productId} no encontrado`,
 						});
 
-					let itemStatus = "COMPLETADO";
+					let itemStatus: OrderItemStatus = "COMPLETADO";
 					let quantityKg = item.quantityKg;
 					let subtotal = 0;
 
@@ -1189,7 +1241,7 @@ export const ordersRouter = router({
 					.insert(orders)
 					.values({
 						customer_id: input.customerId,
-						total_amount: totalAmount,
+						total_amount: String(totalAmount),
 						user_uid: ctx.user.id,
 						status: orderStatus,
 						requires_weighing: requiresWeighing,
@@ -1203,6 +1255,12 @@ export const ordersRouter = router({
 					processedItems.map((item) => ({
 						order_id: orderData.id,
 						...item,
+						quantity_kg:
+							item.quantity_kg == null
+								? item.quantity_kg
+								: String(item.quantity_kg),
+						unit_price: String(item.unit_price),
+						subtotal: String(item.subtotal),
 					})),
 				);
 
@@ -1240,18 +1298,51 @@ export const ordersRouter = router({
 			},
 		})
 		.input(
+			// Sin .refine(): trpc-to-openapi necesita un objeto "plano" para generar
+			// el documento OpenAPI; la regla de "uno y solo uno" se valida abajo.
 			z.object({
 				orderItemId: z.number(),
-				actualWeightKg: z.number().int().positive(),
+				// Peso neto en GRAMOS (entero).
+				actualWeightGrams: z.number().int().positive().optional(),
+				// Obsoleto: mismo valor en GRAMOS (el nombre es histórico). Se acepta
+				// por compatibilidad; usar actualWeightGrams.
+				actualWeightKg: z.number().int().positive().optional(),
+				// Lectura de báscula usada (scale_readings.id); se marca consumida.
+				scaleReadingId: z.number().int().positive().optional(),
 			}),
 		)
 		.output(z.object({ success: z.boolean() }))
 		.mutation(async ({ ctx, input }) => {
+			const grams = input.actualWeightGrams ?? input.actualWeightKg;
+			if (
+				grams === undefined ||
+				(input.actualWeightGrams !== undefined &&
+					input.actualWeightKg !== undefined)
+			)
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Envía solo actualWeightGrams (peso neto en gramos)",
+				});
 			return db.transaction(async (tx) => {
+				// Solo renglones de pedidos del usuario (o creados por el sistema),
+				// igual que la cola de getPendingWeighingOrders.
 				const [item] = await tx
-					.select()
+					.select({
+						id: orderItems.id,
+						order_id: orderItems.order_id,
+						product_id: orderItems.product_id,
+						unit_price: orderItems.unit_price,
+						quantity_pieces: orderItems.quantity_pieces,
+						status: orderItems.status,
+					})
 					.from(orderItems)
-					.where(eq(orderItems.id, input.orderItemId))
+					.innerJoin(orders, eq(orders.id, orderItems.order_id))
+					.where(
+						and(
+							eq(orderItems.id, input.orderItemId),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
+					)
 					.limit(1);
 
 				if (!item)
@@ -1260,19 +1351,58 @@ export const ordersRouter = router({
 						message: "Ítem no encontrado",
 					});
 
-				const subtotal = Math.round(
-					(input.actualWeightKg * Number(item.unit_price)) / 1000,
-				);
-				const actualWeightKg = (input.actualWeightKg / 1000).toFixed(3);
+				const subtotal = Math.round((grams * Number(item.unit_price)) / 1000);
+				const actualWeightKg = (grams / 1000).toFixed(3);
 
-				await tx
+				// Solo se pesa un renglón PENDIENTE_PESAJE. El UPDATE condicional evita
+				// pesar dos veces (y sumar stock doble en producción) aunque lleguen
+				// dos peticiones al mismo tiempo.
+				const updated = await tx
 					.update(orderItems)
 					.set({
 						quantity_kg: actualWeightKg,
-						subtotal: subtotal,
+						subtotal: String(subtotal),
 						status: "PESADO",
 					})
-					.where(eq(orderItems.id, input.orderItemId));
+					.where(
+						and(
+							eq(orderItems.id, input.orderItemId),
+							eq(orderItems.status, "PENDIENTE_PESAJE"),
+						),
+					)
+					.returning({ id: orderItems.id });
+
+				if (updated.length === 0)
+					throw new TRPCError({
+						code: "CONFLICT",
+						message: "Este artículo ya fue pesado",
+					});
+
+				// Si el peso vino de la báscula física, marcar la lectura como usada
+				// (una sola vez). Si ya se usó, se revierte todo el pesaje.
+				if (input.scaleReadingId !== undefined) {
+					const consumed = await tx
+						.update(scaleReadings)
+						.set({
+							consumed_at: new Date(),
+							consumed_by: ctx.user.id,
+							consumed_order_item_id: input.orderItemId,
+						})
+						.where(
+							and(
+								eq(scaleReadings.id, input.scaleReadingId),
+								isNull(scaleReadings.consumed_at),
+								isNull(scaleReadings.voided_at),
+								ne(scaleReadings.source, "pc-webserial"),
+							),
+						)
+						.returning({ id: scaleReadings.id });
+					if (consumed.length === 0)
+						throw new TRPCError({
+							code: "CONFLICT",
+							message: "Esa lectura de báscula ya fue usada",
+						});
+				}
 
 				// Recalcular total de la orden
 				const allItems = await tx
@@ -1322,7 +1452,7 @@ export const ordersRouter = router({
 				await tx
 					.update(orders)
 					.set({
-						total_amount: newTotal,
+						total_amount: String(newTotal),
 						status: isProduction
 							? allWeighed
 								? "COMPLETADA"
@@ -1392,8 +1522,8 @@ export const ordersRouter = router({
 								: 0;
 							const newStockKg = currentStockKg - itemQuantityKg;
 							const nextPieces = item.quantity_pieces
-								? product.stock_pieces - item.quantity_pieces
-								: product.stock_pieces;
+								? (product.stock_pieces ?? 0) - item.quantity_pieces
+								: (product.stock_pieces ?? 0);
 							const nextWeighedPieces = Math.min(
 								product.weighed_pieces ?? 0,
 								nextPieces,
@@ -1498,8 +1628,8 @@ export const ordersRouter = router({
 								: 0;
 							const newStockKg = currentStockKg - itemQuantityKg;
 							const nextPieces = item.quantity_pieces
-								? product.stock_pieces - item.quantity_pieces
-								: product.stock_pieces;
+								? (product.stock_pieces ?? 0) - item.quantity_pieces
+								: (product.stock_pieces ?? 0);
 							const nextWeighedPieces = Math.min(
 								product.weighed_pieces ?? 0,
 								nextPieces,
@@ -1565,12 +1695,16 @@ export const ordersRouter = router({
 					)
 					.limit(1);
 				if (!order) {
-					throw new TRPCError({ code: "NOT_FOUND", message: "Pedido no encontrado" });
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Pedido no encontrado",
+					});
 				}
 				if (order.status !== "COMPLETADA") {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
-						message: "Solo pedidos ya cobrados/completados pueden pasar a crédito",
+						message:
+							"Solo pedidos ya cobrados/completados pueden pasar a crédito",
 					});
 				}
 				if (!order.customer_id) {
@@ -1591,7 +1725,9 @@ export const ordersRouter = router({
 					});
 				}
 				// Revierte el ingreso en efectivo (elimina la transacción del pedido)
-				await tx.delete(transactions).where(eq(transactions.order_id, input.orderId));
+				await tx
+					.delete(transactions)
+					.where(eq(transactions.order_id, input.orderId));
 				// Crea la cuenta por cobrar
 				await tx.insert(creditCharges).values({
 					customer_id: order.customer_id,
@@ -1685,7 +1821,8 @@ export const ordersRouter = router({
 				if (!orderData) {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
-						message: "Pedido no disponible para cobro (ya cobrado o no está listo)",
+						message:
+							"Pedido no disponible para cobro (ya cobrado o no está listo)",
 					});
 				}
 
@@ -1704,7 +1841,10 @@ export const ordersRouter = router({
 					totalCents += subtotalCents;
 					await tx
 						.update(orderItems)
-						.set({ unit_price: unitPriceCents, subtotal: subtotalCents })
+						.set({
+							unit_price: String(unitPriceCents),
+							subtotal: String(subtotalCents),
+						})
 						.where(eq(orderItems.id, it.orderItemId));
 
 					if (it.productId && orderData.customer_id) {
@@ -1727,7 +1867,7 @@ export const ordersRouter = router({
 
 				await tx
 					.update(orders)
-					.set({ total_amount: totalCents })
+					.set({ total_amount: String(totalCents) })
 					.where(eq(orders.id, input.orderId));
 
 				// 2. Descontar inventario
@@ -1743,26 +1883,34 @@ export const ordersRouter = router({
 							.where(eq(products.id, item.product_id))
 							.limit(1);
 						if (product) {
-							const itemQuantityKg = item.quantity_kg ? Number(item.quantity_kg) : 0;
+							const itemQuantityKg = item.quantity_kg
+								? Number(item.quantity_kg)
+								: 0;
 							// La pieza ya fue pesada y está físicamente lista para entrega:
 							// el cobro NO se bloquea por stock. Se descuenta sin bajar de 0.
 							// Stock puede quedar negativo: se compensa al despiezar.
 							const finalStockKg = Number(product.stock_kg) - itemQuantityKg;
 							const finalPieces = item.quantity_pieces
-								? product.stock_pieces - item.quantity_pieces
-								: product.stock_pieces;
+								? (product.stock_pieces ?? 0) - item.quantity_pieces
+								: (product.stock_pieces ?? 0);
 							await tx
 								.update(products)
 								.set({
 									stock_pieces: finalPieces,
-									weighed_pieces: Math.max(0, Math.min(product.weighed_pieces ?? 0, finalPieces)),
+									weighed_pieces: Math.max(
+										0,
+										Math.min(product.weighed_pieces ?? 0, finalPieces),
+									),
 									stock_kg: finalStockKg.toFixed(3),
 								})
 								.where(eq(products.id, item.product_id));
 							await tx.insert(inventoryTransactions).values({
 								product_id: item.product_id,
-								quantity_change_pieces: item.quantity_pieces ? -item.quantity_pieces : null,
-								quantity_change_kg: itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
+								quantity_change_pieces: item.quantity_pieces
+									? -item.quantity_pieces
+									: null,
+								quantity_change_kg:
+									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
 								transaction_type: "VENTA",
 								reference_id: input.orderId,
 								notes: `Venta pedido #${input.orderId}`,
@@ -1781,7 +1929,8 @@ export const ordersRouter = router({
 					if (!orderData.customer_id) {
 						throw new TRPCError({
 							code: "BAD_REQUEST",
-							message: "El pedido no tiene cliente; no se puede dejar a crédito",
+							message:
+								"El pedido no tiene cliente; no se puede dejar a crédito",
 						});
 					}
 					await tx.insert(creditCharges).values({
@@ -1846,7 +1995,12 @@ export const ordersRouter = router({
 			const [updated] = await db
 				.update(orders)
 				.set(updateData)
-				.where(and(eq(orders.id, id), inArray(orders.user_uid, [ctx.user.id, "system"])))
+				.where(
+					and(
+						eq(orders.id, id),
+						inArray(orders.user_uid, [ctx.user.id, "system"]),
+					),
+				)
 				.returning();
 
 			const customer = updated?.customer_id
@@ -1890,7 +2044,8 @@ export const ordersRouter = router({
 					order_id: ord.id,
 					product_id: input.productId,
 					product_name: input.productName,
-					quantity_pieces: input.pieces && input.pieces > 0 ? input.pieces : null,
+					quantity_pieces:
+						input.pieces && input.pieces > 0 ? input.pieces : null,
 					quantity_kg: null,
 					unit_price: "0.00",
 					subtotal: "0.00",
@@ -1989,14 +2144,10 @@ export const ordersRouter = router({
 					updated_at: new Date(),
 				};
 				if (input.status) upd.status = input.status;
-				if (input.customerId !== undefined)
-					upd.customer_id = input.customerId;
+				if (input.customerId !== undefined) upd.customer_id = input.customerId;
 				if (input.notes !== undefined) upd.notes = input.notes;
 
-				await tx
-					.update(orders)
-					.set(upd)
-					.where(eq(orders.id, input.orderId));
+				await tx.update(orders).set(upd).where(eq(orders.id, input.orderId));
 
 				// Refleja el cambio en el dinero del sistema si el pedido ya estaba
 				// cobrado: a crédito (cuenta por cobrar) o de contado (venta).
@@ -2039,7 +2190,10 @@ export const ordersRouter = router({
 				await tx
 					.delete(orders)
 					.where(
-						and(eq(orders.id, input.id), inArray(orders.user_uid, [ctx.user.id, "system"])),
+						and(
+							eq(orders.id, input.id),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
 					);
 			});
 			return { success: true };

@@ -1,0 +1,312 @@
+-- ============================================================================
+--  0001_align_live_schema  —  NO-OP intencional
+-- ============================================================================
+--  Esta migración solo actualiza el snapshot de drizzle para que coincida con el
+--  esquema REAL de producción (packages/db/src/schema.ts fue alineado con la BD).
+--  Todos estos cambios YA existen en la BD: se aplicaron históricamente con
+--  migraciones SQL de Supabase (ver supabase/migrations/). Por eso el SQL
+--  generado por drizzle-kit queda COMENTADO como referencia y la migración
+--  ejecuta solo `SELECT 1;`. Correr `db:migrate` sobre producción es seguro:
+--  únicamente registra esta migración como aplicada.
+--
+--  En una base VACÍA, 0000 + este archivo NO reproducen el esquema actual; para
+--  eso usa supabase/migrations/ (ver sql/README.md).
+-- ============================================================================
+SELECT 1;
+--
+--  ---- SQL generado por drizzle-kit (diff baseline jun-2026 → BD actual) ----
+-- ALTER TYPE "public"."order_status" ADD VALUE 'completed';
+-- ALTER TYPE "public"."order_status" ADD VALUE 'paid';
+-- ALTER TYPE "public"."order_status" ADD VALUE 'shipped';
+-- ALTER TYPE "public"."order_status" ADD VALUE 'PENDIENTE_PESAJE';
+-- ALTER TYPE "public"."order_status" ADD VALUE 'LISTA_PARA_COBRO';
+-- ALTER TYPE "public"."order_status" ADD VALUE 'PROCESANDO_PAGO';
+-- ALTER TYPE "public"."order_status" ADD VALUE 'COMPLETADA';
+-- ALTER TYPE "public"."order_status" ADD VALUE 'PARCIAL_DISPONIBLE';
+-- ALTER TABLE "antonella_config" DROP CONSTRAINT "antonella_config_user_uid_unique";
+-- ALTER TABLE "customers" DROP CONSTRAINT "customers_email_unique";
+-- ALTER TABLE "customers" DROP CONSTRAINT "customers_whatsapp_phone_unique";
+-- ALTER TABLE "payment_methods" DROP CONSTRAINT "payment_methods_name_unique";
+-- ALTER TABLE "session" DROP CONSTRAINT "session_token_unique";
+-- ALTER TABLE "user" DROP CONSTRAINT "user_email_unique";
+-- ALTER TABLE "user" DROP CONSTRAINT "user_openId_unique";
+-- ALTER TABLE "whatsapp_sessions" DROP CONSTRAINT "whatsapp_sessions_phone_unique";
+-- ALTER TABLE "account" DROP CONSTRAINT "account_user_id_user_id_fk";
+--
+-- ALTER TABLE "antonella_dataset_rows" DROP CONSTRAINT "antonella_dataset_rows_dataset_id_antonella_datasets_id_fk";
+--
+-- ALTER TABLE "inventory_transactions" DROP CONSTRAINT "inventory_transactions_product_id_products_id_fk";
+--
+-- ALTER TABLE "order_items" DROP CONSTRAINT "order_items_order_id_orders_id_fk";
+--
+-- ALTER TABLE "order_items" DROP CONSTRAINT "order_items_product_id_products_id_fk";
+--
+-- ALTER TABLE "orders" DROP CONSTRAINT "orders_customer_id_customers_id_fk";
+--
+-- ALTER TABLE "orders" DROP CONSTRAINT "orders_web_order_id_web_orders_id_fk";
+--
+-- ALTER TABLE "price_list_items" DROP CONSTRAINT "price_list_items_price_list_id_price_lists_id_fk";
+--
+-- ALTER TABLE "price_list_items" DROP CONSTRAINT "price_list_items_product_id_products_id_fk";
+--
+-- ALTER TABLE "product_transformations" DROP CONSTRAINT "product_transformations_parent_product_id_products_id_fk";
+--
+-- ALTER TABLE "product_transformations" DROP CONSTRAINT "product_transformations_child_product_id_products_id_fk";
+--
+-- ALTER TABLE "products" DROP CONSTRAINT "products_parent_product_id_products_id_fk";
+--
+-- ALTER TABLE "session" DROP CONSTRAINT "session_user_id_user_id_fk";
+--
+-- ALTER TABLE "transactions" DROP CONSTRAINT "transactions_order_id_orders_id_fk";
+--
+-- ALTER TABLE "transactions" DROP CONSTRAINT "transactions_payment_method_id_payment_methods_id_fk";
+--
+-- ALTER TABLE "yield_sheet_items" DROP CONSTRAINT "yield_sheet_items_sheet_id_yield_sheets_id_fk";
+--
+-- ALTER TABLE "yield_sheet_items" DROP CONSTRAINT "yield_sheet_items_product_id_products_id_fk";
+--
+-- ALTER TABLE "account" ALTER COLUMN "access_token_expires_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "account" ALTER COLUMN "refresh_token_expires_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "account" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "account" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "account" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "account" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "channel_purchases" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "channel_purchases" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "channel_purchases" ALTER COLUMN "purchase_date" SET DEFAULT CURRENT_DATE;
+-- ALTER TABLE "channel_purchases" ALTER COLUMN "purchase_date" SET NOT NULL;
+-- ALTER TABLE "channel_purchases" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "channel_purchases" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "credit_accounts" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "credit_accounts" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "credit_accounts" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "credit_accounts" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "credit_accounts" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "credit_accounts" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "credit_charges" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "credit_charges" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "credit_charges" ALTER COLUMN "charge_date" SET DEFAULT CURRENT_DATE;
+-- ALTER TABLE "credit_charges" ALTER COLUMN "charge_date" SET NOT NULL;
+-- ALTER TABLE "credit_charges" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "credit_charges" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "credit_payments" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "credit_payments" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "credit_payments" ALTER COLUMN "payment_date" SET DEFAULT CURRENT_DATE;
+-- ALTER TABLE "credit_payments" ALTER COLUMN "payment_date" SET NOT NULL;
+-- ALTER TABLE "credit_payments" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "credit_payments" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "customer_prices" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "customer_prices" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "customer_prices" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "customer_prices" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "customers" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "customers" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "customers" ALTER COLUMN "name" SET DATA TYPE varchar(150);
+-- ALTER TABLE "customers" ALTER COLUMN "phone" SET DATA TYPE varchar(50);
+-- ALTER TABLE "customers" ALTER COLUMN "status" SET DEFAULT 'active';
+-- ALTER TABLE "customers" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "customers" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "inventory_transactions" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "inventory_transactions" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "inventory_transactions" ALTER COLUMN "quantity_change_kg" SET DATA TYPE numeric;
+-- ALTER TABLE "inventory_transactions" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "inventory_transactions" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "order_items" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "order_items" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "order_items" ALTER COLUMN "product_name" SET DATA TYPE varchar(100);
+-- ALTER TABLE "order_items" ALTER COLUMN "quantity" SET DEFAULT 1;
+-- ALTER TABLE "order_items" ALTER COLUMN "price" SET DEFAULT '0.00';
+-- ALTER TABLE "order_items" ALTER COLUMN "quantity_kg" SET DATA TYPE numeric(8, 3);
+-- ALTER TABLE "order_items" ALTER COLUMN "status" SET DATA TYPE varchar(50);
+-- ALTER TABLE "order_items" ALTER COLUMN "status" SET DEFAULT 'PENDING';
+-- ALTER TABLE "order_items" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "order_items" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "orders" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "orders" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "orders" ALTER COLUMN "status" SET DEFAULT 'pending'::"public"."order_status";
+-- ALTER TABLE "orders" ALTER COLUMN "status" SET DATA TYPE "public"."order_status" USING "status"::"public"."order_status";
+-- ALTER TABLE "orders" ALTER COLUMN "whatsapp_message_id" SET DATA TYPE varchar(100);
+-- ALTER TABLE "orders" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "orders" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "orders" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "orders" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "payment_methods" ALTER COLUMN "id" SET DATA TYPE bigserial;
+-- ALTER TABLE "payment_methods" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "payment_methods" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "payment_methods" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "price_list_items" ALTER COLUMN "id" SET DATA TYPE bigserial;
+-- ALTER TABLE "price_list_items" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "price_list_items" ALTER COLUMN "price_list_id" SET DATA TYPE bigint;
+-- ALTER TABLE "price_list_items" ALTER COLUMN "product_id" SET DATA TYPE bigint;
+-- ALTER TABLE "price_list_items" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "price_list_items" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "price_list_items" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "price_list_items" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "price_lists" ALTER COLUMN "id" SET DATA TYPE bigserial;
+-- ALTER TABLE "price_lists" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "price_lists" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "price_lists" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "price_lists" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "price_lists" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "product_transformations" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "product_transformations" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "product_transformations" ALTER COLUMN "yield_quantity_pieces" SET DATA TYPE numeric;
+-- ALTER TABLE "product_transformations" ALTER COLUMN "yield_weight_ratio" SET DATA TYPE numeric;
+-- ALTER TABLE "product_transformations" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "product_transformations" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "product_transformations" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "product_transformations" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "products" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "products" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "products" ALTER COLUMN "name" SET DATA TYPE varchar(100);
+-- ALTER TABLE "products" ALTER COLUMN "price_per_kg" SET DEFAULT '0.00';
+-- ALTER TABLE "products" ALTER COLUMN "price_per_kg" SET NOT NULL;
+-- ALTER TABLE "products" ALTER COLUMN "unit" SET DATA TYPE varchar(20);
+-- ALTER TABLE "products" ALTER COLUMN "unit" SET DEFAULT 'kg';
+-- ALTER TABLE "products" ALTER COLUMN "unit" SET NOT NULL;
+-- ALTER TABLE "products" ALTER COLUMN "sort_order" SET NOT NULL;
+-- ALTER TABLE "products" ALTER COLUMN "in_stock" SET DATA TYPE integer;
+-- ALTER TABLE "products" ALTER COLUMN "category" SET DATA TYPE varchar(100);
+-- ALTER TABLE "products" ALTER COLUMN "category" SET DEFAULT 'General';
+-- ALTER TABLE "products" ALTER COLUMN "ncm" SET DATA TYPE varchar(20);
+-- ALTER TABLE "products" ALTER COLUMN "cfop" SET DATA TYPE varchar(20);
+-- ALTER TABLE "products" ALTER COLUMN "icms_cst" SET DATA TYPE varchar(20);
+-- ALTER TABLE "products" ALTER COLUMN "pis_cst" SET DATA TYPE varchar(20);
+-- ALTER TABLE "products" ALTER COLUMN "cofins_cst" SET DATA TYPE varchar(20);
+-- ALTER TABLE "products" ALTER COLUMN "unit_of_measure" SET DATA TYPE varchar(20);
+-- ALTER TABLE "products" ALTER COLUMN "unit_of_measure" SET DEFAULT 'KG';
+-- ALTER TABLE "products" ALTER COLUMN "stock_kg" SET DATA TYPE numeric;
+-- ALTER TABLE "products" ALTER COLUMN "stock_kg" SET DEFAULT '0.0';
+-- ALTER TABLE "products" ALTER COLUMN "stock_kg_frozen" SET DEFAULT '0';
+-- ALTER TABLE "products" ALTER COLUMN "price_per_piece" SET DATA TYPE numeric;
+-- ALTER TABLE "products" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "products" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "products" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "products" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "session" ALTER COLUMN "expires_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "session" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "session" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "session" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "session" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "transactions" ALTER COLUMN "id" SET DATA TYPE bigserial;
+-- ALTER TABLE "transactions" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "transactions" ALTER COLUMN "order_id" SET DATA TYPE bigint;
+-- ALTER TABLE "transactions" ALTER COLUMN "payment_method_id" SET DATA TYPE bigint;
+-- ALTER TABLE "transactions" ALTER COLUMN "amount" SET DATA TYPE numeric(10, 2);
+-- ALTER TABLE "transactions" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "transactions" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "user" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "user" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "user" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "user" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "user" ALTER COLUMN "lastSignedIn" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "user" ALTER COLUMN "lastSignedIn" SET DEFAULT now();
+-- ALTER TABLE "verification" ALTER COLUMN "expires_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "verification" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "verification" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "verification" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "verification" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "web_orders" ALTER COLUMN "source" SET DATA TYPE text;
+-- ALTER TABLE "web_orders" ALTER COLUMN "source" SET DEFAULT 'website';
+-- ALTER TABLE "web_orders" ALTER COLUMN "source" SET NOT NULL;
+-- ALTER TABLE "web_orders" ALTER COLUMN "items_count" SET DEFAULT 0;
+-- ALTER TABLE "web_orders" ALTER COLUMN "items_count" SET NOT NULL;
+-- ALTER TABLE "web_orders" ALTER COLUMN "created_at" SET NOT NULL;
+-- ALTER TABLE "whatsapp_messages" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "whatsapp_messages" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "whatsapp_messages" ALTER COLUMN "message_type" SET DATA TYPE varchar(30);
+-- ALTER TABLE "whatsapp_messages" ALTER COLUMN "whatsapp_message_id" SET DATA TYPE varchar(100);
+-- ALTER TABLE "whatsapp_messages" ALTER COLUMN "status" SET DATA TYPE varchar(30);
+-- ALTER TABLE "whatsapp_messages" ALTER COLUMN "status" SET DEFAULT 'sent';
+-- ALTER TABLE "whatsapp_sessions" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "whatsapp_sessions" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "whatsapp_sessions" ALTER COLUMN "cart_data" SET DATA TYPE jsonb;
+-- ALTER TABLE "whatsapp_sessions" ALTER COLUMN "cart_data" SET DEFAULT '[]'::jsonb;
+-- ALTER TABLE "whatsapp_sessions" ALTER COLUMN "current_product_name" SET DATA TYPE varchar(100);
+-- ALTER TABLE "yield_sheet_items" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "yield_sheet_items" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "yield_sheet_items" ALTER COLUMN "product_name" SET DATA TYPE varchar;
+-- ALTER TABLE "yield_sheet_items" ALTER COLUMN "kg_total" SET DEFAULT '0';
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "id" SET DATA TYPE serial;
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "id" DROP IDENTITY;
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "sheet_date" SET DEFAULT CURRENT_DATE;
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "sheet_date" SET NOT NULL;
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "kg_comprado" SET DEFAULT '0';
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "user_uid" SET DATA TYPE varchar;
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "created_at" SET DEFAULT now();
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "updated_at" SET DATA TYPE timestamp with time zone;
+-- ALTER TABLE "yield_sheets" ALTER COLUMN "updated_at" SET DEFAULT now();
+-- ALTER TABLE "customers" ADD COLUMN "total_orders" integer DEFAULT 0 NOT NULL;
+-- ALTER TABLE "customers" ADD COLUMN "createdAt" timestamp DEFAULT now() NOT NULL;
+-- ALTER TABLE "customers" ADD COLUMN "updatedAt" timestamp DEFAULT now() NOT NULL;
+-- ALTER TABLE "customers" ADD COLUMN "updated_at" timestamp with time zone DEFAULT now();
+-- ALTER TABLE "order_items" ADD COLUMN "createdAt" timestamp DEFAULT now() NOT NULL;
+-- ALTER TABLE "order_items" ADD COLUMN "user_uid" varchar(255);
+-- ALTER TABLE "order_items" ADD COLUMN "updated_at" timestamp with time zone DEFAULT now();
+-- ALTER TABLE "orders" ADD COLUMN "createdAt" timestamp DEFAULT now() NOT NULL;
+-- ALTER TABLE "orders" ADD COLUMN "updatedAt" timestamp DEFAULT now() NOT NULL;
+-- ALTER TABLE "products" ADD COLUMN "createdAt" timestamp DEFAULT now() NOT NULL;
+-- ALTER TABLE "products" ADD COLUMN "updatedAt" timestamp DEFAULT now() NOT NULL;
+-- ALTER TABLE "products" ADD COLUMN "status" varchar(20) DEFAULT 'active';
+-- ALTER TABLE "products" ADD COLUMN "image" text;
+-- ALTER TABLE "products" ADD COLUMN "price_alias" varchar(255);
+-- ALTER TABLE "user" ADD COLUMN "user_uid" varchar(255);
+-- ALTER TABLE "account" ADD CONSTRAINT "account_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "antonella_dataset_rows" ADD CONSTRAINT "antonella_dataset_rows_dataset_id_fkey" FOREIGN KEY ("dataset_id") REFERENCES "public"."antonella_datasets"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "credit_accounts" ADD CONSTRAINT "credit_accounts_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "credit_charges" ADD CONSTRAINT "credit_charges_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "credit_payments" ADD CONSTRAINT "credit_payments_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "customer_prices" ADD CONSTRAINT "customer_prices_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "customer_prices" ADD CONSTRAINT "customer_prices_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "inventory_transactions" ADD CONSTRAINT "inventory_transactions_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "order_items" ADD CONSTRAINT "order_items_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE no action ON UPDATE no action;
+-- ALTER TABLE "order_items" ADD CONSTRAINT "order_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;
+-- ALTER TABLE "orders" ADD CONSTRAINT "orders_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;
+-- ALTER TABLE "orders" ADD CONSTRAINT "orders_web_order_id_fkey" FOREIGN KEY ("web_order_id") REFERENCES "public"."web_orders"("id") ON DELETE set null ON UPDATE no action;
+-- ALTER TABLE "price_list_items" ADD CONSTRAINT "price_list_items_price_list_id_fkey" FOREIGN KEY ("price_list_id") REFERENCES "public"."price_lists"("id") ON DELETE no action ON UPDATE no action;
+-- ALTER TABLE "price_list_items" ADD CONSTRAINT "price_list_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;
+-- ALTER TABLE "product_transformations" ADD CONSTRAINT "product_transformations_parent_product_id_fkey" FOREIGN KEY ("parent_product_id") REFERENCES "public"."products"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "product_transformations" ADD CONSTRAINT "product_transformations_child_product_id_fkey" FOREIGN KEY ("child_product_id") REFERENCES "public"."products"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "products" ADD CONSTRAINT "products_parent_product_id_fkey" FOREIGN KEY ("parent_product_id") REFERENCES "public"."products"("id") ON DELETE set null ON UPDATE no action;
+-- ALTER TABLE "session" ADD CONSTRAINT "session_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "transactions" ADD CONSTRAINT "transactions_payment_method_id_fkey" FOREIGN KEY ("payment_method_id") REFERENCES "public"."payment_methods"("id") ON DELETE no action ON UPDATE no action;
+-- ALTER TABLE "yield_sheet_items" ADD CONSTRAINT "yield_sheet_items_sheet_id_fkey" FOREIGN KEY ("sheet_id") REFERENCES "public"."yield_sheets"("id") ON DELETE cascade ON UPDATE no action;
+-- ALTER TABLE "yield_sheet_items" ADD CONSTRAINT "yield_sheet_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;
+-- CREATE INDEX "idx_antonella_rows_dataset" ON "antonella_dataset_rows" USING btree ("dataset_id");
+-- CREATE INDEX "idx_antonella_memories_user" ON "antonella_memories" USING btree ("user_uid");
+-- CREATE INDEX "idx_antonella_memories_cat" ON "antonella_memories" USING btree ("user_uid","category");
+-- CREATE INDEX "idx_channel_purchases_date" ON "channel_purchases" USING btree ("purchase_date");
+-- CREATE INDEX "idx_credit_charges_customer" ON "credit_charges" USING btree ("customer_id");
+-- CREATE INDEX "idx_credit_payments_customer" ON "credit_payments" USING btree ("customer_id");
+-- CREATE INDEX "idx_customer_prices_customer" ON "customer_prices" USING btree ("customer_id");
+-- CREATE INDEX "customers_user_uid_idx" ON "customers" USING btree ("user_uid");
+-- CREATE INDEX "idx_inventory_transactions_product_id" ON "inventory_transactions" USING btree ("product_id");
+-- CREATE INDEX "idx_order_items_order" ON "order_items" USING btree ("order_id");
+-- CREATE INDEX "order_items_user_uid_idx" ON "order_items" USING btree ("user_uid");
+-- CREATE INDEX "idx_orders_customer" ON "orders" USING btree ("customer_id");
+-- CREATE INDEX "idx_orders_status" ON "orders" USING btree ("status");
+-- CREATE INDEX "idx_orders_web_order_id" ON "orders" USING btree ("web_order_id");
+-- CREATE INDEX "orders_user_uid_idx" ON "orders" USING btree ("user_uid");
+-- CREATE INDEX "idx_product_transformations_parent_product_id" ON "product_transformations" USING btree ("parent_product_id");
+-- CREATE INDEX "idx_product_transformations_child_product_id" ON "product_transformations" USING btree ("child_product_id");
+-- CREATE UNIQUE INDEX "ux_product_transformations_active" ON "product_transformations" USING btree ("parent_product_id","child_product_id","transformation_type") WHERE "product_transformations"."is_active" = true;
+-- CREATE INDEX "products_user_uid_idx" ON "products" USING btree ("user_uid");
+-- CREATE INDEX "transactions_user_uid_idx" ON "transactions" USING btree ("user_uid");
+-- CREATE UNIQUE INDEX "user_openid_unique" ON "user" USING btree ("openId");
+-- CREATE INDEX "web_orders_phone_idx" ON "web_orders" USING btree ("phone");
+-- CREATE INDEX "web_orders_created_at_idx" ON "web_orders" USING btree ("created_at" DESC NULLS FIRST);
+-- CREATE INDEX "idx_wa_messages_phone" ON "whatsapp_messages" USING btree ("phone");
+-- CREATE INDEX "idx_wa_sessions_phone" ON "whatsapp_sessions" USING btree ("phone");
+-- CREATE INDEX "idx_yield_items_sheet" ON "yield_sheet_items" USING btree ("sheet_id");
+-- ALTER TABLE "antonella_config" ADD CONSTRAINT "antonella_config_user_uid_key" UNIQUE("user_uid");
+-- ALTER TABLE "antonella_datasets" ADD CONSTRAINT "antonella_datasets_user_uid_name_key" UNIQUE("user_uid","name");
+-- ALTER TABLE "credit_accounts" ADD CONSTRAINT "credit_accounts_customer_id_key" UNIQUE("customer_id");
+-- ALTER TABLE "customer_prices" ADD CONSTRAINT "customer_prices_customer_id_product_id_key" UNIQUE("customer_id","product_id");
+-- ALTER TABLE "customers" ADD CONSTRAINT "customers_whatsapp_phone_key" UNIQUE("whatsapp_phone");
+-- ALTER TABLE "payment_methods" ADD CONSTRAINT "payment_methods_name_key" UNIQUE("name");
+-- ALTER TABLE "session" ADD CONSTRAINT "session_token_key" UNIQUE("token");
+-- ALTER TABLE "user" ADD CONSTRAINT "user_email_key1" UNIQUE("email");
+-- ALTER TABLE "user" ADD CONSTRAINT "user_openId_key1" UNIQUE("openId");
+-- ALTER TABLE "whatsapp_sessions" ADD CONSTRAINT "whatsapp_sessions_phone_key" UNIQUE("phone");
+-- DROP TYPE "public"."order_item_status";

@@ -1,27 +1,13 @@
 "use client";
 
-import { use, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@finopenpos/ui/components/card";
 import { Badge } from "@finopenpos/ui/components/badge";
 import { Button } from "@finopenpos/ui/components/button";
-import { Skeleton } from "@finopenpos/ui/components/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
 import {
-	ArrowLeftIcon,
-	PrinterIcon,
-	FilePenIcon,
-	TrashIcon,
-	BanknoteIcon,
-	PlusIcon,
-} from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useTranslations, useLocale } from "next-intl";
-import { formatCurrency } from "@/lib/utils";
-import { OrderDisassemblyManager } from "@/components/order-disassembly-manager";
-import { TicketModal } from "@/components/ticket-modal";
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+} from "@finopenpos/ui/components/card";
 import {
 	Dialog,
 	DialogContent,
@@ -29,6 +15,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
 import {
 	Select,
 	SelectContent,
@@ -36,10 +24,34 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@finopenpos/ui/components/select";
-import { Label } from "@finopenpos/ui/components/label";
-import { Input } from "@finopenpos/ui/components/input";
-import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
+import { Skeleton } from "@finopenpos/ui/components/skeleton";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@finopenpos/ui/components/table";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	ArrowLeftIcon,
+	BanknoteIcon,
+	FilePenIcon,
+	PlusIcon,
+	PrinterIcon,
+	TrashIcon,
+} from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
+import { use, useState } from "react";
 import { toast } from "sonner";
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
+import { OrderDisassemblyManager } from "@/components/order-disassembly-manager";
+import { TicketModal } from "@/components/ticket-modal";
+import { useTRPC } from "@/lib/trpc/client";
+import { formatCurrency } from "@/lib/utils";
 
 // Mapea cualquier estado interno a etiqueta y color visible
 function getStatusDisplay(status: string): { label: string; color: string } {
@@ -62,14 +74,28 @@ function getStatusDisplay(status: string): { label: string; color: string } {
 	}
 }
 
-export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function OrderDetailPage({
+	params,
+}: {
+	params: Promise<{ id: string }>;
+}) {
 	const { id } = use(params);
-	const orderId = parseInt(id);
+	const orderId = Number.parseInt(id);
 	const router = useRouter();
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
-	const { data: order, isLoading, refetch } = useQuery(trpc.orders.get.queryOptions({ id: orderId })) as { data: any; isLoading: boolean; refetch: any };
-	const { data: productsList } = useQuery(trpc.products.list.queryOptions()) as {
+	const {
+		data: order,
+		isLoading,
+		refetch,
+	} = useQuery(trpc.orders.get.queryOptions({ id: orderId })) as {
+		data: any;
+		isLoading: boolean;
+		refetch: any;
+	};
+	const { data: productsList } = useQuery(
+		trpc.products.list.queryOptions(),
+	) as {
 		data:
 			| {
 					id: number;
@@ -79,7 +105,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 			  }[]
 			| undefined;
 	};
-	const { data: customersList } = useQuery(trpc.customers.list.queryOptions()) as {
+	const { data: customersList } = useQuery(
+		trpc.customers.list.queryOptions(),
+	) as {
 		data: { id: number; name: string | null }[] | undefined;
 	};
 	const t = useTranslations("orders");
@@ -194,8 +222,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 				productName: it.product?.name ?? it.product_name ?? "",
 				pieces: it.quantity_pieces != null ? String(it.quantity_pieces) : "",
 				kg: it.quantity_kg != null ? String(it.quantity_kg) : "",
-				price:
-					it.unit_price != null ? String(Number(it.unit_price) / 100) : "",
+				price: it.unit_price != null ? String(Number(it.unit_price) / 100) : "",
 			})),
 		);
 		setEditOpen(true);
@@ -234,9 +261,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 		});
 	};
 	const editSubtotal = (r: EditItem) => {
-		const kg = parseFloat(r.kg) || 0;
-		const pieces = parseInt(r.pieces) || 0;
-		const price = parseFloat(r.price) || 0;
+		const kg = Number.parseFloat(r.kg) || 0;
+		const pieces = Number.parseInt(r.pieces) || 0;
+		const price = Number.parseFloat(r.price) || 0;
 		return (kg > 0 ? kg : pieces) * price;
 	};
 	const editTotalPesos = editItems.reduce((s, r) => s + editSubtotal(r), 0);
@@ -247,9 +274,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 			.map((r) => ({
 				productId: r.productId,
 				productName: r.productName.trim(),
-				quantityPieces: parseInt(r.pieces) || 0,
-				quantityKg: parseFloat(r.kg) || 0,
-				unitPrice: parseFloat(r.price) || 0,
+				quantityPieces: Number.parseInt(r.pieces) || 0,
+				quantityKg: Number.parseFloat(r.kg) || 0,
+				unitPrice: Number.parseFloat(r.price) || 0,
 			}));
 		const allowed = [
 			"COMPLETADA",
@@ -260,7 +287,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 		];
 		replaceItemsMutation.mutate({
 			orderId,
-			customerId: editCustomerId ? parseInt(editCustomerId) : null,
+			customerId: editCustomerId ? Number.parseInt(editCustomerId) : null,
 			notes: editNotes || undefined,
 			status: allowed.includes(editStatus) ? (editStatus as any) : undefined,
 			items,
@@ -269,9 +296,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
 	if (isLoading) {
 		return (
-			<div className="space-y-6 max-w-3xl">
+			<div className="max-w-3xl space-y-6">
 				<Skeleton className="h-8 w-48" />
-				<Card><CardContent className="p-6 space-y-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</CardContent></Card>
+				<Card>
+					<CardContent className="space-y-4 p-6">
+						{Array.from({ length: 4 }).map((_, i) => (
+							<Skeleton key={i} className="h-6 w-full" />
+						))}
+					</CardContent>
+				</Card>
 			</div>
 		);
 	}
@@ -290,7 +323,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 	// Estimación de costo de items aún no pesados (piezas × peso promedio × precio/kg)
 	const avgWeightMap = new Map<number, number>();
 	for (const p of productsList ?? []) {
-		const w = p.avg_weight_per_piece_kg != null ? Number(p.avg_weight_per_piece_kg) : 0;
+		const w =
+			p.avg_weight_per_piece_kg != null ? Number(p.avg_weight_per_piece_kg) : 0;
 		if (w > 0) avgWeightMap.set(p.id, w);
 	}
 	let estimatedExtra = 0; // centavos estimados de items sin pesar
@@ -313,16 +347,16 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 	const estimatedTotal = Number(order.total_amount || 0) + estimatedExtra;
 
 	return (
-		<div className="space-y-6 max-w-3xl">
+		<div className="max-w-3xl space-y-6">
 			{/* ── Cabecera ── */}
-			<div className="flex items-center justify-between gap-4 flex-wrap">
+			<div className="flex flex-wrap items-center justify-between gap-4">
 				<div className="flex items-center gap-3">
 					<Link href="/admin/orders">
 						<Button variant="ghost" size="icon">
 							<ArrowLeftIcon className="h-4 w-4" />
 						</Button>
 					</Link>
-					<h1 className="text-2xl font-bold">
+					<h1 className="font-bold text-2xl">
 						{t("orderDetails")} #{order.id}
 					</h1>
 				</div>
@@ -335,7 +369,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 							className="bg-green-600 hover:bg-green-700"
 							onClick={openPay}
 						>
-							<BanknoteIcon className="w-4 h-4 mr-2" />
+							<BanknoteIcon className="mr-2 h-4 w-4" />
 							Liquidar / Cobrar
 						</Button>
 					)}
@@ -347,16 +381,20 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 							disabled={convertCreditMutation.isPending}
 							onClick={() => convertCreditMutation.mutate({ orderId })}
 						>
-							<BanknoteIcon className="w-4 h-4 mr-2" />
+							<BanknoteIcon className="mr-2 h-4 w-4" />
 							Pasar a crédito
 						</Button>
 					)}
-					<Button variant="outline" size="sm" onClick={() => setTicketOpen(true)}>
-						<PrinterIcon className="w-4 h-4 mr-2" />
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => setTicketOpen(true)}
+					>
+						<PrinterIcon className="mr-2 h-4 w-4" />
 						Imprimir Ticket
 					</Button>
 					<Button variant="outline" size="sm" onClick={openEdit}>
-						<FilePenIcon className="w-4 h-4 mr-2" />
+						<FilePenIcon className="mr-2 h-4 w-4" />
 						{tc("edit")}
 					</Button>
 					<Button
@@ -364,7 +402,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 						size="sm"
 						onClick={() => setDeleteOpen(true)}
 					>
-						<TrashIcon className="w-4 h-4 mr-2" />
+						<TrashIcon className="mr-2 h-4 w-4" />
 						{tc("delete")}
 					</Button>
 				</div>
@@ -376,9 +414,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 					<div className="flex items-center justify-between">
 						<CardTitle>{t("orderDetails")}</CardTitle>
 						<div className="flex items-center gap-2">
-							<span className={`font-semibold ${statusColor}`}>{statusLabel}</span>
+							<span className={`font-semibold ${statusColor}`}>
+								{statusLabel}
+							</span>
 							{order.requires_weighing && (
-								<Badge variant="secondary" className="bg-yellow-100 text-yellow-900">
+								<Badge
+									variant="secondary"
+									className="bg-yellow-100 text-yellow-900"
+								>
 									Por Pesar
 								</Badge>
 							)}
@@ -386,25 +429,28 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 					</div>
 				</CardHeader>
 				<CardContent>
-					<dl className="grid gap-3 sm:grid-cols-2 text-sm">
+					<dl className="grid gap-3 text-sm sm:grid-cols-2">
 						<div>
 							<dt className="text-muted-foreground">{t("customer")}</dt>
 							<dd className="font-medium">{order.customer?.name ?? "—"}</dd>
 						</div>
 						<div>
 							<dt className="text-muted-foreground">{tc("total")}</dt>
-							<dd className="text-lg font-bold">
+							<dd className="font-bold text-lg">
 								{formatCurrency(order.total_amount, locale)}
 							</dd>
 						</div>
 						{hasEstimate && (
 							<div>
-								<dt className="text-muted-foreground">Total estimado (sin pesar)</dt>
-								<dd className="text-lg font-bold text-blue-700">
+								<dt className="text-muted-foreground">
+									Total estimado (sin pesar)
+								</dt>
+								<dd className="font-bold text-blue-700 text-lg">
 									~ {formatCurrency(Math.round(estimatedTotal), locale)}
 								</dd>
-								<p className="text-[11px] text-muted-foreground mt-0.5">
-									Calculado con peso promedio por pieza. El total real sale al pesar.
+								<p className="mt-0.5 text-[11px] text-muted-foreground">
+									Calculado con peso promedio por pieza. El total real sale al
+									pesar.
 								</p>
 							</div>
 						)}
@@ -434,11 +480,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 								<dd>{order.delivery_address}</dd>
 							</div>
 						)}
-						{order.orderItems?.some((item: any) => item.status === "PENDIENTE_COMPRA") && (
+						{order.orderItems?.some(
+							(item: any) => item.status === "PENDIENTE_COMPRA",
+						) && (
 							<div>
 								<dt className="text-muted-foreground">⚠️ Pendiente de Compra</dt>
 								<dd className="font-medium text-red-600">
-									{order.orderItems.filter((item: any) => item.status === "PENDIENTE_COMPRA").length} items
+									{
+										order.orderItems.filter(
+											(item: any) => item.status === "PENDIENTE_COMPRA",
+										).length
+									}{" "}
+									items
 								</dd>
 							</div>
 						)}
@@ -448,6 +501,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
 			<OrderDisassemblyManager
 				orderId={orderId}
+				orderStatus={order.status}
 				orderItems={order.orderItems || []}
 				onSuccess={() => refetch()}
 			/>
@@ -455,7 +509,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 			{/* ── Tabla de artículos ── */}
 			{order.orderItems && order.orderItems.length > 0 && (
 				<Card>
-					<CardHeader><CardTitle>{t("items")}</CardTitle></CardHeader>
+					<CardHeader>
+						<CardTitle>{t("items")}</CardTitle>
+					</CardHeader>
 					<CardContent className="space-y-4">
 						<div className="overflow-x-auto">
 							<Table>
@@ -465,31 +521,49 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 										<TableHead className="text-center">Piezas</TableHead>
 										<TableHead className="text-center">Kg</TableHead>
 										<TableHead className="text-right">Precio Unit.</TableHead>
-										<TableHead className="text-right">{t("subtotal")}</TableHead>
-										<TableHead className="text-center">{tc("status")}</TableHead>
+										<TableHead className="text-right">
+											{t("subtotal")}
+										</TableHead>
+										<TableHead className="text-center">
+											{tc("status")}
+										</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
 									{order.orderItems.map((item: any) => {
 										const statusColor =
-											item.status === "COMPLETADO" ? "text-green-600 bg-green-50" :
-											item.status === "PESADO" ? "text-blue-600 bg-blue-50" :
-											item.status === "PENDIENTE_PESAJE" ? "text-yellow-600 bg-yellow-50" :
-											item.status === "PENDIENTE_COMPRA" ? "text-red-600 bg-red-50" :
-											"text-gray-600 bg-gray-50";
+											item.status === "COMPLETADO"
+												? "text-green-600 bg-green-50"
+												: item.status === "PESADO"
+													? "text-blue-600 bg-blue-50"
+													: item.status === "PENDIENTE_PESAJE"
+														? "text-yellow-600 bg-yellow-50"
+														: item.status === "PENDIENTE_COMPRA"
+															? "text-red-600 bg-red-50"
+															: "text-gray-600 bg-gray-50";
 										const statusLabel =
-											item.status === "COMPLETADO" ? "Completado" :
-											item.status === "PESADO" ? "Pesado" :
-											item.status === "PENDIENTE_PESAJE" ? "Por Pesar" :
-											item.status === "PENDIENTE_COMPRA" ? "Pendiente Compra" :
-											item.status;
+											item.status === "COMPLETADO"
+												? "Completado"
+												: item.status === "PESADO"
+													? "Pesado"
+													: item.status === "PENDIENTE_PESAJE"
+														? "Por Pesar"
+														: item.status === "PENDIENTE_COMPRA"
+															? "Pendiente Compra"
+															: item.status;
 										return (
 											<TableRow key={item.id}>
 												<TableCell className="font-medium">
-													{item.product?.name ?? item.product_name ?? `#${item.product_id}`}
+													{item.product?.name ??
+														item.product_name ??
+														`#${item.product_id}`}
 												</TableCell>
-												<TableCell className="text-center">{item.quantity_pieces ?? "—"}</TableCell>
-												<TableCell className="text-center">{item.quantity_kg ?? "—"}</TableCell>
+												<TableCell className="text-center">
+													{item.quantity_pieces ?? "—"}
+												</TableCell>
+												<TableCell className="text-center">
+													{item.quantity_kg ?? "—"}
+												</TableCell>
 												<TableCell className="text-right">
 													{formatCurrency(item.unit_price, locale)}
 												</TableCell>
@@ -497,7 +571,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 													{formatCurrency(item.subtotal, locale)}
 												</TableCell>
 												<TableCell className="text-center">
-													<Badge className={`${statusColor} border-0`}>{statusLabel}</Badge>
+													<Badge className={`${statusColor} border-0`}>
+														{statusLabel}
+													</Badge>
 												</TableCell>
 											</TableRow>
 										);
@@ -507,47 +583,62 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 						</div>
 
 						{/* Consolidado */}
-						<div className="border-t pt-4 mt-4">
+						<div className="mt-4 border-t pt-4">
 							<div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
 								<div className="rounded-lg bg-slate-50 p-3">
-									<p className="text-xs text-muted-foreground">Total Piezas</p>
-									<p className="text-lg font-bold">
+									<p className="text-muted-foreground text-xs">Total Piezas</p>
+									<p className="font-bold text-lg">
 										{order.orderItems
 											.filter((item: any) => item.status !== "PENDIENTE_COMPRA")
-											.reduce((sum: number, item: any) => sum + (item.quantity_pieces || 0), 0)}
+											.reduce(
+												(sum: number, item: any) =>
+													sum + (item.quantity_pieces || 0),
+												0,
+											)}
 									</p>
 								</div>
 								<div className="rounded-lg bg-slate-50 p-3">
-									<p className="text-xs text-muted-foreground">Total Kg</p>
-									<p className="text-lg font-bold">
+									<p className="text-muted-foreground text-xs">Total Kg</p>
+									<p className="font-bold text-lg">
 										{order.orderItems
 											.filter((item: any) => item.status !== "PENDIENTE_COMPRA")
-											.reduce((sum: number, item: any) => sum + (parseFloat(item.quantity_kg || 0)), 0)
+											.reduce(
+												(sum: number, item: any) =>
+													sum + Number.parseFloat(item.quantity_kg || 0),
+												0,
+											)
 											.toFixed(3)}
 									</p>
 								</div>
 								<div className="rounded-lg bg-slate-50 p-3">
-									<p className="text-xs text-muted-foreground">Items</p>
-									<p className="text-lg font-bold">{order.orderItems.length}</p>
+									<p className="text-muted-foreground text-xs">Items</p>
+									<p className="font-bold text-lg">{order.orderItems.length}</p>
 								</div>
 								<div className="rounded-lg bg-slate-50 p-3">
-									<p className="text-xs text-muted-foreground">Total</p>
-									<p className="text-lg font-bold">
+									<p className="text-muted-foreground text-xs">Total</p>
+									<p className="font-bold text-lg">
 										{formatCurrency(order.total_amount, locale)}
 									</p>
 								</div>
 							</div>
 						</div>
 
-						{order.orderItems.some((item: any) => item.status === "PENDIENTE_COMPRA") && (
+						{order.orderItems.some(
+							(item: any) => item.status === "PENDIENTE_COMPRA",
+						) && (
 							<div className="rounded-lg border border-red-200 bg-red-50 p-3">
-								<p className="text-sm text-red-900 font-medium">
+								<p className="font-medium text-red-900 text-sm">
 									⚠️{" "}
-									{order.orderItems.filter((item: any) => item.status === "PENDIENTE_COMPRA").length}{" "}
+									{
+										order.orderItems.filter(
+											(item: any) => item.status === "PENDIENTE_COMPRA",
+										).length
+									}{" "}
 									producto(s) pendiente de compra
 								</p>
-								<p className="text-xs text-red-800 mt-1">
-									Estos items no están incluidos en el total. Deben ser adquiridos para completar la orden.
+								<p className="mt-1 text-red-800 text-xs">
+									Estos items no están incluidos en el total. Deben ser
+									adquiridos para completar la orden.
 								</p>
 							</div>
 						)}
@@ -564,13 +655,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
 			{/* ── Dialog de Edición completa ── */}
 			<Dialog open={editOpen} onOpenChange={(o) => !o && setEditOpen(false)}>
-				<DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+				<DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
 					<DialogHeader>
 						<DialogTitle>Editar pedido #{order.id}</DialogTitle>
 					</DialogHeader>
 
 					{order.status === "COMPLETADA" && (
-						<div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-900">
+						<div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-orange-900 text-xs">
 							Este pedido ya está cobrado. Al guardar, el nuevo total se
 							reflejará automáticamente en la venta (contado) o en la cuenta por
 							cobrar (crédito).
@@ -617,7 +708,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 						<div className="flex items-center justify-between">
 							<Label>Productos del pedido</Label>
 							<Button variant="outline" size="sm" onClick={addEditItem}>
-								<PlusIcon className="w-4 h-4 mr-1" />
+								<PlusIcon className="mr-1 h-4 w-4" />
 								Agregar
 							</Button>
 						</div>
@@ -626,17 +717,26 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 								<TableHeader>
 									<TableRow className="bg-muted/50">
 										<TableHead className="min-w-[180px]">Producto</TableHead>
-										<TableHead className="text-center w-[90px]">Piezas</TableHead>
-										<TableHead className="text-center w-[100px]">Kg</TableHead>
-										<TableHead className="text-center w-[110px]">$/Kg o pza</TableHead>
-										<TableHead className="text-right w-[110px]">Subtotal</TableHead>
+										<TableHead className="w-[90px] text-center">
+											Piezas
+										</TableHead>
+										<TableHead className="w-[100px] text-center">Kg</TableHead>
+										<TableHead className="w-[110px] text-center">
+											$/Kg o pza
+										</TableHead>
+										<TableHead className="w-[110px] text-right">
+											Subtotal
+										</TableHead>
 										<TableHead className="w-[40px]" />
 									</TableRow>
 								</TableHeader>
 								<TableBody>
 									{editItems.length === 0 ? (
 										<TableRow>
-											<TableCell colSpan={6} className="text-center text-muted-foreground py-4">
+											<TableCell
+												colSpan={6}
+												className="py-4 text-center text-muted-foreground"
+											>
 												Sin productos. Usa "Agregar".
 											</TableCell>
 										</TableRow>
@@ -646,10 +746,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 												<TableCell>
 													<Select
 														value={r.productId ? String(r.productId) : ""}
-														onValueChange={(v) => pickProduct(r.key, parseInt(v))}
+														onValueChange={(v) =>
+															pickProduct(r.key, Number.parseInt(v))
+														}
 													>
 														<SelectTrigger className="h-9">
-															<SelectValue placeholder={r.productName || "Selecciona"} />
+															<SelectValue
+																placeholder={r.productName || "Selecciona"}
+															/>
 														</SelectTrigger>
 														<SelectContent className="max-h-72">
 															{(productsList ?? []).map((p) => (
@@ -664,7 +768,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 													<Input
 														type="number"
 														value={r.pieces}
-														onChange={(e) => patchEditItem(r.key, { pieces: e.target.value })}
+														onChange={(e) =>
+															patchEditItem(r.key, { pieces: e.target.value })
+														}
 														className="h-9 text-center"
 														placeholder="0"
 													/>
@@ -674,7 +780,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 														type="number"
 														step="0.001"
 														value={r.kg}
-														onChange={(e) => patchEditItem(r.key, { kg: e.target.value })}
+														onChange={(e) =>
+															patchEditItem(r.key, { kg: e.target.value })
+														}
 														className="h-9 text-center"
 														placeholder="0.000"
 													/>
@@ -684,13 +792,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 														type="number"
 														step="0.01"
 														value={r.price}
-														onChange={(e) => patchEditItem(r.key, { price: e.target.value })}
+														onChange={(e) =>
+															patchEditItem(r.key, { price: e.target.value })
+														}
 														className="h-9 text-center"
 														placeholder="0.00"
 													/>
 												</TableCell>
 												<TableCell className="text-right font-semibold">
-													{formatCurrency(Math.round(editSubtotal(r) * 100), locale)}
+													{formatCurrency(
+														Math.round(editSubtotal(r) * 100),
+														locale,
+													)}
 												</TableCell>
 												<TableCell>
 													<button
@@ -698,7 +811,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 														onClick={() => removeEditItem(r.key)}
 														className="text-muted-foreground hover:text-red-500"
 													>
-														<TrashIcon className="w-4 h-4" />
+														<TrashIcon className="h-4 w-4" />
 													</button>
 												</TableCell>
 											</TableRow>
@@ -708,10 +821,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 							</Table>
 						</div>
 						<div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2">
-							<span className="text-sm text-muted-foreground">
-								Total {editItems.some((r) => !r.kg || parseFloat(r.kg) === 0) ? "(estimado, faltan kg por pesar)" : ""}
+							<span className="text-muted-foreground text-sm">
+								Total{" "}
+								{editItems.some((r) => !r.kg || Number.parseFloat(r.kg) === 0)
+									? "(estimado, faltan kg por pesar)"
+									: ""}
 							</span>
-							<span className="text-xl font-bold">
+							<span className="font-bold text-xl">
 								{formatCurrency(Math.round(editTotalPesos * 100), locale)}
 							</span>
 						</div>
@@ -760,8 +876,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 					</DialogHeader>
 					<div className="grid gap-4 py-2">
 						<div className="rounded-lg bg-slate-50 p-3">
-							<div className="text-xs text-muted-foreground">Total a cobrar</div>
-							<div className="text-2xl font-bold">
+							<div className="text-muted-foreground text-xs">
+								Total a cobrar
+							</div>
+							<div className="font-bold text-2xl">
 								{formatCurrency(order.total_amount, locale)}
 							</div>
 						</div>
@@ -772,7 +890,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 								<button
 									type="button"
 									onClick={() => setPayType("contado")}
-									className={`rounded-lg border px-3 py-2 text-sm font-bold ${
+									className={`rounded-lg border px-3 py-2 font-bold text-sm ${
 										payType === "contado"
 											? "border-green-600 bg-green-50 text-green-700"
 											: "border-black/15 text-cg-black"
@@ -783,7 +901,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 								<button
 									type="button"
 									onClick={() => setPayType("credito")}
-									className={`rounded-lg border px-3 py-2 text-sm font-bold ${
+									className={`rounded-lg border px-3 py-2 font-bold text-sm ${
 										payType === "credito"
 											? "border-orange-500 bg-orange-50 text-orange-700"
 											: "border-black/15"
@@ -811,7 +929,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 								</Select>
 							</div>
 						)}
-						<p className="text-xs text-muted-foreground">
+						<p className="text-muted-foreground text-xs">
 							{payType === "contado"
 								? "Al liquidar se descuenta el inventario y se registra el cobro."
 								: "Se descuenta el inventario y el total queda como cuenta por cobrar en Cobranza."}
@@ -828,7 +946,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 								onClick={() =>
 									payMutation.mutate({
 										orderId,
-										paymentMethodId: parseInt(payMethodId),
+										paymentMethodId: Number.parseInt(payMethodId),
 									})
 								}
 							>

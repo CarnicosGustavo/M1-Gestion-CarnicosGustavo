@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@finopenpos/ui/components/card";
 import { Button } from "@finopenpos/ui/components/button";
+import {
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+} from "@finopenpos/ui/components/card";
 import { Input } from "@finopenpos/ui/components/input";
 import { Label } from "@finopenpos/ui/components/label";
 import {
@@ -12,11 +16,19 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@finopenpos/ui/components/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@finopenpos/ui/components/table";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { SaveIcon } from "lucide-react";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useTRPC } from "@/lib/trpc/client";
 
 type PriceRow = {
 	productId: number;
@@ -39,7 +51,7 @@ export default function PricesPage() {
 
 	const { data: prices, refetch } = useQuery({
 		...trpc.customerPrices.getByCustomer.queryOptions({
-			customerId: parseInt(customerId) || 0,
+			customerId: Number.parseInt(customerId) || 0,
 		}),
 		enabled: !!customerId,
 	});
@@ -88,10 +100,12 @@ export default function PricesPage() {
 		}
 		const items = rows.map((r) => ({
 			productId: r.productId,
-			pricePerKg: r.pricePerKg.trim() ? parseFloat(r.pricePerKg) : null,
-			pricePerPiece: r.pricePerPiece.trim() ? parseFloat(r.pricePerPiece) : null,
+			pricePerKg: r.pricePerKg.trim() ? Number.parseFloat(r.pricePerKg) : null,
+			pricePerPiece: r.pricePerPiece.trim()
+				? Number.parseFloat(r.pricePerPiece)
+				: null,
 		}));
-		saveMutation.mutate({ customerId: parseInt(customerId), items });
+		saveMutation.mutate({ customerId: Number.parseInt(customerId), items });
 	}
 
 	return (
@@ -100,7 +114,8 @@ export default function PricesPage() {
 				<div>
 					<h1 className="text-2xl font-bold">Precios por Cliente</h1>
 					<p className="text-sm text-muted-foreground">
-						Cada cliente guarda su propia lista de precios. Se usa al generar su pedido y ticket.
+						Cada cliente guarda su propia lista de precios. Se usa al generar su
+						pedido y ticket.
 					</p>
 				</div>
 				<Button onClick={save} disabled={saveMutation.isPending || !customerId}>
@@ -150,7 +165,9 @@ export default function PricesPage() {
 									<TableRow className="bg-muted/50">
 										<TableHead className="w-[50%]">Producto</TableHead>
 										<TableHead className="text-center">Precio / Kg</TableHead>
-										<TableHead className="text-center">Precio / Pieza</TableHead>
+										<TableHead className="text-center">
+											Precio / Pieza
+										</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
@@ -172,7 +189,9 @@ export default function PricesPage() {
 													type="number"
 													value={r.pricePerKg}
 													onChange={(e) =>
-														updateRow(r.productId, { pricePerKg: e.target.value })
+														updateRow(r.productId, {
+															pricePerKg: e.target.value,
+														})
 													}
 													className="h-9 text-center"
 													placeholder="—"
@@ -183,7 +202,9 @@ export default function PricesPage() {
 													type="number"
 													value={r.pricePerPiece}
 													onChange={(e) =>
-														updateRow(r.productId, { pricePerPiece: e.target.value })
+														updateRow(r.productId, {
+															pricePerPiece: e.target.value,
+														})
 													}
 													className="h-9 text-center"
 													placeholder="—"
@@ -195,8 +216,8 @@ export default function PricesPage() {
 							</Table>
 						</div>
 						<p className="mt-3 text-xs text-muted-foreground">
-							Los renglones en verde tienen precio propio guardado para este cliente.
-							Deja en blanco para usar el precio base del producto.
+							Los renglones en verde tienen precio propio guardado para este
+							cliente. Deja en blanco para usar el precio base del producto.
 						</p>
 					</CardContent>
 				</Card>

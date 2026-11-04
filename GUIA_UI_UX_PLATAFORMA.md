@@ -197,7 +197,7 @@ Dos grupos. **Operación del día** (siempre visible como iconos) y **Configurac
 - **Botones de recipiente** → fijan tara.
 - **"Capturar"** → toma el peso como tara ("Otro"); **"TARE"** → cero.
 - **"Anterior" / "Siguiente"** (`ChevronLeft/Right`) → navega artículos.
-- **"Registrar N kg"** (`ScaleIcon`) → `orders.updateOrderItemWeight({orderItemId, actualWeightKg})`.
+- **"Registrar N kg"** (`ScaleIcon`) → `orders.updateOrderItemWeight({orderItemId, actualWeightGrams})` (gramos; solo renglones `PENDIENTE_PESAJE`).
 - **Atajos teclado** (en input): Enter=registrar, ←/→=navegar, ↑/↓=recipiente.
 - **Botón flotante "Cobrar pedido #ID"** (verde, `CheckCircleIcon`, aparece 9s tras pesar el último) → `/admin/checkout?order=ID`.
 - **Diálogo "Pesaje de producción":** Combobox producto, checkbox "A granel", Piezas, Peso total, Select "¿Ya se había pesado?". **"Enviar a cola de pesaje"** → `orders.createProductionWeighing`; **"Registrar pesaje"** → `inventory.recordWeighingBatch`.

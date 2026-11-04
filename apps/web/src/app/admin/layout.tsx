@@ -4,9 +4,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default function Layout({
-  children,
+	children,
 }: Readonly<{
-  children: React.ReactNode;
+	children: React.ReactNode;
 }>) {
-  return <AdminLayout>{children}</AdminLayout>;
+	return <AdminLayout>{children}</AdminLayout>;
 }
