@@ -54,8 +54,7 @@ export function AiField({
 }) {
 	const [val, setVal] = useState<string>(value != null ? String(value) : "");
 	const [accepted, setAccepted] = useState(value != null && value !== "");
-	const hasSug =
-		suggestion != null && !accepted && (val === "" || val == null);
+	const hasSug = suggestion != null && !accepted && (val === "" || val == null);
 
 	const accept = () => {
 		setVal(String(suggestion));

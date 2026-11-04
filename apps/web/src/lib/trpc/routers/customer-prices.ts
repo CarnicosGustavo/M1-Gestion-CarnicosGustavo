@@ -1,13 +1,13 @@
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "../init";
 import { db } from "@/lib/db";
 import {
 	customerPrices,
-	products,
-	priceListItems,
 	customers,
+	priceListItems,
+	products,
 } from "@/lib/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { protectedProcedure, router } from "../init";
 
 export const customerPricesRouter = router({
 	// Lista TODOS los productos del usuario con el precio guardado del cliente (si existe)
@@ -68,7 +68,8 @@ export const customerPricesRouter = router({
 					(r.listPricePerPiece != null ? String(r.listPricePerPiece) : null) ??
 					r.basePricePerPiece ??
 					null,
-				hasCustomPrice: r.customerPricePerKg != null || r.customerPricePerPiece != null,
+				hasCustomPrice:
+					r.customerPricePerKg != null || r.customerPricePerPiece != null,
 			}));
 		}),
 
@@ -96,7 +97,8 @@ export const customerPricesRouter = router({
 					.values({
 						customer_id: input.customerId,
 						product_id: it.productId,
-						price_per_kg: it.pricePerKg != null ? it.pricePerKg.toFixed(2) : null,
+						price_per_kg:
+							it.pricePerKg != null ? it.pricePerKg.toFixed(2) : null,
 						price_per_piece:
 							it.pricePerPiece != null ? it.pricePerPiece.toFixed(2) : null,
 					})

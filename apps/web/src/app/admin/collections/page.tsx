@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@finopenpos/ui/components/card";
-import { Button } from "@finopenpos/ui/components/button";
-import { Input } from "@finopenpos/ui/components/input";
-import { Label } from "@finopenpos/ui/components/label";
 import { Badge } from "@finopenpos/ui/components/badge";
+import { Button } from "@finopenpos/ui/components/button";
+import {
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+} from "@finopenpos/ui/components/card";
 import {
 	Dialog,
 	DialogContent,
@@ -13,6 +15,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@finopenpos/ui/components/dialog";
+import { Input } from "@finopenpos/ui/components/input";
+import { Label } from "@finopenpos/ui/components/label";
 import {
 	Select,
 	SelectContent,
@@ -20,23 +24,31 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@finopenpos/ui/components/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@finopenpos/ui/components/table";
 import {
-	PlusIcon,
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@finopenpos/ui/components/table";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
 	BanknoteIcon,
 	FileTextIcon,
-	PrinterIcon,
 	MessageCircleIcon,
 	PencilIcon,
+	PlusIcon,
+	PrinterIcon,
 	Trash2Icon,
 	AlertTriangleIcon,
 } from "lucide-react";
-import { useTRPC } from "@/lib/trpc/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
 import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
 import { ScreenHead } from "@/components/screen-head";
 import { TicketModal } from "@/components/ticket-modal";
+import { useTRPC } from "@/lib/trpc/client";
 
 const fmt = (n: number) =>
 	n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -46,15 +58,28 @@ export default function CollectionsPage() {
 	const queryClient = useQueryClient();
 
 	const [chargeOpen, setChargeOpen] = useState(false);
-	const [payOpen, setPayOpen] = useState<{ customerId: number; name: string } | null>(null);
-	const [stmtOpen, setStmtOpen] = useState<{ customerId: number; name: string } | null>(null);
-	const [receiptFor, setReceiptFor] = useState<{ customerId: number; name: string | null; paymentId: number } | null>(null);
+	const [payOpen, setPayOpen] = useState<{
+		customerId: number;
+		name: string;
+	} | null>(null);
+	const [stmtOpen, setStmtOpen] = useState<{
+		customerId: number;
+		name: string;
+	} | null>(null);
+	const [receiptFor, setReceiptFor] = useState<{
+		customerId: number;
+		name: string | null;
+		paymentId: number;
+	} | null>(null);
 	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
 	// Edición de un movimiento (cargo o abono)
-	const [editMov, setEditMov] = useState<
-		| { kind: "cargo" | "abono"; id: number; amount: string; concept: string; date: string }
-		| null
-	>(null);
+	const [editMov, setEditMov] = useState<{
+		kind: "cargo" | "abono";
+		id: number;
+		amount: string;
+		concept: string;
+		date: string;
+	} | null>(null);
 
 	// Form: cargo / ticket viejo
 	const [chCustomer, setChCustomer] = useState("");
@@ -67,7 +92,9 @@ export default function CollectionsPage() {
 	const [payMethod, setPayMethod] = useState("");
 
 	const accountsKey = trpc.collections.listAccounts.queryOptions().queryKey;
-	const { data: accounts } = useQuery(trpc.collections.listAccounts.queryOptions());
+	const { data: accounts } = useQuery(
+		trpc.collections.listAccounts.queryOptions(),
+	);
 	const { data: customers } = useQuery(trpc.customers.list.queryOptions()) as {
 		data: { id: number; name: string | null }[] | undefined;
 	};
@@ -100,11 +127,12 @@ export default function CollectionsPage() {
 		const text =
 			`Hola ${a.name ?? ""}, le saluda *Cárnicos Gustavo*. ` +
 			`Le recordamos que tiene un saldo pendiente de *${fmt(a.balance)}*. ` +
-			`Agradecemos mucho su pago. ¡Gracias por su preferencia!`;
+			"Agradecemos mucho su pago. ¡Gracias por su preferencia!";
 		const url = phone
 			? `https://wa.me/52${phone.replace(/^52/, "")}?text=${encodeURIComponent(text)}`
 			: `https://wa.me/?text=${encodeURIComponent(text)}`;
-		if (!phone) toast.info("El cliente no tiene teléfono; elige el contacto en WhatsApp");
+		if (!phone)
+			toast.info("El cliente no tiene teléfono; elige el contacto en WhatsApp");
 		window.open(url, "_blank", "noopener,noreferrer");
 	};
 
@@ -149,7 +177,12 @@ export default function CollectionsPage() {
 
 	const deleteMovement = (l: any) => {
 		const tipo = l.tipo === "abono" ? "abono" : "cargo";
-		if (!window.confirm(`¿Eliminar este ${tipo} de ${fmt(l.cargo || l.abono)}? Esta acción no se puede deshacer.`)) return;
+		if (
+			!window.confirm(
+				`¿Eliminar este ${tipo} de ${fmt(l.cargo || l.abono)}? Esta acción no se puede deshacer.`,
+			)
+		)
+			return;
 		if (l.tipo === "abono") deletePaymentMut.mutate({ id: l.id });
 		else deleteChargeMut.mutate({ id: l.id });
 	};
@@ -166,7 +199,7 @@ export default function CollectionsPage() {
 
 	const saveEditMovement = () => {
 		if (!editMov) return;
-		const amount = parseFloat(editMov.amount) || 0;
+		const amount = Number.parseFloat(editMov.amount) || 0;
 		if (amount <= 0) {
 			toast.error("El monto debe ser mayor a 0");
 			return;
@@ -302,7 +335,10 @@ export default function CollectionsPage() {
 							<TableBody>
 								{conSaldo.length === 0 ? (
 									<TableRow>
-										<TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+										<TableCell
+											colSpan={6}
+											className="text-center text-muted-foreground py-6"
+										>
 											Sin cuentas por cobrar
 										</TableCell>
 									</TableRow>
@@ -312,7 +348,9 @@ export default function CollectionsPage() {
 											<TableCell className="font-medium">
 												{a.name ?? `Cliente #${a.customerId}`}
 											</TableCell>
-											<TableCell className="text-right">{fmt(a.totalCharges)}</TableCell>
+											<TableCell className="text-right">
+												{fmt(a.totalCharges)}
+											</TableCell>
 											<TableCell className="text-right text-green-700">
 												{fmt(a.totalPayments)}
 											</TableCell>
@@ -342,7 +380,10 @@ export default function CollectionsPage() {
 														size="sm"
 														className="bg-green-600 hover:bg-green-700"
 														onClick={() =>
-															setPayOpen({ customerId: a.customerId, name: a.name })
+															setPayOpen({
+																customerId: a.customerId,
+																name: a.name,
+															})
 														}
 													>
 														<BanknoteIcon className="w-4 h-4 mr-1" />
@@ -352,7 +393,10 @@ export default function CollectionsPage() {
 														variant="outline"
 														size="sm"
 														onClick={() =>
-															setStmtOpen({ customerId: a.customerId, name: a.name })
+															setStmtOpen({
+																customerId: a.customerId,
+																name: a.name,
+															})
 														}
 													>
 														<FileTextIcon className="w-4 h-4 mr-1" />
@@ -380,7 +424,10 @@ export default function CollectionsPage() {
 			</Card>
 
 			{/* Dialog: capturar cargo / ticket viejo */}
-			<Dialog open={chargeOpen} onOpenChange={(o) => !o && setChargeOpen(false)}>
+			<Dialog
+				open={chargeOpen}
+				onOpenChange={(o) => !o && setChargeOpen(false)}
+			>
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Capturar ticket viejo / cargo</DialogTitle>
@@ -403,15 +450,28 @@ export default function CollectionsPage() {
 						</div>
 						<div className="space-y-1">
 							<Label>Monto</Label>
-							<Input type="number" value={chAmount} onChange={(e) => setChAmount(e.target.value)} placeholder="0.00" />
+							<Input
+								type="number"
+								value={chAmount}
+								onChange={(e) => setChAmount(e.target.value)}
+								placeholder="0.00"
+							/>
 						</div>
 						<div className="space-y-1">
 							<Label>Concepto</Label>
-							<Input value={chConcept} onChange={(e) => setChConcept(e.target.value)} placeholder="Ej. Nota 1234 del 5/mar" />
+							<Input
+								value={chConcept}
+								onChange={(e) => setChConcept(e.target.value)}
+								placeholder="Ej. Nota 1234 del 5/mar"
+							/>
 						</div>
 						<div className="space-y-1">
 							<Label>Fecha del cargo (opcional)</Label>
-							<Input type="date" value={chDate} onChange={(e) => setChDate(e.target.value)} />
+							<Input
+								type="date"
+								value={chDate}
+								onChange={(e) => setChDate(e.target.value)}
+							/>
 						</div>
 					</div>
 					<DialogFooter>
@@ -422,8 +482,8 @@ export default function CollectionsPage() {
 							disabled={chargeMut.isPending || !chCustomer || !chAmount}
 							onClick={() =>
 								chargeMut.mutate({
-									customerId: parseInt(chCustomer),
-									amount: parseFloat(chAmount) || 0,
+									customerId: Number.parseInt(chCustomer),
+									amount: Number.parseFloat(chAmount) || 0,
 									concept: chConcept || undefined,
 									chargeDate: chDate || undefined,
 									source: "ticket_viejo",
@@ -445,11 +505,20 @@ export default function CollectionsPage() {
 					<div className="grid gap-4 py-2">
 						<div className="space-y-1">
 							<Label>Monto del abono</Label>
-							<Input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="0.00" />
+							<Input
+								type="number"
+								value={payAmount}
+								onChange={(e) => setPayAmount(e.target.value)}
+								placeholder="0.00"
+							/>
 						</div>
 						<div className="space-y-1">
 							<Label>Método (opcional)</Label>
-							<Input value={payMethod} onChange={(e) => setPayMethod(e.target.value)} placeholder="Efectivo, transferencia…" />
+							<Input
+								value={payMethod}
+								onChange={(e) => setPayMethod(e.target.value)}
+								placeholder="Efectivo, transferencia…"
+							/>
 						</div>
 					</div>
 					<DialogFooter>
@@ -463,7 +532,7 @@ export default function CollectionsPage() {
 								payOpen &&
 								payMut.mutate({
 									customerId: payOpen.customerId,
-									amount: parseFloat(payAmount) || 0,
+									amount: Number.parseFloat(payAmount) || 0,
 									method: payMethod || undefined,
 								})
 							}
@@ -563,11 +632,15 @@ export default function CollectionsPage() {
 								</div>
 								<div className="rounded-lg bg-slate-50 p-3">
 									<p className="text-xs text-muted-foreground">Abonos</p>
-									<p className="font-bold text-green-700">{fmt(statement.data.totalAbonos)}</p>
+									<p className="font-bold text-green-700">
+										{fmt(statement.data.totalAbonos)}
+									</p>
 								</div>
 								<div className="rounded-lg bg-red-50 p-3">
 									<p className="text-xs text-muted-foreground">Saldo</p>
-									<p className="font-bold text-red-600">{fmt(statement.data.balance)}</p>
+									<p className="font-bold text-red-600">
+										{fmt(statement.data.balance)}
+									</p>
 								</div>
 							</div>
 						</div>
@@ -651,9 +724,7 @@ export default function CollectionsPage() {
 							Cancelar
 						</Button>
 						<Button
-							disabled={
-								updateChargeMut.isPending || updatePaymentMut.isPending
-							}
+							disabled={updateChargeMut.isPending || updatePaymentMut.isPending}
 							onClick={saveEditMovement}
 						>
 							Guardar cambios

@@ -63,9 +63,7 @@ export function NotificationBell() {
 							<div className="min-w-0">
 								<div className="font-bold text-sm">Avisos de iAntonella</div>
 								<div className="text-[var(--cg-chrome-fg)]/70 text-[11px]">
-									{count > 0
-										? `${count} cosa(s) que revisar`
-										: "Todo en orden"}
+									{count > 0 ? `${count} cosa(s) que revisar` : "Todo en orden"}
 								</div>
 							</div>
 						</div>

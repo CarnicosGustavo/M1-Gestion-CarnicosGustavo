@@ -45,6 +45,12 @@ import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AntonellaSlot } from "@/components/antonella-slot";
+import {
+	type ScaleReading,
+	ScaleReadingCard,
+} from "@/components/scale-reading-card";
+import { ScaleSerialPanel } from "@/components/scale-serial/scale-serial-panel";
+import type { LineTotals } from "@/lib/scale/webserial/line-totals";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
 
@@ -77,6 +83,12 @@ export default function WeighingStationPage() {
 
 	// Peso bruto ingresado
 	const [actualWeight, setActualWeight] = useState("");
+	// Lectura de la báscula física usada como peso bruto. Solo se envía si el
+	// peso en el input sigue siendo exactamente el de la lectura.
+	const [scaleUse, setScaleUse] = useState<{
+		id: number;
+		value: string;
+	} | null>(null);
 	// Teclado numérico en pantalla: oculto por default, se abre con un botón.
 	const [showKeypad, setShowKeypad] = useState(false);
 
@@ -127,7 +139,9 @@ export default function WeighingStationPage() {
 			if (fresh.length > 0) {
 				setNewOrderIds((s) => {
 					const next = new Set(s);
-					fresh.forEach((id) => next.add(id));
+					fresh.forEach((id) => {
+						next.add(id);
+					});
 					return next;
 				});
 				const first = orders.find((o) => o.id === fresh[0]);
@@ -138,7 +152,9 @@ export default function WeighingStationPage() {
 				setTimeout(() => {
 					setNewOrderIds((s) => {
 						const next = new Set(s);
-						fresh.forEach((id) => next.delete(id));
+						fresh.forEach((id) => {
+							next.delete(id);
+						});
 						return next;
 					});
 				}, 3000);
@@ -183,7 +199,7 @@ export default function WeighingStationPage() {
 	// según el artículo actual).
 	useEffect(() => {
 		setCurrentItemIndex(0);
-	}, [selectedOrderId]);
+	}, []);
 
 	// ---------------------------------------------------------------------------
 	// Cálculo de tara / neto
@@ -194,9 +210,65 @@ export default function WeighingStationPage() {
 			? Number.parseFloat(customTare) || 0
 			: (containerDef.tare ?? 0);
 
-	const grossKg = Number.parseFloat(actualWeight) || 0;
-	const netKg = Math.max(0, grossKg - tareKg);
+	const [serialTotals, setSerialTotals] = useState<LineTotals | null>(null);
+	const [manualWeight, setManualWeight] = useState(false);
+
+	const usingSerialNet =
+		!manualWeight && serialTotals !== null && serialTotals.count > 0;
+	const manualGrossKg = Number.parseFloat(actualWeight) || 0;
+	const grossKg = usingSerialNet ? serialTotals.grossG / 1000 : manualGrossKg;
+	const appliedTareKg = usingSerialNet ? serialTotals.tareG / 1000 : tareKg;
+	const netKg = usingSerialNet
+		? serialTotals.netG / 1000
+		: Math.max(0, manualGrossKg - tareKg);
 	const hasValidWeight = netKg > 0;
+
+	// Báscula por cable (Web Serial): renglón activo y total de capturas.
+	const serialLine = useMemo(() => {
+		if (!selectedOrder || !currentItem) {
+			return null;
+		}
+
+		return {
+			orderId: selectedOrder.id,
+			orderItemId: currentItem.id,
+			productName: currentItem.product_name ?? currentItem.product?.name ?? "",
+			requestedPieces: currentItem.quantity_pieces,
+		};
+	}, [selectedOrder, currentItem]);
+
+	const serialTotalsCountRef = useRef<number | null>(null);
+
+	const handleSerialCapturesTotal = useCallback((totals: LineTotals) => {
+		setSerialTotals(totals);
+
+		if (serialTotalsCountRef.current !== totals.count) {
+			serialTotalsCountRef.current = totals.count;
+			setManualWeight(false);
+		}
+	}, []);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: solo al cambiar de ítem
+	useEffect(() => {
+		// No se limpia serialTotals aquí: el panel (efecto hijo, corre antes)
+		// ya reporta los totales del renglón nuevo al cambiar de renglón.
+		serialTotalsCountRef.current = null;
+		setManualWeight(false);
+	}, [currentItem?.id]);
+
+	const serialContainer = useMemo(
+		() => ({
+			id: containerId,
+			label: containerDef.label,
+			tareKg,
+		}),
+		[containerId, containerDef.label, tareKg],
+	);
+
+	const containerLabels = useMemo(
+		() => Object.fromEntries(CONTAINERS.map((c) => [c.id, c.label])),
+		[],
+	);
 
 	// ---------------------------------------------------------------------------
 	// Mutations
@@ -206,6 +278,10 @@ export default function WeighingStationPage() {
 			onSuccess: () => {
 				toast.success(t("weighed"));
 				setActualWeight("");
+				setScaleUse(null);
+				queryClient.invalidateQueries({
+					queryKey: trpc.scale.latest.pathKey(),
+				});
 				// Si este era el último artículo por pesar, el pedido quedó listo
 				// para cobro: mostrar botón flotante a /admin/checkout por unos segundos.
 				if (pendingCompletionRef.current) {
@@ -314,16 +390,39 @@ export default function WeighingStationPage() {
 		}
 		updateWeightMutation.mutate({
 			orderItemId: currentItem.id,
-			actualWeightKg: Math.round(netKg * 1000),
+			actualWeightGrams: Math.round(netKg * 1000),
+			scaleReadingId:
+				!usingSerialNet && scaleUse && scaleUse.value === actualWeight
+					? scaleUse.id
+					: undefined,
 		});
 	}, [
+		scaleUse,
+		actualWeight,
 		currentItem,
+		usingSerialNet,
 		hasValidWeight,
 		netKg,
 		updateWeightMutation,
 		pendingItems.length,
 		selectedOrder,
 	]);
+
+	// Usar la lectura de la báscula física como peso bruto. Si la báscula ya
+	// restó la tara (neto), no se resta recipiente otra vez.
+	const handleUseScaleReading = (r: ScaleReading) => {
+		const value = (r.weight_g / 1000).toFixed(3);
+		setManualWeight(true);
+		setActualWeight(value);
+		setScaleUse({ id: r.id, value });
+		if (r.net && containerId !== "ninguno") {
+			setContainerId("ninguno");
+			toast.info(
+				"Lectura neta: se quitó el recipiente para no restar la tara dos veces",
+			);
+		}
+		weightInputRef.current?.focus();
+	};
 
 	// Limpiar peso bruto (TARE)
 	const handleTare = () => {
@@ -392,7 +491,8 @@ export default function WeighingStationPage() {
 
 	// Teclado numérico en pantalla (del diseño PesajeModal): toca para capturar
 	// el peso sin teclado físico, útil en tablet junto a la báscula.
-	const tapKey = (k: string) =>
+	const tapKey = (k: string) => {
+		setManualWeight(true);
 		setActualWeight((v) =>
 			k === "←"
 				? v.slice(0, -1)
@@ -402,6 +502,7 @@ export default function WeighingStationPage() {
 						? v + k
 						: v,
 		);
+	};
 
 	const batchProduct = useMemo(
 		() => products.find((p) => p.id === batchProductId) ?? null,
@@ -409,7 +510,10 @@ export default function WeighingStationPage() {
 	);
 	const batchPendingPieces = useMemo(() => {
 		if (!batchProduct) return null;
-		return Math.max(0, batchProduct.stock_pieces - batchProduct.weighed_pieces);
+		return Math.max(
+			0,
+			(batchProduct.stock_pieces ?? 0) - batchProduct.weighed_pieces,
+		);
 	}, [batchProduct]);
 
 	const handleRegisterBatch = () => {
@@ -469,6 +573,13 @@ export default function WeighingStationPage() {
 				</Button>
 			</div>
 
+			<ScaleSerialPanel
+				line={serialLine}
+				container={serialContainer}
+				containerLabels={containerLabels}
+				onCapturesTotal={handleSerialCapturesTotal}
+			/>
+
 			<div className="grid h-[calc(100vh-160px)] grid-cols-1 gap-6 lg:grid-cols-3">
 				{/* ----------------------------------------------------------------- */}
 				{/* Sidebar: Lista de órdenes pendientes                              */}
@@ -494,6 +605,7 @@ export default function WeighingStationPage() {
 							<div className="divide-y">
 								{orders.map((order) => (
 									<button
+										type="button"
 										key={order.id}
 										onClick={() => setSelectedOrderId(order.id)}
 										className={cn(
@@ -564,7 +676,10 @@ export default function WeighingStationPage() {
 												{tc("total")}
 											</div>
 											<div className="font-bold text-xl">
-												{formatCurrency(selectedOrder.total_amount, locale)}
+												{formatCurrency(
+													Number(selectedOrder.total_amount),
+													locale,
+												)}
 											</div>
 										</div>
 									</div>
@@ -674,6 +789,16 @@ export default function WeighingStationPage() {
 									)}
 								</div>
 
+								{/* Lectura de la báscula física (si la ingesta está activa) ---- */}
+								<ScaleReadingCard
+									onUse={handleUseScaleReading}
+									usedReadingId={
+										scaleUse && scaleUse.value === actualWeight
+											? scaleUse.id
+											: null
+									}
+								/>
+
 								{/* Input de peso bruto -------------------------------------------- */}
 								<div className="space-y-2">
 									<div className="flex items-center justify-between gap-2">
@@ -730,7 +855,31 @@ export default function WeighingStationPage() {
 											</span>
 										</div>
 										<div className="mt-2 font-mono text-[var(--cg-chrome-fg)]/50 text-xs">
-											bruto {grossKg.toFixed(2)} − tara {tareKg.toFixed(2)}
+											{usingSerialNet ? (
+												<span>
+													Σ {serialTotals.count} capturas: bruto{" "}
+													{grossKg.toFixed(3)} − taras{" "}
+													{appliedTareKg.toFixed(3)} (cada una con su
+													recipiente)
+												</span>
+											) : (
+												<span>
+													bruto {grossKg.toFixed(3)} − tara{" "}
+													{appliedTareKg.toFixed(3)}
+												</span>
+											)}
+											{serialTotals && serialTotals.count > 0 ? (
+												<Button
+													type="button"
+													variant="outline"
+													size="sm"
+													onClick={() => setManualWeight((value) => !value)}
+												>
+													{manualWeight
+														? "Usar neto de capturas"
+														: "Usar peso manual"}
+												</Button>
+											) : null}
 										</div>
 									</div>
 
@@ -743,7 +892,10 @@ export default function WeighingStationPage() {
 											min="0"
 											autoFocus
 											value={actualWeight}
-											onChange={(e) => setActualWeight(e.target.value)}
+											onChange={(e) => {
+												setManualWeight(true);
+												setActualWeight(e.target.value);
+											}}
 											onKeyDown={handleWeightKeyDown}
 											onFocus={(e) => e.currentTarget.select()}
 											className="h-24 rounded-2xl border-2 pr-20 text-center font-bold font-mono text-5xl focus-visible:ring-offset-2"
@@ -792,11 +944,15 @@ export default function WeighingStationPage() {
 											<span>Peso bruto</span>
 											<span className="font-mono">{grossKg.toFixed(3)} kg</span>
 										</div>
-										{tareKg > 0 && (
+										{appliedTareKg > 0 && (
 											<div className="flex justify-between text-muted-foreground">
-												<span>(–) Tara ({containerDef.label})</span>
+												<span>
+													{usingSerialNet
+														? `(–) Taras de ${serialTotals.count} capturas`
+														: `(–) Tara (${containerDef.label})`}
+												</span>
 												<span className="font-mono">
-													–{tareKg.toFixed(3)} kg
+													–{appliedTareKg.toFixed(3)} kg
 												</span>
 											</div>
 										)}

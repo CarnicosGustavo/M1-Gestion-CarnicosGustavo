@@ -4,7 +4,6 @@ import { Badge } from "@finopenpos/ui/components/badge";
 import { Button } from "@finopenpos/ui/components/button";
 import { Card, CardContent, CardHeader } from "@finopenpos/ui/components/card";
 import { Combobox } from "@finopenpos/ui/components/combobox";
-import { AiLearned, AiSuggestBar } from "@/components/antonella-ai-kit";
 import {
 	type Column,
 	DataTable,
@@ -57,6 +56,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
+import { AiLearned, AiSuggestBar } from "@/components/antonella-ai-kit";
 import { AntonellaSlot } from "@/components/antonella-slot";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
@@ -704,7 +704,8 @@ export default function RecipesPage({
 			const sumPct =
 				s.rows
 					.filter((r) => r.is_variant !== true)
-					.reduce((acc, r) => acc + (Number(r.yield_weight_ratio) || 0), 0) * 100;
+					.reduce((acc, r) => acc + (Number(r.yield_weight_ratio) || 0), 0) *
+				100;
 			const merma = 100 - sumPct;
 			if (sumPct > 0 && (!worst || merma > worst.merma))
 				worst = { canal: s.parent, sumPct, merma };
@@ -841,6 +842,7 @@ export default function RecipesPage({
 						r.is_variant && "bg-amber-50/60",
 					)}
 				>
+					{/* biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado */}
 					<span
 						draggable
 						onDragStart={(e) => {
@@ -982,6 +984,7 @@ export default function RecipesPage({
 					</span>
 				</div>
 				{expanded && (
+					// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 					<div
 						className={cn(
 							"mt-1 mb-2 ml-5 rounded-lg border border-l-2 border-l-blue-400 bg-muted/20 p-2",
@@ -1178,6 +1181,7 @@ export default function RecipesPage({
 		const isSupplier = p.category === "Compra";
 		const orphan = !isSupplier && styles.length === 0 && parents.length === 0;
 		return (
+			// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 			<div
 				draggable
 				onDragStart={(e) => {
@@ -1317,6 +1321,7 @@ export default function RecipesPage({
 		const accent = accentFor(s.type);
 		const dkey = `style:${s.type}`;
 		return (
+			// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 			<div
 				key={s.type}
 				className={cn(
@@ -1621,6 +1626,7 @@ export default function RecipesPage({
 			sortable: true,
 			accessorFn: (r) => r.parentProduct.name,
 			render: (r) => (
+				// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 				<div
 					onDragOver={(e) => {
 						e.preventDefault();
@@ -1664,6 +1670,7 @@ export default function RecipesPage({
 				const key = `${r.parent_product_id}:${r.child_product_id}:${r.transformation_type}`;
 				const dup = duplicateCounts.get(key) ?? 0;
 				return (
+					// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 					<div
 						onDragOver={(e) => {
 							e.preventDefault();
@@ -1876,8 +1883,8 @@ export default function RecipesPage({
 					{prov && (
 						<div className="flex items-center gap-2 rounded-lg bg-[var(--cg-green-wash)] px-3 py-2.5 text-xs">
 							<TruckIcon className="h-4 w-4 text-[var(--cg-green)]" />
-							Este producto <b>no depende del despiece</b> de un canal: entra por
-							compra a proveedor.
+							Este producto <b>no depende del despiece</b> de un canal: entra
+							por compra a proveedor.
 						</div>
 					)}
 
@@ -1978,7 +1985,9 @@ export default function RecipesPage({
 													(e.target as HTMLInputElement).blur()
 												}
 											/>
-											<span className="text-[10px] text-muted-foreground">kg</span>
+											<span className="text-[10px] text-muted-foreground">
+												kg
+											</span>
 										</div>
 									</div>
 								</div>
@@ -2040,8 +2049,7 @@ export default function RecipesPage({
 							variant="outline"
 							size="sm"
 							className={cn(
-								prov &&
-									"border-[var(--cg-green)] text-[var(--cg-green)]",
+								prov && "border-[var(--cg-green)] text-[var(--cg-green)]",
 							)}
 							onClick={() =>
 								classifyOrphanMut.mutate({ productId, action: "purchased" })
@@ -2070,9 +2078,7 @@ export default function RecipesPage({
 										) !== "ELIMINAR"
 									)
 										return;
-								} else if (
-									!window.confirm(`¿Borrar "${prod.name}"?`)
-								) {
+								} else if (!window.confirm(`¿Borrar "${prod.name}"?`)) {
 									return;
 								}
 								deleteProductMut.mutate({ id: productId });
@@ -2098,10 +2104,7 @@ export default function RecipesPage({
 							tone: "alerta",
 							titulo: "Revisa el cierre de pesos",
 							texto: `El ${mermaAlert.canal} suma ${mermaAlert.sumPct.toFixed(1)}% de su peso en piezas: hay ${mermaAlert.merma.toFixed(1)}% de merma, alto para tu histórico (~8%). Probablemente falta capturar el kg de alguna pieza, o quedó bajo.`,
-							acciones: [
-								"Ver piezas faltantes",
-								"¿Merma aceptable?",
-							],
+							acciones: ["Ver piezas faltantes", "¿Merma aceptable?"],
 						}}
 					/>
 				) : (
@@ -2544,6 +2547,7 @@ export default function RecipesPage({
 							esa pieza (2º nivel, receta BASE).
 							<div className="mt-1 flex flex-wrap gap-1">
 								{productsWithoutRecipe.map((p) => (
+									// biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado
 									<span
 										key={p.id}
 										draggable
@@ -2563,6 +2567,7 @@ export default function RecipesPage({
 							</div>
 							{/* Zonas de drop alternativas */}
 							<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+								{/* biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado */}
 								<div
 									onDragOver={(e) => e.preventDefault()}
 									onDrop={(e) => {
@@ -2586,6 +2591,7 @@ export default function RecipesPage({
 										Manteca, lomo ahumado, chicharrón…
 									</div>
 								</div>
+								{/* biome-ignore lint/a11y/noStaticElementInteractions: zona de arrastrar/soltar (drag & drop) con mouse; no es un control interactivo por teclado */}
 								<div
 									onDragOver={(e) => e.preventDefault()}
 									onDrop={(e) => {

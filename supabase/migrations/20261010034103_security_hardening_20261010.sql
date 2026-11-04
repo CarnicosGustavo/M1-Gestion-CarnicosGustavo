@@ -1,0 +1,13 @@
+ALTER TABLE public.bkp_uid_migration_20260618 ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.bkp_uid_migration_20260618 FROM anon, authenticated;
+ALTER VIEW public.credit_balances SET (security_invoker = true);
+REVOKE ALL ON TABLE public.credit_balances FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.importar_saldo_legacy(integer, text) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.validar_saldo_legacy(integer, text) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.sync_web_order_to_dashboard() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.importar_saldo_legacy(integer, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.validar_saldo_legacy(integer, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.sync_web_order_to_dashboard() TO service_role;
+ALTER FUNCTION staging.validar_saldo_legacy(integer, text) SET search_path = staging, public, pg_temp;
+ALTER FUNCTION staging.validar_todos_los_saldos(text) SET search_path = staging, public, pg_temp;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated;

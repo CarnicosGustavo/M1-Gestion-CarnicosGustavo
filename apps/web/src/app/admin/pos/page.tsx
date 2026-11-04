@@ -10,8 +10,6 @@ import {
 import { Combobox } from "@finopenpos/ui/components/combobox";
 import { Input } from "@finopenpos/ui/components/input";
 import { Skeleton } from "@finopenpos/ui/components/skeleton";
-import { AntonellaSlot } from "@/components/antonella-slot";
-import { ScreenHead } from "@/components/screen-head";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertTriangleIcon,
@@ -30,6 +28,8 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AntonellaSlot } from "@/components/antonella-slot";
+import { ScreenHead } from "@/components/screen-head";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 import { formatCurrency } from "@/lib/utils";
@@ -71,10 +71,20 @@ export default function POSPage() {
 	);
 	const { data: availability = [] } = useQuery(
 		trpc.products.availabilityMap.queryOptions(),
-	) as { data: { productId: number; stockPieces: number; stockKg: number; derivable: boolean }[] };
+	) as {
+		data: {
+			productId: number;
+			stockPieces: number;
+			stockKg: number;
+			derivable: boolean;
+		}[];
+	};
 
 	const availMap = useMemo(() => {
-		const m = new Map<number, { stockPieces: number; stockKg: number; derivable: boolean }>();
+		const m = new Map<
+			number,
+			{ stockPieces: number; stockKg: number; derivable: boolean }
+		>();
 		for (const a of availability) m.set(a.productId, a);
 		return m;
 	}, [availability]);
@@ -84,13 +94,13 @@ export default function POSPage() {
 		id: number;
 		quantityKg: number | null;
 		quantityPieces: number;
-		stock_kg: number | string;
-		stock_pieces: number;
+		stock_kg: number | string | null;
+		stock_pieces: number | null;
 	}): "stock" | "despiece" | "faltante" => {
 		const direct =
 			p.quantityKg !== null
 				? p.quantityKg <= Number(p.stock_kg)
-				: p.quantityPieces <= p.stock_pieces;
+				: p.quantityPieces <= (p.stock_pieces ?? 0);
 		if (direct) return "stock";
 		return availMap.get(p.id)?.derivable ? "despiece" : "faltante";
 	};
@@ -129,7 +139,7 @@ export default function POSPage() {
 	} | null>(null);
 	const [selectedCustomer, setSelectedCustomer] = useState<{
 		id: number;
-		name: string;
+		name: string | null;
 	} | null>(null);
 	const [productSearch, setProductSearch] = useState("");
 	const [emitNfce, setEmitNfce] = useState(false);
@@ -185,7 +195,11 @@ export default function POSPage() {
 	}, [customerPricesQuery.data]);
 
 	// Resuelve el precio de un producto: cliente > lista > base
-	const resolvePrice = (productId: number, baseKg: number, basePiece: number) => {
+	const resolvePrice = (
+		productId: number,
+		baseKg: number,
+		basePiece: number,
+	) => {
 		const cust = customerPriceMap.get(productId);
 		const list = priceOverrides.get(productId);
 		return {
@@ -248,7 +262,7 @@ export default function POSPage() {
 		if (!product) return;
 
 		// Validar stock dual
-		if (product.stock_pieces <= 0 && product.stock_kg <= 0) {
+		if ((product.stock_pieces ?? 0) <= 0 && Number(product.stock_kg) <= 0) {
 			toast.error(t("outOfStock", { name: product.name }));
 			return;
 		}
@@ -378,8 +392,12 @@ export default function POSPage() {
 		if (!customerId) return;
 
 		// Clasifica: en stock / vía despiece / faltante
-		const faltantes = selectedProducts.filter((p) => classify(p) === "faltante");
-		const viaDespiece = selectedProducts.filter((p) => classify(p) === "despiece");
+		const faltantes = selectedProducts.filter(
+			(p) => classify(p) === "faltante",
+		);
+		const viaDespiece = selectedProducts.filter(
+			(p) => classify(p) === "despiece",
+		);
 
 		if (viaDespiece.length > 0) {
 			toast.info(
@@ -438,9 +456,9 @@ export default function POSPage() {
 	};
 	const dispOf = (p: {
 		id: number;
-		stock_pieces: number;
-		stock_kg: number | string;
-		is_sellable_by_weight: boolean;
+		stock_pieces: number | null;
+		stock_kg: number | string | null;
+		is_sellable_by_weight: boolean | null;
 	}): Disp => {
 		const av = availMap.get(p.id);
 		const sp = av?.stockPieces ?? p.stock_pieces ?? 0;
@@ -516,7 +534,10 @@ export default function POSPage() {
 					titulo: "Punto de venta",
 					texto:
 						"Te aviso si una pieza no tiene stock y hay que despiezarla o pesarla. Puedo resolver precios del cliente y estimar el total antes de pesar.",
-					acciones: ["¿Qué piezas faltan en stock?", "¿Cubre mi stock los pedidos?"],
+					acciones: [
+						"¿Qué piezas faltan en stock?",
+						"¿Cubre mi stock los pedidos?",
+					],
 				}}
 			/>
 
@@ -555,7 +576,7 @@ export default function POSPage() {
 									toca para agregar
 								</span>
 							</div>
-							<div className="relative !mt-4">
+							<div className="!mt-4 relative">
 								<SearchIcon className="absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
 								<Input
 									type="text"
@@ -584,9 +605,9 @@ export default function POSPage() {
 												</span>
 												<PlusIcon className="h-4 w-4 shrink-0 text-primary" />
 											</div>
-											<div className="mt-2 font-mono font-bold text-foreground">
+											<div className="mt-2 font-bold font-mono text-foreground">
 												{formatCurrency(value * 100, locale)}
-												<span className="ml-0.5 font-sans font-normal text-muted-foreground text-xs">
+												<span className="ml-0.5 font-normal font-sans text-muted-foreground text-xs">
 													{unit}
 												</span>
 											</div>
@@ -626,10 +647,7 @@ export default function POSPage() {
 								const isWeighPending =
 									product.is_sellable_by_weight && !product.quantityKg;
 								return (
-									<div
-										key={product.id}
-										className="rounded-xl border p-3"
-									>
+									<div key={product.id} className="rounded-xl border p-3">
 										<div className="mb-2 flex items-center justify-between gap-2">
 											<span className="font-semibold text-foreground text-sm leading-tight">
 												{product.name}
@@ -655,33 +673,26 @@ export default function POSPage() {
 													<button
 														type="button"
 														className="h-8 w-8 bg-muted/60 font-bold text-foreground disabled:opacity-40"
-														onClick={() =>
-															handleQuantityChange(product.id, -1)
-														}
+														onClick={() => handleQuantityChange(product.id, -1)}
 														disabled={product.quantityPieces <= 1}
 													>
 														−
 													</button>
-													<span className="min-w-7 text-center font-mono font-bold text-sm">
+													<span className="min-w-7 text-center font-bold font-mono text-sm">
 														{product.quantityPieces}
 													</span>
 													<button
 														type="button"
 														className="h-8 w-8 bg-muted/60 font-bold text-foreground"
-														onClick={() =>
-															handleQuantityChange(product.id, 1)
-														}
+														onClick={() => handleQuantityChange(product.id, 1)}
 													>
 														+
 													</button>
 												</div>
-												<span className="min-w-16 text-right font-mono font-bold text-sm">
+												<span className="min-w-16 text-right font-bold font-mono text-sm">
 													{isWeighPending
 														? "~pesar"
-														: formatCurrency(
-																subtotalOf(product) * 100,
-																locale,
-															)}
+														: formatCurrency(subtotalOf(product) * 100, locale)}
 												</span>
 											</div>
 										</div>

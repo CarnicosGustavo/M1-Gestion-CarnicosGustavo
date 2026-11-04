@@ -14,10 +14,8 @@ import { Label } from "@finopenpos/ui/components/label";
 import {
 	KeyIcon,
 	LogOutIcon,
-	MailIcon,
 	MoonIcon,
 	SunIcon,
-	Trash2Icon,
 	UserCircleIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -32,10 +30,7 @@ export default function ProfilePage() {
 	const { data: session } = authClient.useSession();
 	const { palette, mode, setPalette, setMode } = useTheme();
 
-	const [emailOpen, setEmailOpen] = useState(false);
 	const [passOpen, setPassOpen] = useState(false);
-	const [deleteOpen, setDeleteOpen] = useState(false);
-	const [newEmail, setNewEmail] = useState("");
 	const [currentPass, setCurrentPass] = useState("");
 	const [newPass, setNewPass] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -49,22 +44,6 @@ export default function ProfilePage() {
 				month: "long",
 			})
 		: "—";
-
-	async function handleChangeEmail() {
-		if (!newEmail.includes("@")) return;
-		setBusy(true);
-		try {
-			const res = await authClient.changeEmail({ newEmail });
-			if ((res as { error?: unknown })?.error) throw new Error("error");
-			toast.success("Solicitud de cambio de email enviada.");
-			setEmailOpen(false);
-			setNewEmail("");
-		} catch {
-			toast.error("No se pudo cambiar el email.");
-		} finally {
-			setBusy(false);
-		}
-	}
 
 	async function handleChangePassword() {
 		if (newPass.length < 8) {
@@ -95,23 +74,6 @@ export default function ProfilePage() {
 		router.push("/login");
 	}
 
-	async function handleDelete() {
-		setBusy(true);
-		try {
-			const res = await authClient.deleteUser();
-			if ((res as { error?: unknown })?.error) throw new Error("error");
-			toast.success("Cuenta eliminada.");
-			router.push("/login");
-		} catch {
-			toast.error(
-				"No se pudo eliminar la cuenta. Contacta al administrador del sistema.",
-			);
-			setDeleteOpen(false);
-		} finally {
-			setBusy(false);
-		}
-	}
-
 	return (
 		<div>
 			<ScreenHead
@@ -135,14 +97,6 @@ export default function ProfilePage() {
 								{email}
 							</div>
 							<div className="mt-3 flex flex-wrap gap-2">
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={() => setEmailOpen(true)}
-								>
-									<MailIcon className="mr-2 h-4 w-4" />
-									Cambiar email
-								</Button>
 								<Button
 									variant="outline"
 									size="sm"
@@ -253,59 +207,21 @@ export default function ProfilePage() {
 					</CardContent>
 				</Card>
 
-				{/* Zona de peligro */}
+				{/* Sesión */}
 				<Card className="border-destructive/40 bg-[var(--cg-red-wash)]">
 					<CardContent className="pt-6">
 						<Label className="text-destructive text-xs uppercase tracking-wider">
-							Zona de peligro
+							Sesión
 						</Label>
 						<div className="mt-3 grid gap-2.5 sm:grid-cols-2">
 							<Button variant="outline" onClick={handleSignOut}>
 								<LogOutIcon className="mr-2 h-4 w-4" />
 								Cerrar sesión
 							</Button>
-							<Button
-								variant="outline"
-								className="border-destructive/50 text-destructive hover:bg-destructive/10"
-								onClick={() => setDeleteOpen(true)}
-							>
-								<Trash2Icon className="mr-2 h-4 w-4" />
-								Eliminar cuenta
-							</Button>
 						</div>
 					</CardContent>
 				</Card>
 			</div>
-
-			{/* Diálogo: cambiar email */}
-			<Dialog open={emailOpen} onOpenChange={setEmailOpen}>
-				<DialogContent className="sm:max-w-[440px]">
-					<DialogHeader>
-						<DialogTitle>Cambiar email</DialogTitle>
-					</DialogHeader>
-					<div className="space-y-1.5">
-						<Label htmlFor="new-email">Nuevo email</Label>
-						<Input
-							id="new-email"
-							type="email"
-							value={newEmail}
-							onChange={(e) => setNewEmail(e.target.value)}
-							placeholder="nuevo@correo.com"
-						/>
-					</div>
-					<DialogFooter>
-						<Button variant="outline" onClick={() => setEmailOpen(false)}>
-							Cancelar
-						</Button>
-						<Button
-							onClick={handleChangeEmail}
-							disabled={busy || !newEmail.includes("@")}
-						>
-							Guardar
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
 
 			{/* Diálogo: cambiar contraseña */}
 			<Dialog open={passOpen} onOpenChange={setPassOpen}>
@@ -343,33 +259,6 @@ export default function ProfilePage() {
 							disabled={busy || !currentPass || newPass.length < 8}
 						>
 							Actualizar
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
-
-			{/* Diálogo: eliminar cuenta */}
-			<Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-				<DialogContent className="sm:max-w-[440px]">
-					<DialogHeader>
-						<DialogTitle className="text-destructive">
-							Eliminar cuenta
-						</DialogTitle>
-					</DialogHeader>
-					<p className="text-muted-foreground text-sm">
-						Esta acción es permanente y no se puede deshacer. Se cerrará tu
-						sesión y se eliminará tu acceso a la plataforma.
-					</p>
-					<DialogFooter>
-						<Button variant="outline" onClick={() => setDeleteOpen(false)}>
-							Cancelar
-						</Button>
-						<Button
-							variant="destructive"
-							onClick={handleDelete}
-							disabled={busy}
-						>
-							Sí, eliminar mi cuenta
 						</Button>
 					</DialogFooter>
 				</DialogContent>

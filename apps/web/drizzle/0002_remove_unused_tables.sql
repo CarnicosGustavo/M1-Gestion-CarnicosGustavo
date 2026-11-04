@@ -1,0 +1,19 @@
+-- 0002_remove_unused_tables
+--
+-- Quita de schema.ts tablas heredadas del proyecto base (FinOpenPOS) que NUNCA
+-- existieron en la BD de producción: cities, fiscal_settings, invoices,
+-- invoice_items, invoice_events y purchase_orders.
+--
+-- drizzle-kit generó "DROP TABLE ... CASCADE" para cada una porque estaban en el
+-- snapshot anterior. Como esas tablas no existen en producción, la migración se
+-- deja intencionalmente como NO-OP: su único efecto es actualizar el snapshot
+-- (meta/0002_snapshot.json) para que futuros `db:generate` partan del estado real.
+--
+-- SQL generado (NO se ejecuta):
+-- DROP TABLE "cities" CASCADE;
+-- DROP TABLE "fiscal_settings" CASCADE;
+-- DROP TABLE "invoice_events" CASCADE;
+-- DROP TABLE "invoice_items" CASCADE;
+-- DROP TABLE "invoices" CASCADE;
+-- DROP TABLE "purchase_orders" CASCADE;
+SELECT 1;
