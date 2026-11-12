@@ -74,3 +74,7 @@ Es una propuesta. Hay que confirmarla, diseñar su autenticación e implementarl
 - Los merges a `main` pueden disparar un redeploy: necesitan el OK de Alberto.
 - No activar `/api/scale/ingest` sin su OK.
 - No usar tokens reales en pruebas ni pegar secretos en issues, PRs o docs (este repo es público).
+
+## Documentación general
+
+La documentación completa de todos los proyectos (repositorios, interfaces, accesos sin valores, bóvedas y migración de cuenta) vive en el repo **privado** de la placa: [abalderasdev/T-RSS3 → docs/documentacion](https://github.com/abalderasdev/T-RSS3/blob/main/docs/documentacion/README.md). Hace falta acceso a ese repo. Por ser este repo público, aquí no se copia ese contenido.
