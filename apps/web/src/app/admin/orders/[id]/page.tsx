@@ -210,8 +210,8 @@ export default function OrderDetailPage({
 			onSuccess: (result) => {
 				toast.success(
 					result.status === "PENDIENTE_PESAJE"
-						? "Compra recibida: las líneas por peso pasan a báscula"
-						: "Compra recibida: ya puedes cobrar el resto",
+						? "Compra recibida: se sumó el faltante al stock. Las líneas por peso pasan a báscula y el peso real se suma al pesar"
+						: "Compra recibida: se sumó el faltante al stock; ya puedes cobrar el resto",
 				);
 				refetch();
 				queryClient.invalidateQueries({ queryKey: invalidateKey });
@@ -435,7 +435,7 @@ export default function OrderDetailPage({
 							disabled={receivePurchaseMutation.isPending}
 							onClick={() => {
 								const ok = window.confirm(
-									"¿Registrar la compra recibida de todas las líneas pendientes? Las líneas por peso pasarán a la báscula y después se cobran por separado.",
+									"¿Registrar la compra recibida de todas las líneas pendientes? Se sumará al stock el faltante de las líneas por pieza. Las líneas por peso pasarán a la báscula y el peso real se sumará al pesar; después se cobran por separado.",
 								);
 								if (!ok) return;
 								receivePurchaseMutation.mutate({ orderId });
