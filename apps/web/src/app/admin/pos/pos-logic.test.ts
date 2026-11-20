@@ -8,6 +8,7 @@ import {
 	needsWeigh,
 	quantityKgGramsForPayload,
 	resolvePrice,
+	shouldCommitPrice,
 	unitPriceCentsForPayload,
 } from "./pos-logic";
 
@@ -413,5 +414,17 @@ describe("F4 / R2-9 / R2-10 — resolvePrice", () => {
 			kg: 90,
 			piece: 40,
 		});
+	});
+});
+
+describe("N3-1 — shouldCommitPrice", () => {
+	it("no confirma si el número no cambió (enfocar y salir no edita)", () => {
+		expect(shouldCommitPrice(90, 90)).toBe(false);
+		expect(shouldCommitPrice(8, 8)).toBe(false);
+	});
+
+	it("confirma solo cuando el precio es distinto", () => {
+		expect(shouldCommitPrice(95, 90)).toBe(true);
+		expect(shouldCommitPrice(0, 90)).toBe(true);
 	});
 });
