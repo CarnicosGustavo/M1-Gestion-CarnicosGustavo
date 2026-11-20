@@ -1174,6 +1174,7 @@ export const ordersRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			return db.transaction(async (tx) => {
 				let requiresWeighing = false;
+				let pendingPurchase = false;
 				const processedItems = [];
 
 				for (const item of input.items) {
@@ -1200,8 +1201,20 @@ export const ordersRouter = router({
 
 					// No se bloquea por stock: el pedido se acepta aunque el producto no
 					// exista todavía en inventario. El stock puede quedar negativo y se
-					// compensa al despiezar las canales. (Se ignora requiresPurchase.)
-					if (product.is_sellable_by_weight) {
+					// compensa al despiezar las canales.
+					if (item.requiresPurchase === true) {
+						// F12 / regla (b): respeta requiresPurchase. El ítem no se cobra
+						// todavía (subtotal 0). Ya existía el status PENDIENTE_COMPRA;
+						// no hace falta migración.
+						itemStatus = "PENDIENTE_COMPRA";
+						pendingPurchase = true;
+						if (product.is_sellable_by_weight) {
+							quantityKg = quantityKg
+								? ((quantityKg / 1000).toFixed(3) as any)
+								: null;
+						}
+						subtotal = 0;
+					} else if (product.is_sellable_by_weight) {
 						// Producto por peso: SIEMPRE va a la estación de pesaje. El peso
 						// real se mide en la báscula y de ahí sale el cálculo. La cantidad
 						// capturada (kg solicitados) queda como referencia y se reemplaza
@@ -1233,9 +1246,13 @@ export const ordersRouter = router({
 					(sum, i) => sum + Number(i.subtotal),
 					0,
 				);
+				// Pesaje manda sobre compra pendiente.
+				// PENDIENTE_COMPRA y PARCIAL_DISPONIBLE ya existen en el schema.
 				const orderStatus = requiresWeighing
 					? "PENDIENTE_PESAJE"
-					: "LISTA_PARA_COBRO";
+					: pendingPurchase
+						? "PARCIAL_DISPONIBLE"
+						: "LISTA_PARA_COBRO";
 
 				const [orderData] = await tx
 					.insert(orders)
@@ -1264,7 +1281,7 @@ export const ordersRouter = router({
 					})),
 				);
 
-				if (!requiresWeighing && input.paymentMethodId) {
+				if (orderStatus === "LISTA_PARA_COBRO" && input.paymentMethodId) {
 					await tx.insert(transactions).values({
 						order_id: orderData.id,
 						payment_method_id: input.paymentMethodId,
