@@ -249,6 +249,23 @@ async function deductStockAndMarkCharged(
 	return cents;
 }
 
+async function orderHasReceivedPurchase(
+	dbOrTx: OrdersTx | typeof db,
+	orderId: number,
+): Promise<boolean> {
+	const [row] = await dbOrTx
+		.select({ id: inventoryTransactions.id })
+		.from(inventoryTransactions)
+		.where(
+			and(
+				eq(inventoryTransactions.transaction_type, "COMPRA"),
+				eq(inventoryTransactions.reference_id, orderId),
+			),
+		)
+		.limit(1);
+	return Boolean(row);
+}
+
 export const ordersRouter = router({
 	get: protectedProcedure
 		.meta({
@@ -309,7 +326,8 @@ export const ordersRouter = router({
 			const canEdit =
 				!result.orderItems.some((item) => item.status === "COBRADO") &&
 				chargeCount <= 1 &&
-				result.status !== "PROCESANDO_PAGO";
+				result.status !== "PROCESANDO_PAGO" &&
+				!(await orderHasReceivedPurchase(db, result.id));
 			return {
 				...result,
 				orderItems: result.orderItems.map((item) => ({
@@ -2666,6 +2684,13 @@ export const ordersRouter = router({
 						code: "BAD_REQUEST",
 						message:
 							"No se puede editar un pedido con líneas ya cobradas o con más de un cobro",
+					});
+				}
+				if (await orderHasReceivedPurchase(tx, input.orderId)) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede editar un pedido con una compra recibida pendiente de pesaje o cobro",
 					});
 				}
 				const preserved = existing.filter(
