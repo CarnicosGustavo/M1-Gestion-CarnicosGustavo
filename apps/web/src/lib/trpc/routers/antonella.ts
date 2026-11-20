@@ -23,6 +23,7 @@ import {
 	products,
 	productTransformations,
 } from "@/lib/db/schema";
+import { sqlOpenOrder, sqlUnsatisfiedItem } from "@/lib/orders/demand-sql";
 import { protectedProcedure, router } from "../init";
 
 // System prompt por defecto (precargado). El usuario lo puede editar en
@@ -1844,8 +1845,8 @@ export const antonicellaRouter = router({
 				SELECT COALESCE(SUM(oi.quantity_pieces),0)::int AS pz
 				FROM order_items oi JOIN orders o ON o.id = oi.order_id
 				WHERE o.user_uid = ${uid}
-				  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
-				  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO','COBRADO')
+				  AND ${sqlOpenOrder}
+				  AND ${sqlUnsatisfiedItem}
 			`)) as unknown as { pz: number }[];
 			const demandPz = Number(demand[0]?.pz ?? 0);
 			if (demandPz > 0) {

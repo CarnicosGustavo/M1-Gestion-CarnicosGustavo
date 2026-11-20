@@ -9,6 +9,11 @@ import {
 	yieldSheetItems,
 	yieldSheets,
 } from "@/lib/db/schema";
+import {
+	sqlOpenOrder,
+	sqlRealKgItem,
+	sqlUnsatisfiedItem,
+} from "@/lib/orders/demand-sql";
 import { protectedProcedure, router } from "../init";
 
 const itemInput = z.object({
@@ -649,7 +654,7 @@ export const yieldsRouter = router({
 				SELECT oi.product_id AS pid, COALESCE(SUM(oi.quantity_kg),0) AS kg
 				FROM order_items oi
 				JOIN orders o ON o.id = oi.order_id
-				WHERE oi.status IN ('PESADO','COBRADO')
+				WHERE ${sqlRealKgItem}
 				  AND oi.product_id IS NOT NULL
 				  AND o.created_at::date = ${input.date}
 				GROUP BY oi.product_id
@@ -802,8 +807,8 @@ export const yieldsRouter = router({
 			FROM order_items oi
 			JOIN orders o ON o.id = oi.order_id
 			WHERE oi.product_id IS NOT NULL
-			  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
-			  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO','COBRADO')
+			  AND ${sqlOpenOrder}
+			  AND ${sqlUnsatisfiedItem}
 			GROUP BY oi.product_id
 		`)) as unknown as { pid: number; pieces: number; kg: string | number }[];
 		const demandByProduct: Record<number, { pieces: number; kg: number }> = {};
@@ -901,8 +906,8 @@ export const yieldsRouter = router({
 				FROM order_items oi
 				JOIN orders o ON o.id = oi.order_id
 				WHERE oi.product_id IS NOT NULL
-				  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
-				  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO','COBRADO')
+				  AND ${sqlOpenOrder}
+				  AND ${sqlUnsatisfiedItem}
 				GROUP BY oi.product_id
 			`)) as unknown as { pid: number; pieces: number }[];
 			const demand = new Map<number, number>();
