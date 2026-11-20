@@ -497,7 +497,7 @@ describe("orders R2-4 — cobro parcial", () => {
 			.select()
 			.from(products)
 			.where(eq(products.id, pieceProductId));
-		expect(Number(pieceAfter.stock_pieces)).toBe(-6);
+		expect(Number(pieceAfter.stock_pieces)).toBe(4);
 
 		const txs = await getTransactions(order.id);
 		expect(txs).toHaveLength(2);
@@ -1754,5 +1754,166 @@ describe("orders N7 — no reabrir cobrados y tests oficiales de N6-5", () => {
 		});
 		expect(lomoAfter?.stock_pieces).toBe(0);
 		expect(canalAfter?.stock_pieces).toBe(5);
+	});
+});
+
+describe("orders R4-13 — Compra recibida suma stock", () => {
+	async function purchaseMoves(orderId: number) {
+		const rows = await db
+			.select()
+			.from(inventoryTransactions)
+			.where(eq(inventoryTransactions.reference_id, orderId));
+		return rows.filter((row) => row.transaction_type === "COMPRA");
+	}
+
+	it("suma las piezas faltantes, registra COMPRA y un segundo clic no vuelve a sumar", async () => {
+		const order = await createPartialOrder();
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+
+		let [piece] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, pieceProductId));
+		expect(Number(piece.stock_pieces)).toBe(4);
+
+		const first = await caller.receivePurchase({ orderId: order.id });
+		expect(first.status).toBe("LISTA_PARA_COBRO");
+
+		[piece] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, pieceProductId));
+		expect(Number(piece.stock_pieces)).toBe(14);
+
+		const moves = await purchaseMoves(order.id);
+		expect(moves).toHaveLength(1);
+		expect(moves[0]?.quantity_change_pieces).toBe(10);
+		expect(moves[0]?.quantity_change_kg).toBeNull();
+		expect(moves[0]?.reference_id).toBe(order.id);
+
+		const second = await caller.receivePurchase({ orderId: order.id });
+		expect(second.success).toBe(true);
+		expect(second.status).toBe("LISTA_PARA_COBRO");
+
+		[piece] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, pieceProductId));
+		expect(Number(piece.stock_pieces)).toBe(14);
+		expect(await purchaseMoves(order.id)).toHaveLength(1);
+	});
+
+	it("tras recibir, el cobro no deja stock negativo por el faltante", async () => {
+		const order = await createPartialOrder();
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+		await caller.receivePurchase({ orderId: order.id });
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+
+		expect((await getOrder(order.id))?.status).toBe("COMPLETADA");
+		const [piece] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, pieceProductId));
+		expect(Number(piece.stock_pieces)).toBe(4);
+		expect(Number(piece.stock_pieces)).toBeGreaterThanOrEqual(0);
+
+		const txs = await getTransactions(order.id);
+		expect(txs).toHaveLength(2);
+		const sales = await db
+			.select()
+			.from(inventoryTransactions)
+			.where(eq(inventoryTransactions.reference_id, order.id));
+		expect(
+			sales.filter((row) => row.transaction_type === "COMPRA"),
+		).toHaveLength(1);
+		expect(
+			sales.filter((row) => row.transaction_type === "VENTA"),
+		).toHaveLength(2);
+	});
+
+	it("en una línea por peso suma los kg pedidos; pesar y cobrar no deja negativo si el peso coincide", async () => {
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "0",
+		});
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+				{
+					productId: weightProductId,
+					quantityKg: 2000,
+					unitPrice: 10000,
+					requiresPurchase: true,
+				},
+			],
+		});
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+
+		await caller.receivePurchase({ orderId: order.id });
+		let [weight] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(Number(weight.stock_kg)).toBe(2);
+
+		const firstMoves = await purchaseMoves(order.id);
+		expect(firstMoves).toHaveLength(1);
+		expect(Number(firstMoves[0]?.quantity_change_kg)).toBe(2);
+		expect(firstMoves[0]?.quantity_change_pieces).toBeNull();
+
+		await caller.receivePurchase({ orderId: order.id });
+		[weight] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(Number(weight.stock_kg)).toBe(2);
+		expect(await purchaseMoves(order.id)).toHaveLength(1);
+
+		const weightItem = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_PESAJE",
+		);
+		expect(weightItem).toBeDefined();
+		await caller.updateOrderItemWeight({
+			orderItemId: weightItem!.id,
+			actualWeightGrams: 2000,
+		});
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+
+		expect((await getOrder(order.id))?.status).toBe("COMPLETADA");
+		[weight] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(Number(weight.stock_kg)).toBe(0);
+		const [piece] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, pieceProductId));
+		expect(Number(piece.stock_pieces)).toBe(4);
 	});
 });
