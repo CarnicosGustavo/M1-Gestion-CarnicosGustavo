@@ -37,7 +37,7 @@ export const ticketsRouter = router({
 				totalAmount: z.string(),
 				amountPaid: z.number(),
 				amountDue: z.number(),
-				paymentStatus: z.enum(["PAGADO", "CREDITO", "PENDIENTE"]),
+				paymentStatus: z.enum(["PAGADO", "CREDITO", "PENDIENTE", "PARCIAL"]),
 				status: z.string().nullable(),
 				notes: z.string().nullable(),
 			}),
@@ -84,8 +84,11 @@ export const ticketsRouter = router({
 				0,
 			);
 			const amountDue = Math.max(0, totalPesos - amountPaid - creditPesos);
-			let paymentStatus: "PAGADO" | "CREDITO" | "PENDIENTE" = "PENDIENTE";
-			if (amountPaid > 0) {
+			let paymentStatus: "PAGADO" | "CREDITO" | "PENDIENTE" | "PARCIAL" =
+				"PENDIENTE";
+			if (amountDue > 0 && (amountPaid > 0 || creditPesos > 0)) {
+				paymentStatus = "PARCIAL";
+			} else if (amountPaid > 0) {
 				paymentStatus = "PAGADO";
 			} else if (creditPesos > 0) {
 				paymentStatus = "CREDITO";
