@@ -472,6 +472,7 @@ export const yieldsRouter = router({
 				JOIN products p ON p.id = it.product_id
 				WHERE p.user_uid = ${ctx.user.id}
 				  AND it.transaction_type = 'COMPRA'
+				  AND it.reference_id IS NULL
 				  AND it.created_at::date = ${input.date}
 				ORDER BY it.created_at DESC
 			`)) as unknown as {
