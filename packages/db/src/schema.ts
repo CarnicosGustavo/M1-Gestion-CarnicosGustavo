@@ -51,6 +51,7 @@ export const ORDER_ITEM_STATUSES = [
 	"PESADO",
 	"PENDING",
 	"WEIGHED",
+	"COBRADO",
 ] as const;
 export type OrderItemStatus = (typeof ORDER_ITEM_STATUSES)[number];
 export const messageDirectionEnum = pgEnum("message_direction", [

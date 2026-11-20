@@ -205,6 +205,22 @@ export default function OrderDetailPage({
 		}),
 	);
 
+	const receivePurchaseMutation = useMutation(
+		trpc.orders.receivePurchase.mutationOptions({
+			onSuccess: (result) => {
+				toast.success(
+					result.status === "PENDIENTE_PESAJE"
+						? "Compra recibida: las líneas por peso pasan a báscula"
+						: "Compra recibida: ya puedes cobrar el resto",
+				);
+				refetch();
+				queryClient.invalidateQueries({ queryKey: invalidateKey });
+			},
+			onError: (err: any) =>
+				toast.error(err.message ?? "No se pudo registrar la compra recibida"),
+		}),
+	);
+
 	const openPay = () => {
 		setPayMethodId(paymentMethods?.[0]?.id?.toString() ?? "");
 		setPayType("contado");
@@ -318,7 +334,16 @@ export default function OrderDetailPage({
 	const base = getStatusDisplay(order.status);
 	const statusLabel = isProduction ? "Producción → inventario" : base.label;
 	const statusColor = isProduction ? "text-purple-600" : base.color;
-	const canCharge = order.status === "LISTA_PARA_COBRO" && !isProduction;
+	const hasChargeableItems = (order.orderItems ?? []).some((item: any) =>
+		["COMPLETADO", "PESADO", "WEIGHED"].includes(item.status),
+	);
+	const hasPendingPurchase = (order.orderItems ?? []).some(
+		(item: any) => item.status === "PENDIENTE_COMPRA",
+	);
+	const canCharge =
+		!isProduction &&
+		(order.status === "LISTA_PARA_COBRO" ||
+			(order.status === "PARCIAL_DISPONIBLE" && hasChargeableItems));
 
 	// Estimación de costo de items aún no pesados (piezas × peso promedio × precio/kg)
 	const avgWeightMap = new Map<number, number>();
@@ -370,7 +395,21 @@ export default function OrderDetailPage({
 							onClick={openPay}
 						>
 							<BanknoteIcon className="mr-2 h-4 w-4" />
-							Liquidar / Cobrar
+							{order.status === "PARCIAL_DISPONIBLE"
+								? "Cobrar lo disponible"
+								: "Liquidar / Cobrar"}
+						</Button>
+					)}
+					{hasPendingPurchase && !isProduction && (
+						<Button
+							size="sm"
+							variant="outline"
+							disabled={receivePurchaseMutation.isPending}
+							onClick={() => receivePurchaseMutation.mutate({ orderId })}
+						>
+							{receivePurchaseMutation.isPending
+								? "Registrando…"
+								: "Compra recibida"}
 						</Button>
 					)}
 					{order.status === "COMPLETADA" && !isProduction && (

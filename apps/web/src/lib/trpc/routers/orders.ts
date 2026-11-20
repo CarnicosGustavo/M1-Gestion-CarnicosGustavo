@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
@@ -17,6 +17,12 @@ import {
 	transactions,
 } from "@/lib/db/schema";
 import { almacenProcedure, protectedProcedure, router } from "../init";
+import {
+	isChargeableItem,
+	isChargedItem,
+	nextStatusAfterCharge,
+	nextStatusAfterReceive,
+} from "./order-charge";
 
 const orderWithCustomerSchema = z.object({
 	id: z.number(),
@@ -175,14 +181,68 @@ function lineIsActuallyFaltante(
 	return !derivable;
 }
 
-function assertNoPendingPurchase(items: { status: string | null }[]): void {
-	if (items.some((item) => item.status === "PENDIENTE_COMPRA")) {
-		throw new TRPCError({
-			code: "BAD_REQUEST",
-			message:
-				"El pedido tiene líneas pendientes de compra y no se puede cobrar",
-		});
+async function deductStockAndMarkCharged(
+	tx: OrdersTx,
+	items: {
+		id: number;
+		status: string | null;
+		subtotal: string | number | null;
+		product_id: number | null;
+		quantity_kg: string | number | null;
+		quantity_pieces: number | null;
+	}[],
+	orderId: number,
+	notes: string,
+): Promise<number> {
+	let cents = 0;
+	for (const item of items) {
+		if (!isChargeableItem(item)) continue;
+		cents += Math.round(Number(item.subtotal ?? 0));
+		if (item.product_id) {
+			const [product] = await tx
+				.select()
+				.from(products)
+				.where(eq(products.id, item.product_id))
+				.limit(1);
+			if (product) {
+				const itemQuantityKg = item.quantity_kg ? Number(item.quantity_kg) : 0;
+				const newStockKg = Number(product.stock_kg) - itemQuantityKg;
+				const nextPieces =
+					product.is_sellable_by_weight || !item.quantity_pieces
+						? (product.stock_pieces ?? 0)
+						: (product.stock_pieces ?? 0) - item.quantity_pieces;
+				const nextWeighedPieces = Math.min(
+					product.weighed_pieces ?? 0,
+					nextPieces,
+				);
+				await tx
+					.update(products)
+					.set({
+						stock_pieces: nextPieces,
+						weighed_pieces: Math.max(0, nextWeighedPieces),
+						stock_kg: newStockKg.toFixed(3),
+					})
+					.where(eq(products.id, item.product_id));
+				await tx.insert(inventoryTransactions).values({
+					product_id: item.product_id,
+					quantity_change_pieces:
+						product.is_sellable_by_weight || !item.quantity_pieces
+							? null
+							: -item.quantity_pieces,
+					quantity_change_kg:
+						itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
+					transaction_type: "VENTA",
+					reference_id: orderId,
+					notes,
+				});
+			}
+		}
+		await tx
+			.update(orderItems)
+			.set({ status: "COBRADO", updated_at: new Date() })
+			.where(eq(orderItems.id, item.id));
 	}
+	return cents;
 }
 
 export const ordersRouter = router({
@@ -1559,6 +1619,124 @@ export const ordersRouter = router({
 			});
 		}),
 
+	receivePurchase: protectedProcedure
+		.input(
+			z.object({
+				orderId: z.number(),
+				itemIds: z.array(z.number()).optional(),
+			}),
+		)
+		.output(z.object({ success: z.boolean(), status: z.string() }))
+		.mutation(async ({ ctx, input }) => {
+			return db.transaction(async (tx) => {
+				const [order] = await tx
+					.select()
+					.from(orders)
+					.where(
+						and(
+							eq(orders.id, input.orderId),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
+					)
+					.limit(1);
+				if (!order) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Pedido no encontrado",
+					});
+				}
+
+				const items = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const pending = items.filter(
+					(item) => item.status === "PENDIENTE_COMPRA",
+				);
+				const requested = input.itemIds
+					? pending.filter((item) => input.itemIds?.includes(item.id))
+					: pending;
+
+				if (requested.length === 0) {
+					if (pending.length === 0) {
+						return {
+							success: true,
+							status: order.status ?? nextStatusAfterReceive(items),
+						};
+					}
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No hay líneas pendientes de compra para recibir",
+					});
+				}
+
+				for (const item of requested) {
+					if (!item.product_id) {
+						await tx
+							.update(orderItems)
+							.set({ status: "COMPLETADO", updated_at: new Date() })
+							.where(eq(orderItems.id, item.id));
+						continue;
+					}
+					const [product] = await tx
+						.select()
+						.from(products)
+						.where(eq(products.id, item.product_id))
+						.limit(1);
+					if (product?.is_sellable_by_weight) {
+						await tx
+							.update(orderItems)
+							.set({
+								status: "PENDIENTE_PESAJE",
+								updated_at: new Date(),
+							})
+							.where(eq(orderItems.id, item.id));
+						continue;
+					}
+					const subtotal =
+						(item.quantity_pieces ?? 0) * Number(item.unit_price ?? 0);
+					await tx
+						.update(orderItems)
+						.set({
+							status: "COMPLETADO",
+							subtotal: String(Math.round(subtotal)),
+							updated_at: new Date(),
+						})
+						.where(eq(orderItems.id, item.id));
+				}
+
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const nextStatus = nextStatusAfterReceive(remaining);
+				const orderTotal = remaining
+					.filter(
+						(item) =>
+							item.status !== "PENDIENTE_COMPRA" &&
+							item.status !== "PENDIENTE_PESAJE",
+					)
+					.reduce(
+						(sum, item) => sum + Math.round(Number(item.subtotal ?? 0)),
+						0,
+					);
+				const requiresWeighing = remaining.some(
+					(item) => item.status === "PENDIENTE_PESAJE",
+				);
+				await tx
+					.update(orders)
+					.set({
+						status: nextStatus,
+						total_amount: String(orderTotal),
+						requires_weighing: requiresWeighing,
+						updated_at: new Date(),
+					})
+					.where(eq(orders.id, input.orderId));
+
+				return { success: true, status: nextStatus };
+			});
+		}),
+
 	completeOrderPayment: protectedProcedure
 		.meta({
 			openapi: {
@@ -1580,7 +1758,10 @@ export const ordersRouter = router({
 						and(
 							eq(orders.id, input.orderId),
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
-							eq(orders.status, "LISTA_PARA_COBRO"),
+							inArray(orders.status, [
+								"LISTA_PARA_COBRO",
+								"PARCIAL_DISPONIBLE",
+							]),
 						),
 					)
 					.returning();
@@ -1598,74 +1779,50 @@ export const ordersRouter = router({
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
 
-				assertNoPendingPurchase(items);
-
-				for (const item of items) {
-					if (item.status === "PENDIENTE_COMPRA") continue;
-					if (item.product_id) {
-						const [product] = await tx
-							.select()
-							.from(products)
-							.where(eq(products.id, item.product_id))
-							.limit(1);
-
-						if (product) {
-							const currentStockKg = Number(product.stock_kg);
-							const itemQuantityKg = item.quantity_kg
-								? Number(item.quantity_kg)
-								: 0;
-							const newStockKg = currentStockKg - itemQuantityKg;
-							const nextPieces =
-								product.is_sellable_by_weight || !item.quantity_pieces
-									? (product.stock_pieces ?? 0)
-									: (product.stock_pieces ?? 0) - item.quantity_pieces;
-							const nextWeighedPieces = Math.min(
-								product.weighed_pieces ?? 0,
-								nextPieces,
-							);
-
-							// Pieza ya pesada y lista para entrega: el cobro no se bloquea por stock.
-							await tx
-								.update(products)
-								.set({
-									stock_pieces: nextPieces,
-									weighed_pieces: Math.max(0, nextWeighedPieces),
-									stock_kg: newStockKg.toFixed(3),
-									// Stock puede quedar negativo: se compensa al despiezar.
-								})
-								.where(eq(products.id, item.product_id));
-
-							await tx.insert(inventoryTransactions).values({
-								product_id: item.product_id,
-								quantity_change_pieces:
-									product.is_sellable_by_weight || !item.quantity_pieces
-										? null
-										: -item.quantity_pieces,
-								quantity_change_kg:
-									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
-								transaction_type: "VENTA",
-								reference_id: input.orderId,
-								notes: `Venta pedido #${input.orderId}`,
-							});
-						}
+				const chargeable = items.filter(isChargeableItem);
+				if (chargeable.length === 0) {
+					if (!items.some(isChargedItem)) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: "No hay líneas disponibles para cobro",
+						});
 					}
+					await tx
+						.update(orders)
+						.set({ status: nextStatusAfterCharge(items) })
+						.where(eq(orders.id, input.orderId));
+					return { success: true };
 				}
+
+				const cents = await deductStockAndMarkCharged(
+					tx,
+					chargeable,
+					input.orderId,
+					`Venta pedido #${input.orderId}`,
+				);
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const nextStatus = nextStatusAfterCharge(remaining);
 
 				await tx
 					.update(orders)
-					.set({ status: "COMPLETADA" })
+					.set({ status: nextStatus })
 					.where(eq(orders.id, input.orderId));
 
 				await tx.insert(transactions).values({
 					order_id: input.orderId,
 					payment_method_id: input.paymentMethodId,
-					// total_amount ya está en centavos (misma convención que el path de creación)
-					amount: Math.round(Number(orderData.total_amount)),
+					amount: cents,
 					user_uid: ctx.user.id,
 					status: "completed",
 					category: "selling",
 					type: "income",
-					description: `Cobro final pedido #${input.orderId}`,
+					description:
+						nextStatus === "COMPLETADA"
+							? `Cobro final pedido #${input.orderId}`
+							: `Cobro parcial pedido #${input.orderId}`,
 				});
 
 				return { success: true };
@@ -1685,7 +1842,10 @@ export const ordersRouter = router({
 						and(
 							eq(orders.id, input.orderId),
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
-							eq(orders.status, "LISTA_PARA_COBRO"),
+							inArray(orders.status, [
+								"LISTA_PARA_COBRO",
+								"PARCIAL_DISPONIBLE",
+							]),
 						),
 					)
 					.returning();
@@ -1710,67 +1870,47 @@ export const ordersRouter = router({
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
 
-				assertNoPendingPurchase(items);
-
-				for (const item of items) {
-					if (item.status === "PENDIENTE_COMPRA") continue;
-					if (item.product_id) {
-						const [product] = await tx
-							.select()
-							.from(products)
-							.where(eq(products.id, item.product_id))
-							.limit(1);
-						if (product) {
-							const currentStockKg = Number(product.stock_kg);
-							const itemQuantityKg = item.quantity_kg
-								? Number(item.quantity_kg)
-								: 0;
-							const newStockKg = currentStockKg - itemQuantityKg;
-							const nextPieces =
-								product.is_sellable_by_weight || !item.quantity_pieces
-									? (product.stock_pieces ?? 0)
-									: (product.stock_pieces ?? 0) - item.quantity_pieces;
-							const nextWeighedPieces = Math.min(
-								product.weighed_pieces ?? 0,
-								nextPieces,
-							);
-							// El stock puede quedar negativo: se compensa al despiezar.
-							await tx
-								.update(products)
-								.set({
-									stock_pieces: nextPieces,
-									weighed_pieces: Math.max(0, nextWeighedPieces),
-									stock_kg: newStockKg.toFixed(3),
-								})
-								.where(eq(products.id, item.product_id));
-
-							await tx.insert(inventoryTransactions).values({
-								product_id: item.product_id,
-								quantity_change_pieces:
-									product.is_sellable_by_weight || !item.quantity_pieces
-										? null
-										: -item.quantity_pieces,
-								quantity_change_kg:
-									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
-								transaction_type: "VENTA",
-								reference_id: input.orderId,
-								notes: `Venta a crédito pedido #${input.orderId}`,
-							});
-						}
+				const chargeable = items.filter(isChargeableItem);
+				if (chargeable.length === 0) {
+					if (!items.some(isChargedItem)) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: "No hay líneas disponibles para cobro",
+						});
 					}
+					await tx
+						.update(orders)
+						.set({ status: nextStatusAfterCharge(items) })
+						.where(eq(orders.id, input.orderId));
+					return { success: true };
 				}
+
+				const cents = await deductStockAndMarkCharged(
+					tx,
+					chargeable,
+					input.orderId,
+					`Venta a crédito pedido #${input.orderId}`,
+				);
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const nextStatus = nextStatusAfterCharge(remaining);
 
 				await tx
 					.update(orders)
-					.set({ status: "COMPLETADA" })
+					.set({ status: nextStatus })
 					.where(eq(orders.id, input.orderId));
 
-				// Cargo a la cuenta del cliente (cobranza). total_amount está en centavos → pesos
+				// Cargo a la cuenta del cliente (cobranza). subtotales en centavos → pesos
 				await tx.insert(creditCharges).values({
 					customer_id: orderData.customer_id,
 					order_id: input.orderId,
-					amount: (Number(orderData.total_amount) / 100).toFixed(2),
-					concept: `Pedido #${input.orderId} (crédito)`,
+					amount: (cents / 100).toFixed(2),
+					concept:
+						nextStatus === "COMPLETADA"
+							? `Pedido #${input.orderId} (crédito)`
+							: `Pedido #${input.orderId} (crédito parcial)`,
 					source: "pedido",
 				});
 
@@ -1858,7 +1998,7 @@ export const ordersRouter = router({
 				.where(
 					and(
 						inArray(orders.user_uid, [ctx.user.id, "system"]),
-						eq(orders.status, "LISTA_PARA_COBRO"),
+						inArray(orders.status, ["LISTA_PARA_COBRO", "PARCIAL_DISPONIBLE"]),
 					),
 				)
 				.orderBy(orders.id);
@@ -1874,6 +2014,7 @@ export const ordersRouter = router({
 						quantityPieces: orderItems.quantity_pieces,
 						unitPrice: orderItems.unit_price,
 						savedPriceKg: customerPrices.price_per_kg,
+						status: orderItems.status,
 					})
 					.from(orderItems)
 					.leftJoin(
@@ -1884,7 +2025,12 @@ export const ordersRouter = router({
 						),
 					)
 					.where(eq(orderItems.order_id, o.id));
-				result.push({ ...o, items });
+				const chargeable = items.filter(isChargeableItem);
+				if (chargeable.length === 0) continue;
+				result.push({
+					...o,
+					items: chargeable.map(({ status: _status, ...item }) => item),
+				});
 			}
 			return result;
 		}),
@@ -1915,7 +2061,10 @@ export const ordersRouter = router({
 						and(
 							eq(orders.id, input.orderId),
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
-							eq(orders.status, "LISTA_PARA_COBRO"),
+							inArray(orders.status, [
+								"LISTA_PARA_COBRO",
+								"PARCIAL_DISPONIBLE",
+							]),
 						),
 					)
 					.returning();
@@ -1927,19 +2076,17 @@ export const ordersRouter = router({
 					});
 				}
 
-				// 1. Precio por item + guardar en lista del cliente
-				let totalCents = 0;
+				// 1. Precio solo en líneas cobrables (no pendientes ni ya cobradas)
 				for (const it of input.items) {
 					const [oi] = await tx
 						.select()
 						.from(orderItems)
 						.where(eq(orderItems.id, it.orderItemId))
 						.limit(1);
-					if (!oi) continue;
+					if (!oi || !isChargeableItem(oi)) continue;
 					const kg = Number(oi.quantity_kg) || 0;
 					const unitPriceCents = Math.round(it.pricePerKg * 100);
 					const subtotalCents = Math.round(kg * it.pricePerKg * 100);
-					totalCents += subtotalCents;
 					await tx
 						.update(orderItems)
 						.set({
@@ -1966,68 +2113,52 @@ export const ordersRouter = router({
 					}
 				}
 
-				await tx
-					.update(orders)
-					.set({ total_amount: String(totalCents) })
-					.where(eq(orders.id, input.orderId));
-
-				// 2. Descontar inventario
+				// 2. Descontar inventario de líneas cobrables
 				const allItems = await tx
 					.select()
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
-				assertNoPendingPurchase(allItems);
-				for (const item of allItems) {
-					if (item.status === "PENDIENTE_COMPRA") continue;
-					if (item.product_id) {
-						const [product] = await tx
-							.select()
-							.from(products)
-							.where(eq(products.id, item.product_id))
-							.limit(1);
-						if (product) {
-							const itemQuantityKg = item.quantity_kg
-								? Number(item.quantity_kg)
-								: 0;
-							// La pieza ya fue pesada y está físicamente lista para entrega:
-							// el cobro NO se bloquea por stock. Se descuenta sin bajar de 0.
-							// Stock puede quedar negativo: se compensa al despiezar.
-							const finalStockKg = Number(product.stock_kg) - itemQuantityKg;
-							const finalPieces =
-								product.is_sellable_by_weight || !item.quantity_pieces
-									? (product.stock_pieces ?? 0)
-									: (product.stock_pieces ?? 0) - item.quantity_pieces;
-							await tx
-								.update(products)
-								.set({
-									stock_pieces: finalPieces,
-									weighed_pieces: Math.max(
-										0,
-										Math.min(product.weighed_pieces ?? 0, finalPieces),
-									),
-									stock_kg: finalStockKg.toFixed(3),
-								})
-								.where(eq(products.id, item.product_id));
-							await tx.insert(inventoryTransactions).values({
-								product_id: item.product_id,
-								quantity_change_pieces:
-									product.is_sellable_by_weight || !item.quantity_pieces
-										? null
-										: -item.quantity_pieces,
-								quantity_change_kg:
-									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
-								transaction_type: "VENTA",
-								reference_id: input.orderId,
-								notes: `Venta pedido #${input.orderId}`,
-							});
-						}
+				const chargeable = allItems.filter(isChargeableItem);
+				if (chargeable.length === 0) {
+					if (!allItems.some(isChargedItem)) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: "No hay líneas disponibles para cobro",
+						});
 					}
+					const status = nextStatusAfterCharge(allItems);
+					await tx
+						.update(orders)
+						.set({ status })
+						.where(eq(orders.id, input.orderId));
+					return { success: true, total: 0 };
 				}
 
-				// 3. Completar + pago
+				const totalCents = await deductStockAndMarkCharged(
+					tx,
+					chargeable,
+					input.orderId,
+					`Venta pedido #${input.orderId}`,
+				);
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const nextStatus = nextStatusAfterCharge(remaining);
+				const orderTotal = remaining
+					.filter(
+						(item) =>
+							item.status !== "PENDIENTE_COMPRA" &&
+							item.status !== "PENDIENTE_PESAJE",
+					)
+					.reduce(
+						(sum, item) => sum + Math.round(Number(item.subtotal ?? 0)),
+						0,
+					);
+
 				await tx
 					.update(orders)
-					.set({ status: "COMPLETADA" })
+					.set({ status: nextStatus, total_amount: String(orderTotal) })
 					.where(eq(orders.id, input.orderId));
 
 				if (input.paymentType === "credito") {
@@ -2042,7 +2173,10 @@ export const ordersRouter = router({
 						customer_id: orderData.customer_id,
 						order_id: input.orderId,
 						amount: (totalCents / 100).toFixed(2),
-						concept: `Pedido #${input.orderId} (crédito)`,
+						concept:
+							nextStatus === "COMPLETADA"
+								? `Pedido #${input.orderId} (crédito)`
+								: `Pedido #${input.orderId} (crédito parcial)`,
 						source: "pedido",
 					});
 				} else if (input.paymentMethodId) {
@@ -2054,7 +2188,10 @@ export const ordersRouter = router({
 						status: "completed",
 						category: "selling",
 						type: "income",
-						description: `Cobro pedido #${input.orderId}`,
+						description:
+							nextStatus === "COMPLETADA"
+								? `Cobro pedido #${input.orderId}`
+								: `Cobro parcial pedido #${input.orderId}`,
 					});
 				}
 
@@ -2177,6 +2314,7 @@ export const ordersRouter = router({
 						"cancelled",
 						"PENDIENTE_PESAJE",
 						"LISTA_PARA_COBRO",
+						"PARCIAL_DISPONIBLE",
 					])
 					.optional(),
 				items: z.array(
@@ -2209,48 +2347,130 @@ export const ordersRouter = router({
 					});
 				}
 
-				const rows = input.items
-					.filter((it) => it.productName.trim().length > 0)
-					.map((it) => {
-						const kg = it.quantityKg || 0;
-						const pieces = Math.round(it.quantityPieces || 0);
-						const unitCents = Math.round((it.unitPrice || 0) * 100);
-						const qty = kg > 0 ? kg : pieces;
-						const subtotalCents = Math.round(qty * unitCents);
-						return {
-							order_id: input.orderId,
-							product_id: it.productId ?? null,
-							product_name: it.productName.trim(),
-							quantity_pieces: pieces,
-							quantity_kg: kg > 0 ? kg.toFixed(3) : null,
-							unit_price: unitCents.toFixed(2),
-							subtotal: subtotalCents.toFixed(2),
-							status: (kg > 0 ? "PESADO" : "PENDIENTE_PESAJE") as
-								| "PESADO"
-								| "PENDIENTE_PESAJE",
-						};
-					});
-
-				const totalCents = rows.reduce((s, r) => s + Number(r.subtotal), 0);
-				const requiresWeighing = rows.some(
-					(r) => r.status === "PENDIENTE_PESAJE",
-				);
-
-				await tx
-					.delete(orderItems)
+				const existing = await tx
+					.select()
+					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
+				const preserved = existing.filter(
+					(item) =>
+						item.status === "PENDIENTE_COMPRA" || item.status === "COBRADO",
+				);
+				const usedPreserved = new Set<number>();
+
+				const inputProductIds = [
+					...new Set(
+						input.items
+							.map((item) => item.productId)
+							.filter((id): id is number => id != null),
+					),
+				];
+				const weightIds = new Set<number>();
+				if (inputProductIds.length > 0) {
+					const weightRows = await tx
+						.select({
+							id: products.id,
+							is_sellable_by_weight: products.is_sellable_by_weight,
+						})
+						.from(products)
+						.where(inArray(products.id, inputProductIds));
+					for (const row of weightRows) {
+						if (row.is_sellable_by_weight) weightIds.add(row.id);
+					}
+				}
+
+				const rows = [];
+				for (const it of input.items.filter(
+					(item) => item.productName.trim().length > 0,
+				)) {
+					const productId = it.productId ?? null;
+					const pieces = Math.round(it.quantityPieces || 0);
+					const kg = it.quantityKg || 0;
+					let match = preserved.find(
+						(item) =>
+							!usedPreserved.has(item.id) &&
+							item.product_id === productId &&
+							(item.quantity_pieces ?? 0) === pieces,
+					);
+					if (!match && productId != null) {
+						match = preserved.find(
+							(item) =>
+								!usedPreserved.has(item.id) && item.product_id === productId,
+						);
+					}
+					if (match) {
+						usedPreserved.add(match.id);
+						continue;
+					}
+					const unitCents = Math.round((it.unitPrice || 0) * 100);
+					const qty = kg > 0 ? kg : pieces;
+					const subtotalCents = Math.round(qty * unitCents);
+					const isWeight = productId != null && weightIds.has(productId);
+					rows.push({
+						order_id: input.orderId,
+						product_id: productId,
+						product_name: it.productName.trim(),
+						quantity_pieces: pieces,
+						quantity_kg: kg > 0 ? kg.toFixed(3) : null,
+						unit_price: unitCents.toFixed(2),
+						subtotal: subtotalCents.toFixed(2),
+						status: (isWeight
+							? kg > 0
+								? "PESADO"
+								: "PENDIENTE_PESAJE"
+							: "COMPLETADO") as "PESADO" | "PENDIENTE_PESAJE" | "COMPLETADO",
+					});
+				}
+
+				if (preserved.length === 0) {
+					await tx
+						.delete(orderItems)
+						.where(eq(orderItems.order_id, input.orderId));
+				} else {
+					await tx.delete(orderItems).where(
+						and(
+							eq(orderItems.order_id, input.orderId),
+							notInArray(
+								orderItems.id,
+								preserved.map((item) => item.id),
+							),
+						),
+					);
+				}
 				if (rows.length > 0) {
 					await tx.insert(orderItems).values(rows);
 				}
+
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const totalCents = remaining.reduce(
+					(sum, item) => sum + Math.round(Number(item.subtotal ?? 0)),
+					0,
+				);
+				const requiresWeighing = remaining.some(
+					(item) => item.status === "PENDIENTE_PESAJE",
+				);
+				const derivedStatus = nextStatusAfterReceive(remaining);
 
 				const upd: Record<string, unknown> = {
 					total_amount: totalCents.toFixed(2),
 					requires_weighing: requiresWeighing,
 					updated_at: new Date(),
 				};
-				if (input.status) upd.status = input.status;
 				if (input.customerId !== undefined) upd.customer_id = input.customerId;
 				if (input.notes !== undefined) upd.notes = input.notes;
+				if (remaining.some((item) => item.status === "PENDIENTE_PESAJE")) {
+					upd.status = "PENDIENTE_PESAJE";
+				} else if (
+					remaining.some((item) => item.status === "PENDIENTE_COMPRA")
+				) {
+					upd.status = "PARCIAL_DISPONIBLE";
+				} else if (input.status) {
+					upd.status = input.status;
+				} else {
+					upd.status = derivedStatus;
+				}
 
 				await tx.update(orders).set(upd).where(eq(orders.id, input.orderId));
 
