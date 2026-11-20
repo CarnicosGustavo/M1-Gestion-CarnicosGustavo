@@ -278,4 +278,56 @@ describe("dashboard.stats", () => {
 		// Subtotales 10000+6000=16000, no 32000 por el join 2 txs × 2 líneas.
 		expect(revenueByCategory.res).toBe(16000);
 	});
+
+	it("R5-4: la rama histórica cuenta estados cerrados y no LISTA_PARA_COBRO", async () => {
+		const [product] = await db
+			.insert(products)
+			.values({
+				name: "Pieza cerdo legado",
+				category: "cerdo",
+				user_uid: "user-1",
+				is_sellable_by_unit: true,
+				stock_pieces: 20,
+				stock_kg: "0",
+			})
+			.returning();
+		const legacyStatuses = [
+			"completed",
+			"paid",
+			"delivered",
+			"COMPLETADA",
+			"LISTA_PARA_COBRO",
+		] as const;
+		for (const status of legacyStatuses) {
+			const [order] = await db
+				.insert(orders)
+				.values({
+					status,
+					total_amount: "3000",
+					user_uid: "user-1",
+				})
+				.returning();
+			await db.insert(orderItems).values({
+				order_id: order.id,
+				product_id: product.id,
+				product_name: product.name,
+				quantity_pieces: 1,
+				unit_price: "3000",
+				subtotal: "3000",
+				status: "COMPLETADO",
+			});
+			await db.insert(transactions).values({
+				description: `legado ${status}`,
+				order_id: order.id,
+				amount: 3000,
+				user_uid: "user-1",
+				type: "income",
+				category: "selling",
+				status: "completed",
+			});
+		}
+
+		const { revenueByCategory } = await caller.stats();
+		expect(revenueByCategory.cerdo).toBe(12000);
+	});
 });

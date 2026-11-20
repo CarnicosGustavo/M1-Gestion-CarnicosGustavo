@@ -16,6 +16,8 @@ const {
 	orderItems,
 	orders,
 	creditCharges,
+	productTransformations,
+	inventoryTransactions,
 } = await import("@/lib/db/schema");
 
 const userCtx = { user: makeUser("user-rp") };
@@ -597,7 +599,7 @@ describe("orders R2-4 — cobro parcial", () => {
 					productName: "Producto pieza RP",
 					quantityPieces: 10,
 					quantityKg: 0,
-					unitPrice: 1000,
+					unitPrice: 10,
 				},
 			],
 		});
@@ -845,8 +847,17 @@ describe("orders R4 — bloqueos, crédito, ticket y priceAndCharge", () => {
 		const ticket = await ticketsCaller.generateTicket({ orderId: order.id });
 		expect(ticket.amountPaid).toBe(10);
 		expect(ticket.amountDue).toBe(100);
-		expect(ticket.paymentStatus).toBe("PAGADO");
+		expect(ticket.paymentStatus).toBe("PARCIAL");
 		expect(Number(ticket.totalAmount)).toBe(11000);
+
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+		const paid = await ticketsCaller.generateTicket({ orderId: order.id });
+		expect(paid.amountPaid).toBe(110);
+		expect(paid.amountDue).toBe(0);
+		expect(paid.paymentStatus).toBe("PAGADO");
 	});
 
 	it("R4-7: priceAndCharge de contado sin método es BAD_REQUEST y no marca COBRADO", async () => {
@@ -1004,5 +1015,362 @@ describe("orders R4 — bloqueos, crédito, ticket y priceAndCharge", () => {
 
 		const saved = await getOrder(order.id);
 		expect(saved?.status).toBe("COMPLETADA");
+	});
+});
+
+describe("orders R5 — despiece, legado, ticket y priceAndCharge", () => {
+	it("R5-1: un pedido parcial con línea COBRADO no genera despiece", async () => {
+		const [lomo] = await db
+			.insert(products)
+			.values({
+				name: "Lomo",
+				user_uid: "user-rp",
+				is_sellable_by_weight: false,
+				is_sellable_by_unit: true,
+				stock_pieces: 4,
+				stock_kg: "0",
+			})
+			.returning();
+		const [comprado] = await db
+			.insert(products)
+			.values({
+				name: "Comprado B",
+				category: "comprado",
+				user_uid: "user-rp",
+				is_sellable_by_weight: false,
+				is_sellable_by_unit: true,
+				stock_pieces: 0,
+				stock_kg: "0",
+			})
+			.returning();
+		const [canal] = await db
+			.insert(products)
+			.values({
+				name: "Canal Americano",
+				user_uid: "user-rp",
+				is_parent_product: true,
+				is_sellable_by_weight: false,
+				is_sellable_by_unit: true,
+				stock_pieces: 5,
+				stock_kg: "0",
+			})
+			.returning();
+		await db.insert(productTransformations).values({
+			parent_product_id: canal.id,
+			child_product_id: lomo.id,
+			yield_quantity_pieces: "4",
+			yield_weight_ratio: "0.5",
+			transformation_type: "AMERICANO",
+			is_active: true,
+		});
+
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: lomo.id,
+					quantityPieces: 4,
+					unitPrice: 5000,
+				},
+				{
+					productId: comprado.id,
+					quantityPieces: 3,
+					unitPrice: 2000,
+					requiresPurchase: true,
+				},
+			],
+		});
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+
+		const validation = await caller.validateDisassemblyRecipes({
+			orderId: order.id,
+			transformationType: "AMERICANO",
+		});
+		expect(validation.ok).toBe(true);
+		expect(validation.items.some((item) => item.productId === lomo.id)).toBe(
+			false,
+		);
+
+		const prepared = await caller.prepareDisassemblyForOrder({
+			orderId: order.id,
+			transformationType: "AMERICANO",
+			canalProductId: canal.id,
+		});
+		expect(prepared.canalPiecesProcessed).toBe(0);
+
+		const lomoAfter = await db.query.products.findFirst({
+			where: eq(products.id, lomo.id),
+		});
+		const canalAfter = await db.query.products.findFirst({
+			where: eq(products.id, canal.id),
+		});
+		expect(lomoAfter?.stock_pieces).toBe(0);
+		expect(canalAfter?.stock_pieces).toBe(5);
+
+		const moves = await db
+			.select()
+			.from(inventoryTransactions)
+			.where(eq(inventoryTransactions.reference_id, order.id));
+		expect(
+			moves.filter((row) => row.transaction_type === "DESPIECE"),
+		).toHaveLength(0);
+
+		const saved = await getOrder(order.id);
+		expect(saved?.status).toBe("PARCIAL_DISPONIBLE");
+	});
+
+	it("R5-3 / M4b: un pedido legado con dos cobros no se puede editar", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		await db
+			.update(orders)
+			.set({ status: "COMPLETADA" })
+			.where(eq(orders.id, order.id));
+		await db
+			.update(orderItems)
+			.set({ status: "COMPLETADO" })
+			.where(eq(orderItems.order_id, order.id));
+		await db.insert(transactions).values([
+			{
+				order_id: order.id,
+				payment_method_id: paymentMethodId,
+				amount: 10000,
+				user_uid: "user-rp",
+				status: "completed",
+				category: "selling",
+				type: "income",
+				description: "legado 1",
+			},
+			{
+				order_id: order.id,
+				payment_method_id: paymentMethodId,
+				amount: 6000,
+				user_uid: "user-rp",
+				status: "completed",
+				category: "selling",
+				type: "income",
+				description: "legado 2",
+			},
+		]);
+
+		const detail = await caller.get({ id: order.id });
+		expect(detail?.canEdit).toBe(false);
+		expect(detail?.chargeCount).toBe(2);
+
+		await expect(
+			caller.replaceItems({
+				orderId: order.id,
+				items: [
+					{
+						productId: pieceProductId,
+						productName: "Producto pieza RP",
+						quantityPieces: 1,
+						quantityKg: 0,
+						unitPrice: 10,
+					},
+				],
+			}),
+		).rejects.toThrow(/ya cobradas|más de un cobro/i);
+
+		const txs = await getTransactions(order.id);
+		expect(txs.map((tx) => Number(tx.amount)).sort((a, b) => a - b)).toEqual([
+			6000, 10000,
+		]);
+	});
+
+	it("R5-5: replaceItems rechaza un pedido en PROCESANDO_PAGO", async () => {
+		const order = await createPartialOrder();
+		await db
+			.update(orders)
+			.set({ status: "PROCESANDO_PAGO" })
+			.where(eq(orders.id, order.id));
+
+		await expect(
+			caller.replaceItems({
+				orderId: order.id,
+				items: [
+					{
+						productId: pieceProductId,
+						productName: "Producto pieza RP",
+						quantityPieces: 1,
+						quantityKg: 0,
+						unitPrice: 10,
+					},
+				],
+			}),
+		).rejects.toThrow(/en cobro/i);
+	});
+
+	it("R5-7: editar o quitar una línea PENDIENTE_COMPRA se rechaza", async () => {
+		const order = await createPartialOrder();
+		const pending = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_COMPRA",
+		);
+		expect(pending).toBeDefined();
+		const unitPesos = Number(pending?.unit_price ?? 0) / 100;
+
+		await expect(
+			caller.replaceItems({
+				orderId: order.id,
+				items: [
+					{
+						productId: pieceProductId,
+						productName: "Producto pieza RP",
+						quantityPieces: 1,
+						quantityKg: 0,
+						unitPrice: unitPesos,
+					},
+					{
+						productId: pieceProductId,
+						productName: "Producto pieza RP",
+						quantityPieces: 7,
+						quantityKg: 0,
+						unitPrice: 30,
+					},
+				],
+			}),
+		).rejects.toThrow(/pendiente de compra/i);
+
+		await expect(
+			caller.replaceItems({
+				orderId: order.id,
+				items: [
+					{
+						productId: pieceProductId,
+						productName: "Producto pieza RP",
+						quantityPieces: 1,
+						quantityKg: 0,
+						unitPrice: unitPesos,
+					},
+				],
+			}),
+		).rejects.toThrow(/pendiente de compra/i);
+
+		const still = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_COMPRA",
+		);
+		expect(Number(still?.quantity_pieces)).toBe(10);
+	});
+
+	it("R5-9: replaceItems no acepta status COMPLETADA", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		expect((await getOrder(order.id))?.status).toBe("LISTA_PARA_COBRO");
+
+		await expect(
+			caller.replaceItems({
+				orderId: order.id,
+				// @ts-expect-error R5-9: COMPLETADA ya no forma parte del enum
+				status: "COMPLETADA",
+				items: [
+					{
+						productId: pieceProductId,
+						productName: "Producto pieza RP",
+						quantityPieces: 1,
+						quantityKg: 0,
+						unitPrice: 10,
+					},
+				],
+			}),
+		).rejects.toThrow();
+
+		expect((await getOrder(order.id))?.status).toBe("LISTA_PARA_COBRO");
+	});
+
+	it("M10: priceAndCharge recalcula una línea por pieza con precio distinto", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 2,
+					unitPrice: 1000,
+				},
+			],
+		});
+		const [item] = await getItems(order.id);
+		expect(Number(item.subtotal)).toBe(2000);
+
+		const result = await caller.priceAndCharge({
+			orderId: order.id,
+			paymentType: "contado",
+			paymentMethodId,
+			items: [
+				{
+					orderItemId: item.id,
+					productId: pieceProductId,
+					pricePerKg: 50,
+				},
+			],
+		});
+		expect(result.total).toBe(10000);
+		const [after] = await getItems(order.id);
+		expect(after.status).toBe("COBRADO");
+		expect(Number(after.subtotal)).toBe(10000);
+		const txs = await getTransactions(order.id);
+		expect(txs).toHaveLength(1);
+		expect(Number(txs[0]?.amount)).toBe(10000);
+	});
+
+	it("M11: priceAndCharge rechaza un precio 0 en una línea cobrable", async () => {
+		const order = await createPartialOrder();
+		const chargeable = (await getItems(order.id)).find(
+			(item) => item.status === "COMPLETADO",
+		);
+		expect(chargeable).toBeDefined();
+
+		await expect(
+			caller.priceAndCharge({
+				orderId: order.id,
+				paymentType: "contado",
+				paymentMethodId,
+				items: [
+					{
+						orderItemId: chargeable!.id,
+						productId: pieceProductId,
+						pricePerKg: 0,
+					},
+				],
+			}),
+		).rejects.toThrow(/no puede quedar en 0/i);
+
+		const items = await getItems(order.id);
+		expect(items.some((item) => item.status === "COBRADO")).toBe(false);
+		expect(await getTransactions(order.id)).toHaveLength(0);
 	});
 });
