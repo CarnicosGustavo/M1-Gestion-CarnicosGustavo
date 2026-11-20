@@ -29,7 +29,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BanknoteIcon, ReceiptTextIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { lineChargeSubtotal } from "@/app/admin/checkout/checkout-logic";
+import {
+	initialLinePrice,
+	lineChargeSubtotal,
+} from "@/app/admin/checkout/checkout-logic";
 import { TicketModal } from "@/components/ticket-modal";
 import { useTRPC } from "@/lib/trpc/client";
 
@@ -89,11 +92,11 @@ export default function CheckoutPage() {
 		if (selectedOrder) {
 			const next: Record<number, string> = {};
 			for (const it of selectedOrder.items) {
-				const saved = it.savedPriceKg != null ? Number(it.savedPriceKg) : null;
-				const current =
-					it.unitPrice != null ? Number(it.unitPrice) / 100 : null;
-				const val = saved ?? current ?? 0;
-				next[it.id] = val > 0 ? String(val) : "";
+				next[it.id] = initialLinePrice(
+					Number(it.quantityKg ?? 0),
+					it.savedPriceKg,
+					it.unitPrice,
+				);
 			}
 			setPrices(next);
 			setMethodId(paymentMethods?.[0]?.id?.toString() ?? "");
