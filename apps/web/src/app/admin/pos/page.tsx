@@ -18,7 +18,6 @@ import {
 	MinusIcon,
 	PackageSearchIcon,
 	PlusIcon,
-	ReceiptTextIcon,
 	ScaleIcon,
 	ScissorsIcon,
 	SearchIcon,
@@ -38,6 +37,7 @@ import {
 	isMissingPrice,
 	lineDisp,
 	lineTotal,
+	needsWeigh,
 	quantityKgGramsForPayload,
 	resolvePrice,
 	unitPriceCentsForPayload,
@@ -64,9 +64,81 @@ type POSProduct = Pick<
 	quantityKg: number | null;
 	unitPricePerKg: number;
 	unitPricePerPiece: number;
+	priceEdited?: boolean;
 };
 
 type Disp = "stock" | "despiece" | "pesaje" | "faltante";
+
+type PieceQtyInputProps = {
+	value: number;
+	onCommit: (value: number) => void;
+	ariaLabel: string;
+};
+
+function PieceQtyInput({ value, onCommit, ariaLabel }: PieceQtyInputProps) {
+	const [text, setText] = useState(String(value));
+
+	useEffect(() => {
+		setText(String(value));
+	}, [value]);
+
+	const commit = () => {
+		const parsed = Number(text);
+		const normalized = Number.isFinite(parsed)
+			? Math.max(1, Math.floor(parsed))
+			: 1;
+		setText(String(normalized));
+		onCommit(normalized);
+	};
+
+	return (
+		<Input
+			type="number"
+			inputMode="numeric"
+			min={1}
+			value={text}
+			onChange={(event) => setText(event.target.value)}
+			onBlur={commit}
+			className="h-11 w-16 border-0 border-x border-y-0 px-1 text-center font-bold font-mono text-sm"
+			aria-label={ariaLabel}
+			aria-live="polite"
+		/>
+	);
+}
+
+type LinePriceInputProps = {
+	value: number;
+	onCommit: (value: number) => void;
+	ariaLabel: string;
+};
+
+function LinePriceInput({ value, onCommit, ariaLabel }: LinePriceInputProps) {
+	const [text, setText] = useState(String(value));
+
+	useEffect(() => {
+		setText(String(value));
+	}, [value]);
+
+	const commit = () => {
+		const parsed = Number(text);
+		const normalized = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+		setText(String(normalized));
+		onCommit(normalized);
+	};
+
+	return (
+		<Input
+			type="number"
+			step="0.01"
+			inputMode="decimal"
+			value={text}
+			onChange={(event) => setText(event.target.value)}
+			onBlur={commit}
+			className="h-11 flex-1"
+			aria-label={ariaLabel}
+		/>
+	);
+}
 
 export default function POSPage() {
 	const trpc = useTRPC();
@@ -111,7 +183,6 @@ export default function POSPage() {
 		phone?: string | null;
 	} | null>(null);
 	const [productSearch, setProductSearch] = useState("");
-	const [emitNfce, setEmitNfce] = useState(false);
 	const [selectedPriceListId, setSelectedPriceListId] =
 		useState<string>("base");
 
@@ -192,6 +263,8 @@ export default function POSPage() {
 		setSelectedProducts((prev) => {
 			let changed = false;
 			const next = prev.map((product) => {
+				if (product.priceEdited) return product;
+
 				const price = resolvePrice(
 					product.id,
 					Number(product.price_per_kg) || 0,
@@ -253,11 +326,18 @@ export default function POSPage() {
 		paymentMethodsError ||
 		priceListsError;
 
+	const hasMissingPrice = selectedProducts.some((product) =>
+		product.is_sellable_by_weight
+			? isMissingPrice(product.unitPricePerKg)
+			: isMissingPrice(product.unitPricePerPiece),
+	);
+
 	const canCreate =
 		selectedProducts.length > 0 &&
 		!!selectedCustomer &&
 		!pricesLoading &&
-		!pricesError;
+		!pricesError &&
+		!hasMissingPrice;
 
 	const createOrderMutation = useMutation(
 		trpc.orders.create.mutationOptions({
@@ -289,7 +369,7 @@ export default function POSPage() {
 
 		const existing = selectedProducts.find((item) => item.id === productId);
 		if (existing) {
-			if (product.is_sellable_by_weight && !product.is_sellable_by_unit) {
+			if (product.is_sellable_by_weight) {
 				toast.info(t("alreadyInCart", { name: product.name }));
 				return;
 			}
@@ -332,6 +412,7 @@ export default function POSPage() {
 				quantityKg: null,
 				unitPricePerKg: price.kg,
 				unitPricePerPiece: price.piece,
+				priceEdited: false,
 			},
 		]);
 
@@ -395,7 +476,11 @@ export default function POSPage() {
 			prev.map((product) => {
 				if (product.id !== productId) return product;
 				const normalized = Number.isFinite(value) ? Math.max(0, value) : 0;
-				return { ...product, unitPricePerKg: normalized };
+				return {
+					...product,
+					unitPricePerKg: normalized,
+					priceEdited: true,
+				};
 			}),
 		);
 	};
@@ -405,7 +490,11 @@ export default function POSPage() {
 			prev.map((product) => {
 				if (product.id !== productId) return product;
 				const normalized = Number.isFinite(value) ? Math.max(0, value) : 0;
-				return { ...product, unitPricePerPiece: normalized };
+				return {
+					...product,
+					unitPricePerPiece: normalized,
+					priceEdited: true,
+				};
 			}),
 		);
 	};
@@ -421,9 +510,7 @@ export default function POSPage() {
 		0,
 	);
 
-	const needWeigh = selectedProducts.some(
-		(product) => product.is_sellable_by_weight && product.quantityKg === null,
-	);
+	const needWeigh = selectedProducts.some((product) => needsWeigh(product));
 
 	const despieceCount = selectedProducts.filter(
 		(product) => lineDisp(product, availMap.get(product.id)) === "despiece",
@@ -440,7 +527,9 @@ export default function POSPage() {
 				? t("pricesLoading")
 				: pricesError
 					? t("pricesError")
-					: null;
+					: hasMissingPrice
+						? t("missingPriceWarning")
+						: null;
 
 	const handleCreateOrder = () => {
 		if (!canCreate || createOrderMutation.isPending) return;
@@ -454,21 +543,18 @@ export default function POSPage() {
 			(product) => lineDisp(product, availMap.get(product.id)) === "despiece",
 		);
 
-		const missingPrice = selectedProducts.some((product) =>
-			product.is_sellable_by_weight
-				? isMissingPrice(product.unitPricePerKg)
-				: isMissingPrice(product.unitPricePerPiece),
-		);
-		if (missingPrice) {
+		if (hasMissingPrice) {
 			toast.warning(t("missingPriceWarning"));
+			return;
 		}
 
 		const payload = {
 			customerId,
-			paymentMethodId: paymentMethod?.id,
 			items: selectedProducts.map((product) => ({
 				productId: product.id,
-				quantityPieces: product.quantityPieces,
+				quantityPieces: product.is_sellable_by_weight
+					? undefined
+					: product.quantityPieces,
 				quantityKg: quantityKgGramsForPayload(product.quantityKg),
 				unitPrice: unitPriceCentsForPayload(product),
 				requiresPurchase:
@@ -747,11 +833,8 @@ export default function POSPage() {
 							{selectedProducts.map((product) => {
 								const display =
 									DISP[lineDisp(product, availMap.get(product.id))];
-								const isWeighPending =
-									product.is_sellable_by_weight && product.quantityKg === null;
-								const showPieceControls =
-									!product.is_sellable_by_weight ||
-									!!product.is_sellable_by_unit;
+								const isWeighPending = needsWeigh(product);
+								const showPieceControls = !product.is_sellable_by_weight;
 								const lineAmount = lineTotal(product);
 								const displayedPrice = product.is_sellable_by_weight
 									? product.unitPricePerKg
@@ -791,20 +874,12 @@ export default function POSPage() {
 													>
 														<MinusIcon className="h-4 w-4" />
 													</button>
-													<Input
-														type="number"
-														inputMode="numeric"
-														min={1}
+													<PieceQtyInput
 														value={product.quantityPieces}
-														onChange={(event) =>
-															handleSetQuantityPieces(
-																product.id,
-																Number(event.target.value),
-															)
+														onCommit={(value) =>
+															handleSetQuantityPieces(product.id, value)
 														}
-														className="h-11 w-16 border-0 border-x border-y-0 px-1 text-center font-bold font-mono text-sm"
-														aria-label={t("qty")}
-														aria-live="polite"
+														ariaLabel={t("qty")}
 													/>
 													<button
 														type="button"
@@ -847,21 +922,16 @@ export default function POSPage() {
 										) : null}
 
 										<div className="mt-2 flex items-center gap-2">
-											<Input
-												type="number"
-												step="0.01"
-												inputMode="decimal"
+											<LinePriceInput
 												value={displayedPrice}
-												onChange={(event) => {
-													const value = Number(event.target.value);
+												onCommit={(value) => {
 													if (product.is_sellable_by_weight) {
 														handleSetUnitPriceKg(product.id, value);
 													} else {
 														handleSetUnitPricePiece(product.id, value);
 													}
 												}}
-												className="h-11 flex-1"
-												aria-label={t("linePrice")}
+												ariaLabel={t("linePrice")}
 											/>
 											<span className="shrink-0 text-muted-foreground text-sm">
 												{product.is_sellable_by_weight ? "/kg" : "/pza"}
@@ -899,16 +969,6 @@ export default function POSPage() {
 								{formatCurrency(total * 100, locale)}
 							</span>
 						</div>
-						<label className="mb-3 flex cursor-pointer select-none items-center gap-2 text-sm">
-							<input
-								type="checkbox"
-								checked={emitNfce}
-								onChange={(event) => setEmitNfce(event.target.checked)}
-								className="h-4 w-4 rounded border-gray-300"
-							/>
-							<ReceiptTextIcon className="h-4 w-4 text-muted-foreground" />
-							Factura
-						</label>
 						<Button
 							onClick={handleCreateOrder}
 							disabled={!canCreate || createOrderMutation.isPending}

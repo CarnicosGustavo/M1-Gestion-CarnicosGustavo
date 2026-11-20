@@ -228,6 +228,7 @@ const messages = {
 		searchPlaceholder: "Search products...",
 		addProduct: "Add Product",
 		qty: "Qty",
+		orderRequiresWeighing: "Create and send to scale",
 		selectProducts: "Select products from the catalog to add them to the order",
 		createOrder: "Create Order",
 		outOfStock: "{name} is out of stock",
