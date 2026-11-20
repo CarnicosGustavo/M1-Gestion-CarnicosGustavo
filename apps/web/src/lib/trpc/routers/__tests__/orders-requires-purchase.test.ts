@@ -1374,3 +1374,116 @@ describe("orders R5 — despiece, legado, ticket y priceAndCharge", () => {
 		expect(await getTransactions(order.id)).toHaveLength(0);
 	});
 });
+
+describe("orders N6 — update, estados legado e items vacío", () => {
+	it("N6-1: orders.update no acepta status COMPLETADA", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		expect((await getOrder(order.id))?.status).toBe("LISTA_PARA_COBRO");
+
+		await expect(
+			caller.update({
+				id: order.id,
+				// @ts-expect-error N6-1: COMPLETADA ya no está en el enum
+				status: "COMPLETADA",
+			}),
+		).rejects.toThrow();
+
+		expect((await getOrder(order.id))?.status).toBe("LISTA_PARA_COBRO");
+		expect(await getTransactions(order.id)).toHaveLength(0);
+		const product = await db.query.products.findFirst({
+			where: eq(products.id, pieceProductId),
+		});
+		expect(product?.stock_pieces).toBe(5);
+	});
+
+	it.each([
+		"paid",
+		"completed",
+		"delivered",
+	] as const)("N6-2: replaceItems no reabre un pedido %s", async (status) => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		await db.update(orders).set({ status }).where(eq(orders.id, order.id));
+		await db
+			.update(orderItems)
+			.set({ status: "COMPLETADO" })
+			.where(eq(orderItems.order_id, order.id));
+		await db.insert(transactions).values({
+			order_id: order.id,
+			payment_method_id: paymentMethodId,
+			amount: 1000,
+			user_uid: "user-rp",
+			status: "completed",
+			category: "selling",
+			type: "income",
+			description: `legado ${status}`,
+		});
+
+		await caller.replaceItems({
+			orderId: order.id,
+			items: [
+				{
+					productId: pieceProductId,
+					productName: "Producto pieza RP",
+					quantityPieces: 1,
+					quantityKg: 0,
+					unitPrice: 10,
+				},
+			],
+		});
+
+		expect((await getOrder(order.id))?.status).toBe(status);
+	});
+
+	it("N6-4: replaceItems rechaza un pedido sin líneas", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+
+		await expect(
+			caller.replaceItems({ orderId: order.id, items: [] }),
+		).rejects.toThrow(/sin líneas/i);
+
+		expect(await getItems(order.id)).toHaveLength(1);
+		expect((await getOrder(order.id))?.status).toBe("LISTA_PARA_COBRO");
+	});
+});
