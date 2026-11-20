@@ -84,7 +84,12 @@ export const dashboardRouter = router({
 						or(
 							eq(orderItems.status, "COBRADO"),
 							and(
-								eq(orders.status, "COMPLETADA"),
+								inArray(orders.status, [
+									"COMPLETADA",
+									"completed",
+									"paid",
+									"delivered",
+								]),
 								inArray(orderItems.status, [
 									"COBRADO",
 									"COMPLETADO",
