@@ -1487,3 +1487,272 @@ describe("orders N6 — update, estados legado e items vacío", () => {
 		expect((await getOrder(order.id))?.status).toBe("LISTA_PARA_COBRO");
 	});
 });
+
+describe("orders N7 — no reabrir cobrados y tests oficiales de N6-5", () => {
+	it("N7-1: no se puede reabrir un COMPLETADA legado y recobrar líneas COMPLETADO", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 10,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 2,
+					unitPrice: 5000,
+				},
+			],
+		});
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+		expect((await getOrder(order.id))?.status).toBe("COMPLETADA");
+		expect(await getTransactions(order.id)).toHaveLength(1);
+
+		await db
+			.update(orderItems)
+			.set({ status: "COMPLETADO" })
+			.where(eq(orderItems.order_id, order.id));
+
+		await expect(
+			caller.update({
+				id: order.id,
+				status: "LISTA_PARA_COBRO",
+			}),
+		).rejects.toThrow(/cerrado o en cobro/i);
+
+		expect((await getOrder(order.id))?.status).toBe("COMPLETADA");
+
+		await expect(
+			caller.completeOrderPayment({
+				orderId: order.id,
+				paymentMethodId,
+			}),
+		).rejects.toThrow();
+
+		expect(await getTransactions(order.id)).toHaveLength(1);
+		const product = await db.query.products.findFirst({
+			where: eq(products.id, pieceProductId),
+		});
+		expect(product?.stock_pieces).toBe(8);
+	});
+
+	it.each([
+		"paid",
+		"completed",
+		"delivered",
+		"cancelled",
+		"PROCESANDO_PAGO",
+	] as const)("N7-1: orders.update no cambia el estado de un pedido %s", async (status) => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		await db.update(orders).set({ status }).where(eq(orders.id, order.id));
+
+		await expect(
+			caller.update({
+				id: order.id,
+				status: "LISTA_PARA_COBRO",
+			}),
+		).rejects.toThrow(/cerrado o en cobro/i);
+
+		expect((await getOrder(order.id))?.status).toBe(status);
+	});
+
+	it("N7-1: se puede cancelar un pedido abierto", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		expect((await getOrder(order.id))?.status).toBe("LISTA_PARA_COBRO");
+		const updated = await caller.update({
+			id: order.id,
+			status: "cancelled",
+		});
+		expect(updated.status).toBe("cancelled");
+		expect((await getOrder(order.id))?.status).toBe("cancelled");
+		expect(await getTransactions(order.id)).toHaveLength(0);
+	});
+
+	it("N7-1: se puede cambiar el total de un COMPLETADA sin tocar el estado", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+
+		const updated = await caller.update({
+			id: order.id,
+			total_amount: 12000,
+		});
+		expect(updated.status).toBe("COMPLETADA");
+		expect((await getOrder(order.id))?.status).toBe("COMPLETADA");
+		expect(Number((await getOrder(order.id))?.total_amount)).toBe(12000);
+		expect(await getTransactions(order.id)).toHaveLength(1);
+	});
+
+	it("N6-5: replaceItems de un legado pisa solo el ingreso, no el egreso", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 10,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 2,
+					unitPrice: 5000,
+				},
+			],
+		});
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+		await db
+			.update(orderItems)
+			.set({ status: "COMPLETADO" })
+			.where(eq(orderItems.order_id, order.id));
+		await db.insert(transactions).values({
+			order_id: order.id,
+			amount: 111,
+			user_uid: "user-rp",
+			type: "expense",
+			category: "overhead",
+			status: "completed",
+			description: "gasto",
+		});
+
+		await caller.replaceItems({
+			orderId: order.id,
+			items: [
+				{
+					productId: pieceProductId,
+					productName: "Producto pieza RP",
+					quantityPieces: 2,
+					quantityKg: 0,
+					unitPrice: 60,
+				},
+			],
+		});
+
+		const txs = await getTransactions(order.id);
+		const income = txs.filter((tx) => tx.type === "income");
+		const expense = txs.filter((tx) => tx.type === "expense");
+		expect(income).toHaveLength(1);
+		expect(Number(income[0]?.amount)).toBe(12000);
+		expect(expense).toHaveLength(1);
+		expect(Number(expense[0]?.amount)).toBe(111);
+		expect((await getOrder(order.id))?.status).toBe("COMPLETADA");
+	});
+
+	it("N6-5: prepareDisassemblyForOrder rechaza un pedido en cobro y no mueve stock", async () => {
+		const [lomo] = await db
+			.insert(products)
+			.values({
+				name: "Lomo N65",
+				user_uid: "user-rp",
+				is_sellable_by_weight: false,
+				is_sellable_by_unit: true,
+				stock_pieces: 0,
+				stock_kg: "0",
+			})
+			.returning();
+		const [canal] = await db
+			.insert(products)
+			.values({
+				name: "Canal Americano N65",
+				user_uid: "user-rp",
+				is_parent_product: true,
+				is_sellable_by_weight: false,
+				is_sellable_by_unit: true,
+				stock_pieces: 5,
+				stock_kg: "0",
+			})
+			.returning();
+		await db.insert(productTransformations).values({
+			parent_product_id: canal.id,
+			child_product_id: lomo.id,
+			yield_quantity_pieces: "4",
+			yield_weight_ratio: "0.5",
+			transformation_type: "AMERICANO",
+			is_active: true,
+		});
+
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: lomo.id,
+					quantityPieces: 4,
+					unitPrice: 5000,
+				},
+			],
+		});
+		await db
+			.update(orders)
+			.set({ status: "PROCESANDO_PAGO" })
+			.where(eq(orders.id, order.id));
+
+		await expect(
+			caller.prepareDisassemblyForOrder({
+				orderId: order.id,
+				transformationType: "AMERICANO",
+				canalProductId: canal.id,
+			}),
+		).rejects.toThrow(/en cobro/i);
+
+		expect((await getOrder(order.id))?.status).toBe("PROCESANDO_PAGO");
+		const lomoAfter = await db.query.products.findFirst({
+			where: eq(products.id, lomo.id),
+		});
+		const canalAfter = await db.query.products.findFirst({
+			where: eq(products.id, canal.id),
+		});
+		expect(lomoAfter?.stock_pieces).toBe(0);
+		expect(canalAfter?.stock_pieces).toBe(5);
+	});
+});
