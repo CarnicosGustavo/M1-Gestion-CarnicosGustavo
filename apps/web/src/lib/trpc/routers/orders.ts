@@ -1664,6 +1664,46 @@ export const ordersRouter = router({
 						reference_id: item.order_id!,
 						notes: `Pesaje de producción pedido #${item.order_id}`,
 					});
+				} else if (item.product_id && item.order_id) {
+					const purchaseNote = `Compra recibida pedido #${item.order_id}, línea #${item.id}`;
+					const [purchaseMove] = await tx
+						.select()
+						.from(inventoryTransactions)
+						.where(
+							and(
+								eq(inventoryTransactions.reference_id, item.order_id),
+								eq(inventoryTransactions.product_id, item.product_id),
+								eq(inventoryTransactions.transaction_type, "COMPRA"),
+								eq(inventoryTransactions.notes, purchaseNote),
+							),
+						)
+						.limit(1);
+					const alreadyAdded =
+						Number(purchaseMove?.quantity_change_kg ?? 0) > 0;
+					if (purchaseMove && !alreadyAdded) {
+						await tx
+							.select({ id: products.id })
+							.from(products)
+							.where(eq(products.id, item.product_id))
+							.for("update")
+							.limit(1);
+						await tx
+							.update(products)
+							.set({
+								stock_kg: sql`${products.stock_kg} + ${actualWeightKg}::numeric`,
+								updated_at: new Date(),
+							})
+							.where(eq(products.id, item.product_id));
+						await tx
+							.update(inventoryTransactions)
+							.set({ quantity_change_kg: actualWeightKg })
+							.where(
+								and(
+									eq(inventoryTransactions.id, purchaseMove.id),
+									isNull(inventoryTransactions.quantity_change_kg),
+								),
+							);
+					}
 				}
 
 				await tx
@@ -1764,7 +1804,6 @@ export const ordersRouter = router({
 					}
 
 					const isWeight = Boolean(product?.is_sellable_by_weight);
-					const quantityKg = isWeight ? Number(item.quantity_kg ?? 0) : 0;
 					const quantityPieces = isWeight ? 0 : (item.quantity_pieces ?? 0);
 					const itemUpdate = isWeight
 						? {
@@ -1792,25 +1831,34 @@ export const ordersRouter = router({
 					if (!updatedItem || !product) {
 						continue;
 					}
-					if (quantityPieces <= 0 && quantityKg <= 0) {
+
+					if (isWeight) {
+						await tx.insert(inventoryTransactions).values({
+							product_id: product.id,
+							quantity_change_pieces: null,
+							quantity_change_kg: null,
+							transaction_type: "COMPRA",
+							reference_id: order.id,
+							notes: `Compra recibida pedido #${order.id}, línea #${item.id}`,
+						});
+						continue;
+					}
+
+					if (quantityPieces <= 0) {
 						continue;
 					}
 
 					await tx
 						.update(products)
 						.set({
-							stock_pieces: (product.stock_pieces ?? 0) + quantityPieces,
-							stock_kg:
-								quantityKg > 0
-									? (Number(product.stock_kg ?? 0) + quantityKg).toFixed(3)
-									: product.stock_kg,
+							stock_pieces: sql`${products.stock_pieces} + ${quantityPieces}`,
 							updated_at: new Date(),
 						})
 						.where(eq(products.id, product.id));
 					await tx.insert(inventoryTransactions).values({
 						product_id: product.id,
-						quantity_change_pieces: quantityPieces > 0 ? quantityPieces : null,
-						quantity_change_kg: quantityKg > 0 ? quantityKg.toFixed(3) : null,
+						quantity_change_pieces: quantityPieces,
+						quantity_change_kg: null,
 						transaction_type: "COMPRA",
 						reference_id: order.id,
 						notes: `Compra recibida pedido #${order.id}, línea #${item.id}`,
