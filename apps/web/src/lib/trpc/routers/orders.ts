@@ -422,6 +422,12 @@ export const ordersRouter = router({
 					message: "Orden no encontrada",
 				});
 			}
+			if (order.status === "PROCESANDO_PAGO") {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "No se puede preparar el despiece de un pedido en cobro",
+				});
+			}
 
 			const normalizeName = (name: string) =>
 				name
@@ -1112,6 +1118,25 @@ export const ordersRouter = router({
 			}
 
 			return db.transaction(async (tx) => {
+				const [locked] = await tx
+					.select({ id: orders.id, status: orders.status })
+					.from(orders)
+					.where(and(eq(orders.id, input.orderId), eq(orders.user_uid, uid)))
+					.for("update")
+					.limit(1);
+				if (!locked) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Orden no encontrada",
+					});
+				}
+				if (locked.status === "PROCESANDO_PAGO") {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No se puede preparar el despiece de un pedido en cobro",
+					});
+				}
+
 				const applyDisassemblyTx = async (args: {
 					parentProductId: number;
 					quantityToProcess: number;
@@ -2346,7 +2371,6 @@ export const ordersRouter = router({
 				total_amount: z.number().optional(),
 				status: z
 					.enum([
-						"COMPLETADA",
 						"pending",
 						"cancelled",
 						"PENDIENTE_PESAJE",
@@ -2485,6 +2509,16 @@ export const ordersRouter = router({
 					});
 				}
 
+				const incoming = input.items.filter(
+					(item) => item.productName.trim().length > 0,
+				);
+				if (incoming.length === 0) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No se puede guardar un pedido sin líneas",
+					});
+				}
+
 				const existing = await tx
 					.select()
 					.from(orderItems)
@@ -2522,7 +2556,7 @@ export const ordersRouter = router({
 					const idx = input.items.findIndex(
 						(item, index) =>
 							!usedPendingInput.has(index) &&
-							item.productId === pending.product_id &&
+							(item.productId ?? null) === (pending.product_id ?? null) &&
 							Math.round(item.quantityPieces || 0) ===
 								(pending.quantity_pieces ?? 0) &&
 							Math.round(item.unitPrice * 100) ===
@@ -2642,7 +2676,13 @@ export const ordersRouter = router({
 				};
 				if (input.customerId !== undefined) upd.customer_id = input.customerId;
 				if (input.notes !== undefined) upd.notes = input.notes;
-				if (ord.status === "COMPLETADA" || ord.status === "cancelled") {
+				if (
+					ord.status === "COMPLETADA" ||
+					ord.status === "cancelled" ||
+					ord.status === "paid" ||
+					ord.status === "completed" ||
+					ord.status === "delivered"
+				) {
 					// R4-11: no reabrir un pedido ya pagado o cancelado.
 					upd.status = ord.status;
 				} else if (
@@ -2673,7 +2713,12 @@ export const ordersRouter = router({
 				const adjustedSale = await tx
 					.update(transactions)
 					.set({ amount: totalCents })
-					.where(eq(transactions.order_id, input.orderId))
+					.where(
+						and(
+							eq(transactions.order_id, input.orderId),
+							eq(transactions.type, "income"),
+						),
+					)
 					.returning({ id: transactions.id });
 
 				return {
