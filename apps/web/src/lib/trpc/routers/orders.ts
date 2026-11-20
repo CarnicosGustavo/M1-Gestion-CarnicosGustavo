@@ -2381,34 +2381,71 @@ export const ordersRouter = router({
 		)
 		.output(orderWithCustomerSchema)
 		.mutation(async ({ ctx, input }) => {
-			const { id, total_amount, ...data } = input;
-			const updateData: any = {
-				...data,
-				user_uid: ctx.user.id,
-				updated_at: new Date(),
-			};
-			if (total_amount !== undefined)
-				updateData.total_amount = total_amount.toFixed(2);
+			const { id, total_amount, status, ...data } = input;
 
-			const [updated] = await db
-				.update(orders)
-				.set(updateData)
-				.where(
-					and(
-						eq(orders.id, id),
-						inArray(orders.user_uid, [ctx.user.id, "system"]),
-					),
-				)
-				.returning();
+			return db.transaction(async (tx) => {
+				const [order] = await tx
+					.select()
+					.from(orders)
+					.where(
+						and(
+							eq(orders.id, id),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
+					)
+					.for("update")
+					.limit(1);
+				if (!order) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Pedido no encontrado",
+					});
+				}
 
-			const customer = updated?.customer_id
-				? await db.query.customers.findFirst({
-						where: eq(customers.id, updated.customer_id),
-						columns: { name: true },
-					})
-				: null;
+				const closedStatuses = [
+					"COMPLETADA",
+					"paid",
+					"completed",
+					"delivered",
+					"cancelled",
+					"PROCESANDO_PAGO",
+				];
+				if (
+					status !== undefined &&
+					status !== order.status &&
+					closedStatuses.includes(order.status ?? "")
+				) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede cambiar el estado de un pedido cerrado o en cobro",
+					});
+				}
 
-			return { ...updated, customer: customer ?? null };
+				const updateData: any = {
+					...data,
+					user_uid: ctx.user.id,
+					updated_at: new Date(),
+				};
+				if (status !== undefined) updateData.status = status;
+				if (total_amount !== undefined)
+					updateData.total_amount = total_amount.toFixed(2);
+
+				const [updated] = await tx
+					.update(orders)
+					.set(updateData)
+					.where(eq(orders.id, id))
+					.returning();
+
+				const customer = updated?.customer_id
+					? await tx.query.customers.findFirst({
+							where: eq(customers.id, updated.customer_id),
+							columns: { name: true },
+						})
+					: null;
+
+				return { ...updated, customer: customer ?? null };
+			});
 		}),
 
 	// Crea un "pedido" de pesaje de producción: entra a la cola de la estación
