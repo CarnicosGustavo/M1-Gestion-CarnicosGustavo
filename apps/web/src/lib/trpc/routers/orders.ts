@@ -256,7 +256,14 @@ export const ordersRouter = router({
 			},
 		})
 		.input(z.object({ id: z.number() }))
-		.output(orderDetailSchema.nullable())
+		.output(
+			orderDetailSchema
+				.extend({
+					chargeCount: z.number(),
+					canEdit: z.boolean(),
+				})
+				.nullable(),
+		)
 		.query(async ({ ctx, input }) => {
 			const result = await db.query.orders.findFirst({
 				where: and(
@@ -281,12 +288,32 @@ export const ordersRouter = router({
 				},
 			});
 			if (!result) return null;
+			const incomeTxs = await db
+				.select({ id: transactions.id })
+				.from(transactions)
+				.where(
+					and(
+						eq(transactions.order_id, result.id),
+						eq(transactions.type, "income"),
+					),
+				);
+			const credits = await db
+				.select({ id: creditCharges.id })
+				.from(creditCharges)
+				.where(eq(creditCharges.order_id, result.id));
+			const chargeCount = incomeTxs.length + credits.length;
+			const canEdit =
+				!result.orderItems.some((item) => item.status === "COBRADO") &&
+				chargeCount <= 1 &&
+				result.status !== "PROCESANDO_PAGO";
 			return {
 				...result,
 				orderItems: result.orderItems.map((item) => ({
 					...item,
 					product: item.product ?? null,
 				})),
+				chargeCount,
+				canEdit,
 			};
 		}),
 
@@ -936,6 +963,7 @@ export const ordersRouter = router({
 				(typeof order.orderItems)[number]["product"]
 			>();
 			for (const i of order.orderItems) {
+				if (i.status === "COBRADO") continue;
 				if (i.product && i.product.user_uid === uid) {
 					productsById.set(i.product.id, i.product);
 				}
@@ -946,6 +974,7 @@ export const ordersRouter = router({
 			};
 
 			for (const item of order.orderItems) {
+				if (item.status === "COBRADO") continue;
 				if (!item.product || item.product.user_uid !== uid) continue;
 				const p = item.product;
 
@@ -1069,6 +1098,17 @@ export const ordersRouter = router({
 				}
 				const n = requiredParentsForDemand(demandPieces, y);
 				if (n > canalPiecesToProcess) canalPiecesToProcess = n;
+			}
+
+			if (canalPiecesToProcess <= 0 && intermediateToProcess.size === 0) {
+				return {
+					orderId: input.orderId,
+					transformationType: input.transformationType,
+					canal: { id: canal.id, name: canal.name },
+					canalPiecesProcessed: 0,
+					intermediatesProcessed: [],
+					ok: true,
+				};
 			}
 
 			return db.transaction(async (tx) => {
@@ -2163,7 +2203,7 @@ export const ordersRouter = router({
 						})
 						.where(eq(orderItems.id, it.orderItemId));
 
-					if (it.productId && orderData.customer_id) {
+					if (kg > 0 && it.productId && orderData.customer_id) {
 						await tx
 							.insert(customerPrices)
 							.values({
@@ -2178,6 +2218,30 @@ export const ordersRouter = router({
 									updated_at: new Date(),
 								},
 							});
+					}
+				}
+
+				const allChargeableItems = await tx
+					.select({
+						id: orderItems.id,
+						subtotal: orderItems.subtotal,
+					})
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+
+				for (const chargeableItem of allChargeableItems) {
+					const [oi] = await tx
+						.select()
+						.from(orderItems)
+						.where(eq(orderItems.id, chargeableItem.id))
+						.limit(1);
+					if (!oi || !isChargeableItem(oi)) continue;
+					if (Number(oi.subtotal ?? 0) <= 0) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message:
+								"Una línea cobrable no puede quedar en 0. Revisa cantidad y precio.",
+						});
 					}
 				}
 
@@ -2377,7 +2441,6 @@ export const ordersRouter = router({
 				notes: z.string().optional(),
 				status: z
 					.enum([
-						"COMPLETADA",
 						"pending",
 						"cancelled",
 						"PENDIENTE_PESAJE",
@@ -2407,11 +2470,18 @@ export const ordersRouter = router({
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
 						),
 					)
+					.for("update")
 					.limit(1);
 				if (!ord) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
 						message: "Pedido no encontrado",
+					});
+				}
+				if (ord.status === "PROCESANDO_PAGO") {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No se puede editar un pedido en cobro",
 					});
 				}
 
@@ -2422,7 +2492,12 @@ export const ordersRouter = router({
 				const incomeTxs = await tx
 					.select({ id: transactions.id })
 					.from(transactions)
-					.where(eq(transactions.order_id, input.orderId));
+					.where(
+						and(
+							eq(transactions.order_id, input.orderId),
+							eq(transactions.type, "income"),
+						),
+					);
 				const credits = await tx
 					.select({ id: creditCharges.id })
 					.from(creditCharges)
@@ -2439,9 +2514,29 @@ export const ordersRouter = router({
 					});
 				}
 				const preserved = existing.filter(
-					(item) =>
-						item.status === "PENDIENTE_COMPRA" || item.status === "COBRADO",
+					(item) => item.status === "PENDIENTE_COMPRA",
 				);
+
+				const usedPendingInput = new Set<number>();
+				for (const pending of preserved) {
+					const idx = input.items.findIndex(
+						(item, index) =>
+							!usedPendingInput.has(index) &&
+							item.productId === pending.product_id &&
+							Math.round(item.quantityPieces || 0) ===
+								(pending.quantity_pieces ?? 0) &&
+							Math.round(item.unitPrice * 100) ===
+								Math.round(Number(pending.unit_price ?? 0)),
+					);
+					if (idx < 0) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message:
+								"No se puede editar ni quitar una línea pendiente de compra",
+						});
+					}
+					usedPendingInput.add(idx);
+				}
 				const usedPreserved = new Set<number>();
 
 				const inputProductIds = [
