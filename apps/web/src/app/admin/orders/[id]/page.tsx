@@ -295,7 +295,6 @@ export default function OrderDetailPage({
 				unitPrice: Number.parseFloat(r.price) || 0,
 			}));
 		const allowed = [
-			"COMPLETADA",
 			"pending",
 			"cancelled",
 			"PENDIENTE_PESAJE",
@@ -343,7 +342,12 @@ export default function OrderDetailPage({
 	const hasChargedLines = (order.orderItems ?? []).some(
 		(item: any) => item.status === "COBRADO",
 	);
-	const canReplaceItems = !hasChargedLines;
+	const canReplaceItems =
+		order.canEdit === true
+			? true
+			: order.canEdit === false
+				? false
+				: !hasChargedLines && (order.chargeCount ?? 0) <= 1;
 	const canReceivePurchase =
 		hasPendingPurchase &&
 		!isProduction &&
@@ -470,7 +474,13 @@ export default function OrderDetailPage({
 						title={
 							canReplaceItems
 								? undefined
-								: "No se puede editar un pedido con líneas ya cobradas"
+								: hasChargedLines
+									? "No se puede editar un pedido con líneas ya cobradas"
+									: (order.chargeCount ?? 0) > 1
+										? "Pedido con varios cobros: edítalo desde soporte"
+										: order.status === "PROCESANDO_PAGO"
+											? "No se puede editar un pedido en cobro"
+											: "No se puede editar este pedido"
 						}
 					>
 						<FilePenIcon className="mr-2 h-4 w-4" />
@@ -779,7 +789,6 @@ export default function OrderDetailPage({
 									<SelectItem value="LISTA_PARA_COBRO">
 										Lista para cobro
 									</SelectItem>
-									<SelectItem value="COMPLETADA">Pagada</SelectItem>
 									<SelectItem value="cancelled">Cancelada</SelectItem>
 								</SelectContent>
 							</Select>

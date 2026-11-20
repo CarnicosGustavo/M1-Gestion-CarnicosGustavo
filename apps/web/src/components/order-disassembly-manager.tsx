@@ -71,9 +71,10 @@ export function OrderDisassemblyManager({
 		!isClosed &&
 		orderItems.some(
 			(item) =>
-				item.status === "PENDIENTE_COMPRA" ||
-				(item.product != null &&
-					(item.product.stock_pieces ?? 0) < (item.quantity_pieces || 0)),
+				item.status !== "COBRADO" &&
+				(item.status === "PENDIENTE_COMPRA" ||
+					(item.product != null &&
+						(item.product.stock_pieces ?? 0) < (item.quantity_pieces || 0))),
 		);
 
 	// validateDisassemblyRecipes es una mutation de solo lectura en el servidor
