@@ -1,7 +1,7 @@
-import { and, asc, eq, sql, sum } from "drizzle-orm";
+import { and, asc, eq, exists, inArray, or, sql, sum } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
-import { orderItems, products, transactions } from "@/lib/db/schema";
+import { orderItems, orders, products, transactions } from "@/lib/db/schema";
 import { protectedProcedure, router } from "../init";
 
 function safeNumber(value: unknown) {
@@ -68,6 +68,9 @@ export const dashboardRouter = router({
 			const totalProfit = totalRevenue - totalExpenses;
 
 			// New revenue breakdown by product category
+			// R4-2: EXISTS (no JOIN) para no multiplicar el subtotal por cada
+			// transacción del mismo pedido. Solo líneas ya cobradas (COBRADO, o
+			// cobrables en un pedido COMPLETADA histórico).
 			const revenueByProductCategory = await db
 				.select({
 					category: products.category,
@@ -75,11 +78,33 @@ export const dashboardRouter = router({
 				})
 				.from(orderItems)
 				.innerJoin(products, eq(orderItems.product_id, products.id))
-				.innerJoin(transactions, eq(transactions.order_id, orderItems.order_id))
+				.innerJoin(orders, eq(orders.id, orderItems.order_id))
 				.where(
 					and(
-						eq(transactions.status, "completed"),
-						eq(transactions.user_uid, uid),
+						or(
+							eq(orderItems.status, "COBRADO"),
+							and(
+								eq(orders.status, "COMPLETADA"),
+								inArray(orderItems.status, [
+									"COBRADO",
+									"COMPLETADO",
+									"PESADO",
+									"WEIGHED",
+								]),
+							),
+						),
+						exists(
+							db
+								.select({ id: transactions.id })
+								.from(transactions)
+								.where(
+									and(
+										eq(transactions.order_id, orderItems.order_id),
+										eq(transactions.status, "completed"),
+										eq(transactions.user_uid, uid),
+									),
+								),
+						),
 					),
 				)
 				.groupBy(products.category);
