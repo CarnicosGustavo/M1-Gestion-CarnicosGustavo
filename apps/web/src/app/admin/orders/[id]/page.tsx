@@ -210,7 +210,7 @@ export default function OrderDetailPage({
 			onSuccess: (result) => {
 				toast.success(
 					result.status === "PENDIENTE_PESAJE"
-						? "Compra recibida: se sumó el faltante al stock. Las líneas por peso pasan a báscula y el peso real se suma al pesar"
+						? "Compra recibida: las líneas por peso pasan a báscula y el peso real se sumará al pesar"
 						: "Compra recibida: se sumó el faltante al stock; ya puedes cobrar el resto",
 				);
 				refetch();
