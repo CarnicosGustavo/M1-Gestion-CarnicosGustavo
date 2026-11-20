@@ -5,6 +5,7 @@ import {
 	isMissingPrice,
 	lineDisp,
 	lineTotal,
+	needsWeigh,
 	quantityKgGramsForPayload,
 	resolvePrice,
 	unitPriceCentsForPayload,
@@ -302,6 +303,32 @@ describe("helpers", () => {
 	});
 });
 
+describe("R2-8 — needsWeigh", () => {
+	it("null kg en producto por peso requiere pesaje", () => {
+		expect(needsWeigh({ is_sellable_by_weight: true, quantityKg: null })).toBe(
+			true,
+		);
+	});
+
+	it("0 kg en producto por peso requiere pesaje", () => {
+		expect(needsWeigh({ is_sellable_by_weight: true, quantityKg: 0 })).toBe(
+			true,
+		);
+	});
+
+	it("2 kg en producto por peso no requiere pesaje", () => {
+		expect(needsWeigh({ is_sellable_by_weight: true, quantityKg: 2 })).toBe(
+			false,
+		);
+	});
+
+	it("producto que no se vende por peso no requiere pesaje", () => {
+		expect(needsWeigh({ is_sellable_by_weight: false, quantityKg: null })).toBe(
+			false,
+		);
+	});
+});
+
 describe("F3 — resolvePrice con lista asignada", () => {
 	it("usa la lista asignada cuando no hay precio propio", () => {
 		const assigned = new Map([[7, { kg: 80, piece: 55 }]]);
@@ -320,7 +347,7 @@ describe("F3 — resolvePrice con lista asignada", () => {
 	});
 });
 
-describe("F4 — resolvePrice con precio propio y lista elegida", () => {
+describe("F4 / R2-9 / R2-10 — resolvePrice", () => {
 	it("el propio pisa por campo sin pisar la pieza de la lista", () => {
 		const own = new Map([[7, { kg: 90 }]]);
 		const selected = new Map([[7, { piece: 50 }]]);
@@ -336,6 +363,42 @@ describe("F4 — resolvePrice con precio propio y lista elegida", () => {
 		expect(resolvePrice(7, 100, 60, own, selected, new Map())).toEqual({
 			kg: 90,
 			piece: 70,
+		});
+	});
+
+	it("un precio propio 0 se ignora y deja ganar la lista elegida", () => {
+		const own = new Map([[7, { kg: 0 }]]);
+		const selected = new Map([[7, { kg: 50 }]]);
+		expect(resolvePrice(7, 100, 60, own, selected, new Map())).toEqual({
+			kg: 50,
+			piece: 60,
+		});
+	});
+
+	it("un precio propio no finito se ignora y deja ganar la lista elegida", () => {
+		const own = new Map([[7, { kg: Number.POSITIVE_INFINITY }]]);
+		const selected = new Map([[7, { kg: 50 }]]);
+		expect(resolvePrice(7, 100, 60, own, selected, new Map())).toEqual({
+			kg: 50,
+			piece: 60,
+		});
+	});
+
+	it("el kg propio 90 gana sobre el kg 50 de la lista elegida", () => {
+		const own = new Map([[7, { kg: 90 }]]);
+		const selected = new Map([[7, { kg: 50 }]]);
+		expect(resolvePrice(7, 100, 60, own, selected, new Map())).toEqual({
+			kg: 90,
+			piece: 60,
+		});
+	});
+
+	it("el kg propio 90 gana y la pieza 40 de la lista elegida se conserva", () => {
+		const own = new Map([[7, { kg: 90 }]]);
+		const selected = new Map([[7, { kg: 50, piece: 40 }]]);
+		expect(resolvePrice(7, 100, 60, own, selected, new Map())).toEqual({
+			kg: 90,
+			piece: 40,
 		});
 	});
 });
