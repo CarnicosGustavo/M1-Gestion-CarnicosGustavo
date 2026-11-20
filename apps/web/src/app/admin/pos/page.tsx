@@ -33,8 +33,20 @@ import { ScreenHead } from "@/components/screen-head";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 import { formatCurrency } from "@/lib/utils";
+import {
+	catalogDisp,
+	isMissingPrice,
+	lineDisp,
+	lineTotal,
+	quantityKgGramsForPayload,
+	resolvePrice,
+	unitPriceCentsForPayload,
+} from "./pos-logic";
 
 type Product = RouterOutputs["products"]["list"][number];
+type Customer = RouterOutputs["customers"]["list"][number];
+type CustomerPrice = RouterOutputs["customerPrices"]["getByCustomer"][number];
+type Availability = RouterOutputs["products"]["availabilityMap"][number];
 type POSProduct = Pick<
 	Product,
 	| "id"
@@ -54,63 +66,198 @@ type POSProduct = Pick<
 	unitPricePerPiece: number;
 };
 
+type Disp = "stock" | "despiece" | "pesaje" | "faltante";
+
 export default function POSPage() {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
-	const { data: products = [], isLoading: loadingProducts } = useQuery(
-		trpc.products.list.queryOptions(),
-	);
-	const { data: customers = [], isLoading: loadingCustomers } = useQuery(
-		trpc.customers.list.queryOptions(),
-	);
-	const { data: paymentMethods = [], isLoading: loadingMethods } = useQuery(
-		trpc.paymentMethods.list.queryOptions(),
-	);
-	const { data: priceLists = [], isLoading: loadingPriceLists } = useQuery(
-		trpc.inventory.priceListsList.queryOptions(),
-	);
-	const { data: availability = [] } = useQuery(
-		trpc.products.availabilityMap.queryOptions(),
-	) as {
-		data: {
-			productId: number;
-			stockPieces: number;
-			stockKg: number;
-			derivable: boolean;
-		}[];
-	};
-
-	const availMap = useMemo(() => {
-		const m = new Map<
-			number,
-			{ stockPieces: number; stockKg: number; derivable: boolean }
-		>();
-		for (const a of availability) m.set(a.productId, a);
-		return m;
-	}, [availability]);
-
-	// Clasifica cada producto del pedido: en stock / vía despiece / faltante
-	const classify = (p: {
-		id: number;
-		quantityKg: number | null;
-		quantityPieces: number;
-		stock_kg: number | string | null;
-		stock_pieces: number | null;
-	}): "stock" | "despiece" | "faltante" => {
-		const direct =
-			p.quantityKg !== null
-				? p.quantityKg <= Number(p.stock_kg)
-				: p.quantityPieces <= (p.stock_pieces ?? 0);
-		if (direct) return "stock";
-		return availMap.get(p.id)?.derivable ? "despiece" : "faltante";
-	};
 	const t = useTranslations("pos");
 	const tc = useTranslations("common");
 	const tOrders = useTranslations("orders");
 	const locale = useLocale();
 
+	const {
+		data: products = [],
+		isLoading: loadingProducts,
+		isError: productsError,
+	} = useQuery(trpc.products.list.queryOptions());
+	const {
+		data: customers = [],
+		isLoading: loadingCustomers,
+		isError: customersError,
+	} = useQuery(trpc.customers.list.queryOptions());
+	const {
+		data: paymentMethods = [],
+		isLoading: loadingMethods,
+		isError: paymentMethodsError,
+	} = useQuery(trpc.paymentMethods.list.queryOptions());
+	const {
+		data: priceLists = [],
+		isLoading: loadingPriceLists,
+		isError: priceListsError,
+	} = useQuery(trpc.inventory.priceListsList.queryOptions());
+	const { data: availability = [], isError: availabilityError } = useQuery(
+		trpc.products.availabilityMap.queryOptions(),
+	);
+
+	const [selectedProducts, setSelectedProducts] = useState<POSProduct[]>([]);
+	const [paymentMethod, setPaymentMethod] = useState<{
+		id: number;
+		name: string;
+	} | null>(null);
+	const [selectedCustomer, setSelectedCustomer] = useState<{
+		id: number;
+		name: string | null;
+		phone?: string | null;
+	} | null>(null);
+	const [productSearch, setProductSearch] = useState("");
+	const [emitNfce, setEmitNfce] = useState(false);
+	const [selectedPriceListId, setSelectedPriceListId] =
+		useState<string>("base");
+
+	const availMap = useMemo(() => {
+		const map = new Map<number, Availability>();
+		for (const item of availability) map.set(item.productId, item);
+		return map;
+	}, [availability]);
+
+	const priceListItemsQuery = useQuery({
+		...trpc.inventory.priceListItemsByList.queryOptions({
+			priceListId: Number(selectedPriceListId),
+		}),
+		enabled: selectedPriceListId !== "base",
+	});
+
+	const customerPricesQuery = useQuery({
+		...trpc.customerPrices.getByCustomer.queryOptions({
+			customerId: selectedCustomer?.id ?? 0,
+		}),
+		enabled: !!selectedCustomer,
+	});
+
+	const priceOverrides = useMemo(() => {
+		const map = new Map<number, { kg?: number; piece?: number }>();
+		if (selectedPriceListId === "base") return map;
+
+		for (const item of priceListItemsQuery.data ?? []) {
+			const kg =
+				item.unit_price_per_kg !== null ? Number(item.unit_price_per_kg) : null;
+			const piece =
+				item.unit_price_per_piece !== null
+					? Number(item.unit_price_per_piece)
+					: null;
+			map.set(item.product_id, {
+				kg: kg !== null && Number.isFinite(kg) ? kg : undefined,
+				piece: piece !== null && Number.isFinite(piece) ? piece : undefined,
+			});
+		}
+		return map;
+	}, [priceListItemsQuery.data, selectedPriceListId]);
+
+	const customerOwnMap = useMemo(() => {
+		const map = new Map<number, { kg?: number; piece?: number }>();
+		for (const item of (customerPricesQuery.data ?? []) as CustomerPrice[]) {
+			const kg =
+				item.customerPricePerKg !== null
+					? Number(item.customerPricePerKg)
+					: null;
+			const piece =
+				item.customerPricePerPiece !== null
+					? Number(item.customerPricePerPiece)
+					: null;
+			map.set(item.productId, {
+				kg: kg !== null && Number.isFinite(kg) ? kg : undefined,
+				piece: piece !== null && Number.isFinite(piece) ? piece : undefined,
+			});
+		}
+		return map;
+	}, [customerPricesQuery.data]);
+
+	const assignedListMap = useMemo(() => {
+		const map = new Map<number, { kg?: number; piece?: number }>();
+		for (const item of (customerPricesQuery.data ?? []) as CustomerPrice[]) {
+			const kg =
+				item.listPricePerKg !== null ? Number(item.listPricePerKg) : null;
+			const piece =
+				item.listPricePerPiece !== null ? Number(item.listPricePerPiece) : null;
+			map.set(item.productId, {
+				kg: kg !== null && Number.isFinite(kg) ? kg : undefined,
+				piece: piece !== null && Number.isFinite(piece) ? piece : undefined,
+			});
+		}
+		return map;
+	}, [customerPricesQuery.data]);
+
+	useEffect(() => {
+		setSelectedProducts((prev) => {
+			let changed = false;
+			const next = prev.map((product) => {
+				const price = resolvePrice(
+					product.id,
+					Number(product.price_per_kg) || 0,
+					Number(product.price_per_piece) || 0,
+					customerOwnMap,
+					priceOverrides,
+					assignedListMap,
+				);
+				if (
+					price.kg !== product.unitPricePerKg ||
+					price.piece !== product.unitPricePerPiece
+				) {
+					changed = true;
+					return {
+						...product,
+						unitPricePerKg: price.kg,
+						unitPricePerPiece: price.piece,
+					};
+				}
+				return product;
+			});
+			return changed ? next : prev;
+		});
+	}, [assignedListMap, customerOwnMap, priceOverrides]);
+
+	const filteredProducts = useMemo(() => {
+		if (!productSearch.trim()) return products;
+		const query = productSearch.toLowerCase();
+		return products.filter(
+			(product) =>
+				product.name.toLowerCase().includes(query) ||
+				(product.category ?? "").toLowerCase().includes(query),
+		);
+	}, [products, productSearch]);
+
+	const priceListOptions = useMemo(
+		() => [
+			{ id: "base", name: "Precio base" },
+			...priceLists.map((list) => ({ id: String(list.id), name: list.name })),
+		],
+		[priceLists],
+	);
+
 	const loading =
 		loadingProducts || loadingCustomers || loadingMethods || loadingPriceLists;
+
+	const pricesLoading =
+		(!!selectedCustomer && customerPricesQuery.isFetching) ||
+		(selectedPriceListId !== "base" && priceListItemsQuery.isFetching);
+
+	const pricesError =
+		(!!selectedCustomer && customerPricesQuery.isError) ||
+		(selectedPriceListId !== "base" && priceListItemsQuery.isError);
+
+	const loadError =
+		productsError ||
+		customersError ||
+		availabilityError ||
+		paymentMethodsError ||
+		priceListsError;
+
+	const canCreate =
+		selectedProducts.length > 0 &&
+		!!selectedCustomer &&
+		!pricesLoading &&
+		!pricesError;
 
 	const createOrderMutation = useMutation(
 		trpc.orders.create.mutationOptions({
@@ -128,324 +275,246 @@ export default function POSPage() {
 				setSelectedCustomer(null);
 				setPaymentMethod(null);
 			},
-			onError: (err) => toast.error(err.message || tOrders("createError")),
+			onError: (error) => toast.error(error.message || tOrders("createError")),
 		}),
 	);
-
-	const [selectedProducts, setSelectedProducts] = useState<POSProduct[]>([]);
-	const [paymentMethod, setPaymentMethod] = useState<{
-		id: number;
-		name: string;
-	} | null>(null);
-	const [selectedCustomer, setSelectedCustomer] = useState<{
-		id: number;
-		name: string | null;
-	} | null>(null);
-	const [productSearch, setProductSearch] = useState("");
-	const [emitNfce, setEmitNfce] = useState(false);
-	const [selectedPriceListId, setSelectedPriceListId] =
-		useState<string>("base");
-
-	const priceListItemsQuery = useQuery({
-		...trpc.inventory.priceListItemsByList.queryOptions({
-			priceListId: Number(selectedPriceListId),
-		}),
-		enabled: selectedPriceListId !== "base",
-	});
-
-	const priceOverrides = useMemo(() => {
-		const map = new Map<number, { kg?: number; piece?: number }>();
-		if (selectedPriceListId === "base") return map;
-		for (const item of priceListItemsQuery.data ?? []) {
-			const kg =
-				item.unit_price_per_kg !== null ? Number(item.unit_price_per_kg) : null;
-			const piece =
-				item.unit_price_per_piece !== null
-					? Number(item.unit_price_per_piece)
-					: null;
-			map.set(item.product_id, {
-				kg: kg !== null && Number.isFinite(kg) ? kg : undefined,
-				piece: piece !== null && Number.isFinite(piece) ? piece : undefined,
-			});
-		}
-		return map;
-	}, [priceListItemsQuery.data, selectedPriceListId]);
-
-	// Precios propios del cliente seleccionado (tienen prioridad sobre lista/base)
-	const customerPricesQuery = useQuery({
-		...trpc.customerPrices.getByCustomer.queryOptions({
-			customerId: selectedCustomer?.id ?? 0,
-		}),
-		enabled: !!selectedCustomer,
-	});
-
-	const customerPriceMap = useMemo(() => {
-		const map = new Map<number, { kg?: number; piece?: number }>();
-		for (const item of (customerPricesQuery.data ?? []) as any[]) {
-			if (!item.hasCustomPrice) continue;
-			const kg = item.pricePerKg != null ? Number(item.pricePerKg) : null;
-			const piece =
-				item.pricePerPiece != null ? Number(item.pricePerPiece) : null;
-			map.set(item.productId, {
-				kg: kg != null && Number.isFinite(kg) ? kg : undefined,
-				piece: piece != null && Number.isFinite(piece) ? piece : undefined,
-			});
-		}
-		return map;
-	}, [customerPricesQuery.data]);
-
-	// Resuelve el precio de un producto: cliente > lista > base
-	const resolvePrice = (
-		productId: number,
-		baseKg: number,
-		basePiece: number,
-	) => {
-		const cust = customerPriceMap.get(productId);
-		const list = priceOverrides.get(productId);
-		return {
-			kg: cust?.kg ?? list?.kg ?? baseKg,
-			piece: cust?.piece ?? list?.piece ?? basePiece,
-		};
-	};
-
-	// Re-precia los productos en el carrito cuando cambian los precios del cliente o la lista
-	useEffect(() => {
-		setSelectedProducts((prev) => {
-			let changed = false;
-			const next = prev.map((p) => {
-				const price = resolvePrice(
-					p.id,
-					Number(p.price_per_kg) || 0,
-					Number(p.price_per_piece) || 0,
-				);
-				if (
-					price.kg !== p.unitPricePerKg ||
-					price.piece !== p.unitPricePerPiece
-				) {
-					changed = true;
-					return {
-						...p,
-						unitPricePerKg: price.kg,
-						unitPricePerPiece: price.piece,
-					};
-				}
-				return p;
-			});
-			return changed ? next : prev;
-		});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [customerPriceMap, priceOverrides]);
-
-	const filteredProducts = useMemo(() => {
-		if (!productSearch.trim()) return products;
-		const q = productSearch.toLowerCase();
-		return products.filter(
-			(p) =>
-				p.name.toLowerCase().includes(q) ||
-				(p.category ?? "").toLowerCase().includes(q),
-		);
-	}, [products, productSearch]);
-
-	const priceListOptions = useMemo(() => {
-		return [
-			{ id: "base", name: "Precio base" },
-			...priceLists.map((l) => ({ id: String(l.id), name: l.name })),
-		];
-	}, [priceLists]);
 
 	const handleSelectPriceList = (id: number | string) => {
 		setSelectedPriceListId(String(id));
 	};
 
 	const handleSelectProduct = (productId: number | string) => {
-		const product = products.find((p) => p.id === productId);
+		const product = products.find((item) => item.id === productId);
 		if (!product) return;
 
-		// Validar stock dual
-		if ((product.stock_pieces ?? 0) <= 0 && Number(product.stock_kg) <= 0) {
-			toast.error(t("outOfStock", { name: product.name }));
+		const existing = selectedProducts.find((item) => item.id === productId);
+		if (existing) {
+			if (product.is_sellable_by_weight && !product.is_sellable_by_unit) {
+				toast.info(t("alreadyInCart", { name: product.name }));
+				return;
+			}
+
+			setSelectedProducts((current) =>
+				current.map((item) =>
+					item.id === productId
+						? { ...item, quantityPieces: item.quantityPieces + 1 }
+						: item,
+				),
+			);
 			return;
 		}
 
-		const existing = selectedProducts.find((p) => p.id === productId);
-		if (existing) {
-			setSelectedProducts(
-				selectedProducts.map((p) =>
-					p.id === productId
-						? { ...p, quantityPieces: p.quantityPieces + 1 }
-						: p,
-				),
-			);
-		} else {
-			const baseKg = Number(product.price_per_kg) || 0;
-			const basePiece = Number(product.price_per_piece) || 0;
-			const price = resolvePrice(product.id, baseKg, basePiece);
-			setSelectedProducts([
-				...selectedProducts,
-				{
-					id: product.id,
-					name: product.name,
-					price_per_kg: product.price_per_kg,
-					price_per_piece: product.price_per_piece,
-					stock_pieces: product.stock_pieces,
-					stock_kg: product.stock_kg,
-					is_sellable_by_weight: product.is_sellable_by_weight,
-					is_sellable_by_unit: product.is_sellable_by_unit,
-					default_sale_unit: product.default_sale_unit,
-					category: product.category ?? "",
-					quantityPieces: 1,
-					quantityKg: null,
-					unitPricePerKg: price.kg,
-					unitPricePerPiece: price.piece,
-				},
-			]);
+		const baseKg = Number(product.price_per_kg) || 0;
+		const basePiece = Number(product.price_per_piece) || 0;
+		const price = resolvePrice(
+			product.id,
+			baseKg,
+			basePiece,
+			customerOwnMap,
+			priceOverrides,
+			assignedListMap,
+		);
+
+		setSelectedProducts((current) => [
+			...current,
+			{
+				id: product.id,
+				name: product.name,
+				price_per_kg: product.price_per_kg,
+				price_per_piece: product.price_per_piece,
+				stock_pieces: product.stock_pieces,
+				stock_kg: product.stock_kg,
+				is_sellable_by_weight: product.is_sellable_by_weight,
+				is_sellable_by_unit: product.is_sellable_by_unit,
+				default_sale_unit: product.default_sale_unit,
+				category: product.category ?? "",
+				quantityPieces: 1,
+				quantityKg: null,
+				unitPricePerKg: price.kg,
+				unitPricePerPiece: price.piece,
+			},
+		]);
+
+		if (catalogDisp(product, availMap.get(product.id)) === "faltante") {
+			toast.info(t("pendingPurchaseToast", { name: product.name }));
 		}
 	};
 
 	const handleSelectCustomer = (customerId: number | string) => {
-		const customer = customers.find((c) => c.id === customerId);
+		const customer = customers.find((item) => item.id === customerId);
 		if (customer) {
-			setSelectedCustomer(customer);
-			// Re-precia los productos ya agregados con los precios de este cliente
-			// (el efecto real ocurre cuando llegan sus precios; ver useEffect abajo)
+			setSelectedCustomer({
+				id: customer.id,
+				name: customer.name,
+				phone: customer.phone,
+			});
 		}
 	};
 
 	const handleSelectPaymentMethod = (paymentMethodId: number | string) => {
-		const method = paymentMethods.find((pm) => pm.id === paymentMethodId);
+		const method = paymentMethods.find((item) => item.id === paymentMethodId);
 		if (method) setPaymentMethod(method);
 	};
 
 	const handleQuantityChange = (productId: number, delta: number) => {
 		setSelectedProducts((prev) =>
-			prev.map((p) => {
-				if (p.id !== productId) return p;
-				const newQty = p.quantityPieces + delta;
-				if (newQty <= 0) return p;
-				return { ...p, quantityPieces: newQty };
+			prev.map((product) => {
+				if (product.id !== productId) return product;
+				const newQuantity = product.quantityPieces + delta;
+				if (newQuantity <= 0) return product;
+				return { ...product, quantityPieces: newQuantity };
 			}),
 		);
 	};
 
 	const handleSetQuantityPieces = (productId: number, value: number) => {
 		setSelectedProducts((prev) =>
-			prev.map((p) => {
-				if (p.id !== productId) return p;
-				const v = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
-				return { ...p, quantityPieces: v };
+			prev.map((product) => {
+				if (product.id !== productId) return product;
+				const normalized = Number.isFinite(value)
+					? Math.max(1, Math.floor(value))
+					: 1;
+				return { ...product, quantityPieces: normalized };
 			}),
 		);
 	};
 
 	const handleSetQuantityKg = (productId: number, value: number | null) => {
 		setSelectedProducts((prev) =>
-			prev.map((p) => {
-				if (p.id !== productId) return p;
-				if (value === null) return { ...p, quantityKg: null };
-				const v = Number.isFinite(value) ? Math.max(0, value) : 0;
-				return { ...p, quantityKg: v };
+			prev.map((product) => {
+				if (product.id !== productId) return product;
+				if (value === null) return { ...product, quantityKg: null };
+				const normalized = Number.isFinite(value) ? Math.max(0, value) : 0;
+				return { ...product, quantityKg: normalized };
 			}),
 		);
 	};
 
 	const handleSetUnitPriceKg = (productId: number, value: number) => {
 		setSelectedProducts((prev) =>
-			prev.map((p) => {
-				if (p.id !== productId) return p;
-				const v = Number.isFinite(value) ? Math.max(0, value) : 0;
-				return { ...p, unitPricePerKg: v };
+			prev.map((product) => {
+				if (product.id !== productId) return product;
+				const normalized = Number.isFinite(value) ? Math.max(0, value) : 0;
+				return { ...product, unitPricePerKg: normalized };
 			}),
 		);
 	};
 
 	const handleSetUnitPricePiece = (productId: number, value: number) => {
 		setSelectedProducts((prev) =>
-			prev.map((p) => {
-				if (p.id !== productId) return p;
-				const v = Number.isFinite(value) ? Math.max(0, value) : 0;
-				return { ...p, unitPricePerPiece: v };
+			prev.map((product) => {
+				if (product.id !== productId) return product;
+				const normalized = Number.isFinite(value) ? Math.max(0, value) : 0;
+				return { ...product, unitPricePerPiece: normalized };
 			}),
 		);
 	};
 
 	const handleRemoveProduct = (productId: number) => {
-		setSelectedProducts(selectedProducts.filter((p) => p.id !== productId));
+		setSelectedProducts((current) =>
+			current.filter((product) => product.id !== productId),
+		);
 	};
 
-	const total = selectedProducts.reduce((sum, p) => {
-		if (p.quantityKg) {
-			return sum + (p.unitPricePerKg || 0) * p.quantityKg;
-		}
-		if (p.quantityPieces) {
-			return sum + (p.unitPricePerPiece || 0) * p.quantityPieces;
-		}
-		return sum;
-	}, 0);
+	const total = selectedProducts.reduce(
+		(sum, product) => sum + lineTotal(product),
+		0,
+	);
 
-	// El pago se decide en la Cola de Cobro, no al crear el pedido.
-	// Basta con tener productos y cliente; el pedido fluye a pesaje/cobro.
-	const canCreate = selectedProducts.length > 0 && !!selectedCustomer;
+	const needWeigh = selectedProducts.some(
+		(product) => product.is_sellable_by_weight && product.quantityKg === null,
+	);
+
+	const despieceCount = selectedProducts.filter(
+		(product) => lineDisp(product, availMap.get(product.id)) === "despiece",
+	).length;
+	const faltanteCount = selectedProducts.filter(
+		(product) => lineDisp(product, availMap.get(product.id)) === "faltante",
+	).length;
+
+	const createDisabledReason = !selectedCustomer
+		? t("needCustomer")
+		: selectedProducts.length === 0
+			? t("needProducts")
+			: pricesLoading
+				? t("pricesLoading")
+				: pricesError
+					? t("pricesError")
+					: null;
 
 	const handleCreateOrder = () => {
-		if (!canCreate) return;
+		if (!canCreate || createOrderMutation.isPending) return;
 		const customerId = selectedCustomer?.id;
 		if (!customerId) return;
 
-		// Clasifica: en stock / vía despiece / faltante
 		const faltantes = selectedProducts.filter(
-			(p) => classify(p) === "faltante",
+			(product) => lineDisp(product, availMap.get(product.id)) === "faltante",
 		);
 		const viaDespiece = selectedProducts.filter(
-			(p) => classify(p) === "despiece",
+			(product) => lineDisp(product, availMap.get(product.id)) === "despiece",
 		);
 
-		if (viaDespiece.length > 0) {
-			toast.info(
-				`${viaDespiece.length} pieza(s) se generarán por despiece: ${viaDespiece.map((p) => p.name).join(", ")}`,
-			);
-		}
-		if (faltantes.length > 0) {
-			toast.warning(
-				`⚠️ Falta(n) ${faltantes.length} pieza(s) (conseguir en otro centro): ${faltantes.map((p) => p.name).join(", ")}`,
-			);
+		const missingPrice = selectedProducts.some((product) =>
+			product.is_sellable_by_weight
+				? isMissingPrice(product.unitPricePerKg)
+				: isMissingPrice(product.unitPricePerPiece),
+		);
+		if (missingPrice) {
+			toast.warning(t("missingPriceWarning"));
 		}
 
-		createOrderMutation.mutate({
+		const payload = {
 			customerId,
 			paymentMethodId: paymentMethod?.id,
-			items: selectedProducts.map((p) => ({
-				productId: p.id,
-				quantityPieces: p.quantityPieces,
-				quantityKg: p.quantityKg ? Math.round(p.quantityKg * 1000) : undefined,
-				unitPrice: p.quantityKg
-					? Math.round((p.unitPricePerKg || 0) * 100)
-					: Math.round((p.unitPricePerPiece || 0) * 100),
-				// Solo los FALTANTES reales son pendiente de compra; los derivables
-				// se generan por despiece de sus piezas padre.
-				requiresPurchase: classify(p) === "faltante",
+			items: selectedProducts.map((product) => ({
+				productId: product.id,
+				quantityPieces: product.quantityPieces,
+				quantityKg: quantityKgGramsForPayload(product.quantityKg),
+				unitPrice: unitPriceCentsForPayload(product),
+				requiresPurchase:
+					lineDisp(product, availMap.get(product.id)) === "faltante",
 			})),
+		};
+
+		createOrderMutation.mutate(payload, {
+			onSuccess: () => {
+				if (viaDespiece.length > 0) {
+					toast.info(
+						t("despieceCreatedToast", {
+							count: viaDespiece.length,
+							names: viaDespiece.map((product) => product.name).join(", "),
+						}),
+					);
+				}
+				if (faltantes.length > 0) {
+					toast.warning(
+						t("faltanteCreatedToast", {
+							count: faltantes.length,
+							names: faltantes.map((product) => product.name).join(", "),
+						}),
+					);
+				}
+			},
 		});
 	};
 
-	// Disponibilidad para los badges del diseño (catálogo + carrito)
-	type Disp = "stock" | "despiece" | "pesaje" | "faltante";
 	const DISP: Record<
 		Disp,
 		{ label: string; cls: string; Icon: typeof CheckIcon }
 	> = {
 		stock: {
 			label: "En stock",
-			cls: "bg-cg-green-wash text-cg-green",
+			cls: "bg-cg-green-wash text-[#1f4d32] dark:text-cg-green",
 			Icon: CheckIcon,
 		},
 		despiece: {
 			label: "Por despiece",
-			cls: "bg-cg-blue-wash text-cg-blue",
+			cls: "bg-cg-blue-wash text-[#1e4560] dark:text-cg-blue",
 			Icon: ScissorsIcon,
 		},
 		pesaje: {
 			label: "Por pesar",
-			cls: "bg-cg-amber-wash text-cg-amber",
+			cls: "bg-cg-amber-wash text-[#6b4508] dark:text-cg-amber",
 			Icon: ScaleIcon,
 		},
 		faltante: {
@@ -454,41 +523,26 @@ export default function POSPage() {
 			Icon: AlertTriangleIcon,
 		},
 	};
-	const dispOf = (p: {
-		id: number;
-		stock_pieces: number | null;
-		stock_kg: number | string | null;
-		is_sellable_by_weight: boolean | null;
-	}): Disp => {
-		const av = availMap.get(p.id);
-		const sp = av?.stockPieces ?? p.stock_pieces ?? 0;
-		const sk = Number(av?.stockKg ?? p.stock_kg ?? 0);
-		if (sp <= 0 && sk <= 0) return av?.derivable ? "despiece" : "faltante";
-		return p.is_sellable_by_weight ? "pesaje" : "stock";
-	};
-	const catalogPrice = (p: Product) => {
-		const r = resolvePrice(
-			p.id,
-			Number(p.price_per_kg) || 0,
-			Number(p.price_per_piece) || 0,
+
+	const catalogPrice = (product: Product) => {
+		const price = resolvePrice(
+			product.id,
+			Number(product.price_per_kg) || 0,
+			Number(product.price_per_piece) || 0,
+			customerOwnMap,
+			priceOverrides,
+			assignedListMap,
 		);
-		return p.is_sellable_by_weight
-			? { value: r.kg, unit: "/kg" }
-			: { value: r.piece, unit: "/pza" };
+		return product.is_sellable_by_weight
+			? { value: price.kg, unit: "/kg" }
+			: { value: price.piece, unit: "/pza" };
 	};
-	const subtotalOf = (p: POSProduct) =>
-		p.quantityKg !== null
-			? (p.unitPricePerKg || 0) * p.quantityKg
-			: (p.unitPricePerPiece || 0) * p.quantityPieces;
-	const needWeigh = selectedProducts.some(
-		(p) => p.is_sellable_by_weight && !p.quantityKg,
-	);
-	const despieceCount = selectedProducts.filter(
-		(p) => classify(p) === "despiece",
-	).length;
-	const faltanteCount = selectedProducts.filter(
-		(p) => classify(p) === "faltante",
-	).length;
+
+	const selectedCustomerValue = selectedCustomer
+		? `${selectedCustomer.name ?? "Cliente"}${
+				selectedCustomer.phone ? ` · ${selectedCustomer.phone}` : ""
+			}`
+		: "";
 
 	if (loading) {
 		return (
@@ -508,8 +562,8 @@ export default function POSPage() {
 					</CardHeader>
 					<CardContent className="space-y-3">
 						<Skeleton className="h-10 w-full" />
-						{Array.from({ length: 3 }).map((_, i) => (
-							<div key={i} className="flex items-center gap-4">
+						{Array.from({ length: 3 }).map((_, index) => (
+							<div key={index} className="flex items-center gap-4">
 								<Skeleton className="h-4 w-32" />
 								<Skeleton className="h-4 w-20" />
 								<Skeleton className="h-8 w-24" />
@@ -523,7 +577,7 @@ export default function POSPage() {
 	}
 
 	return (
-		<div className="mx-auto w-full max-w-6xl">
+		<div className="mx-auto w-full max-w-6xl pb-28 lg:pb-0">
 			<ScreenHead
 				title="Punto de venta"
 				desc="Captura el pedido del cliente. iAntonella clasifica cada pieza en stock, vía despiece o por pesar al agregarla."
@@ -541,26 +595,52 @@ export default function POSPage() {
 				}}
 			/>
 
+			{loadError ? (
+				<div
+					className="mb-4 rounded-lg bg-[var(--cg-red-wash)] px-3 py-2 font-semibold text-destructive text-sm"
+					role="alert"
+				>
+					{t("loadError")}
+				</div>
+			) : null}
+
+			{pricesError ? (
+				<div
+					className="mb-4 rounded-lg bg-[var(--cg-red-wash)] px-3 py-2 font-semibold text-destructive text-sm"
+					role="alert"
+				>
+					{t("pricesError")}
+				</div>
+			) : null}
+
 			<div className="grid items-start gap-4 lg:grid-cols-[1fr_360px]">
-				{/* Izquierda: detalles de la venta + catálogo táctil */}
 				<div className="flex flex-col gap-4">
 					<Card>
 						<CardContent className="grid gap-3 pt-6 sm:grid-cols-3">
 							<Combobox
-								items={customers.map((c: any) => ({
-									id: c.id,
-									name: `${c.name ?? "Cliente"}${c.phone ? ` · ${c.phone}` : ""}`,
+								items={customers.map((customer: Customer) => ({
+									id: customer.id,
+									name: `${customer.name ?? "Cliente"}${
+										customer.phone ? ` · ${customer.phone}` : ""
+									}`,
 								}))}
+								value={selectedCustomerValue}
 								placeholder="Cliente"
 								onSelect={handleSelectCustomer}
 							/>
 							<Combobox
 								items={paymentMethods}
+								value={paymentMethod?.name ?? ""}
 								placeholder={t("selectPaymentMethod")}
 								onSelect={handleSelectPaymentMethod}
 							/>
 							<Combobox
 								items={priceListOptions}
+								value={
+									priceListOptions.find(
+										(option) => option.id === selectedPriceListId,
+									)?.name ?? ""
+								}
 								placeholder="Lista de precios"
 								onSelect={handleSelectPriceList}
 							/>
@@ -577,55 +657,77 @@ export default function POSPage() {
 								</span>
 							</div>
 							<div className="!mt-4 relative">
-								<SearchIcon className="absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
+								<SearchIcon className="absolute top-3.5 left-2.5 h-4 w-4 text-muted-foreground" />
+								<label className="sr-only" htmlFor="pos-product-search">
+									{t("searchLabel")}
+								</label>
 								<Input
+									id="pos-product-search"
 									type="text"
 									placeholder={t("searchPlaceholder")}
 									value={productSearch}
-									onChange={(e) => setProductSearch(e.target.value)}
-									className="pl-8"
+									onChange={(event) => setProductSearch(event.target.value)}
+									className="h-11 pl-8"
 								/>
 							</div>
 						</CardHeader>
 						<CardContent>
-							<div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2.5">
-								{filteredProducts.map((p) => {
-									const d = DISP[dispOf(p)];
-									const { value, unit } = catalogPrice(p);
-									return (
-										<button
-											key={p.id}
-											type="button"
-											onClick={() => handleSelectProduct(p.id)}
-											className="flex min-h-[88px] flex-col rounded-xl border bg-muted/40 p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/50"
-										>
-											<div className="flex items-start justify-between gap-2">
-												<span className="font-semibold text-foreground text-sm leading-tight">
-													{p.name}
-												</span>
-												<PlusIcon className="h-4 w-4 shrink-0 text-primary" />
-											</div>
-											<div className="mt-2 font-bold font-mono text-foreground">
-												{formatCurrency(value * 100, locale)}
-												<span className="ml-0.5 font-normal font-sans text-muted-foreground text-xs">
-													{unit}
-												</span>
-											</div>
-											<span
-												className={`mt-auto inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-xs ${d.cls}`}
+							{filteredProducts.length === 0 ? (
+								<div className="flex min-h-32 items-center justify-center px-4 py-8 text-center text-muted-foreground text-sm">
+									{productSearch.trim() ? t("emptySearch") : t("needProducts")}
+								</div>
+							) : (
+								<div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2.5">
+									{filteredProducts.map((product) => {
+										const display =
+											DISP[catalogDisp(product, availMap.get(product.id))];
+										const { value, unit } = catalogPrice(product);
+										const missingPrice = isMissingPrice(value);
+										return (
+											<button
+												key={product.id}
+												type="button"
+												onClick={() => handleSelectProduct(product.id)}
+												className="flex min-h-[88px] flex-col rounded-xl border bg-muted/40 p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/50"
+												title={
+													display.label === "Faltante"
+														? t("pendingPurchaseToast", { name: product.name })
+														: undefined
+												}
 											>
-												<d.Icon className="h-3 w-3" />
-												{d.label}
-											</span>
-										</button>
-									);
-								})}
-							</div>
+												<div className="flex items-start justify-between gap-2">
+													<span className="font-semibold text-foreground text-sm leading-tight">
+														{product.name}
+													</span>
+													<PlusIcon className="h-4 w-4 shrink-0 text-primary" />
+												</div>
+												<div className="mt-2 font-bold font-mono text-foreground">
+													{missingPrice ? (
+														<span className="text-destructive">
+															{t("missingPrice")}
+														</span>
+													) : (
+														formatCurrency(value * 100, locale)
+													)}
+													<span className="ml-0.5 font-normal font-sans text-muted-foreground text-xs">
+														{unit}
+													</span>
+												</div>
+												<span
+													className={`mt-auto inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-xs ${display.cls}`}
+												>
+													<display.Icon className="h-3 w-3" />
+													{display.label}
+												</span>
+											</button>
+										);
+									})}
+								</div>
+							)}
 						</CardContent>
 					</Card>
 				</div>
 
-				{/* Derecha: carrito sticky */}
 				<Card className="lg:sticky lg:top-4">
 					<div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-3">
 						<ShoppingCartIcon className="h-5 w-5" />
@@ -643,9 +745,14 @@ export default function POSPage() {
 					) : (
 						<div className="flex max-h-[46vh] flex-col gap-2 overflow-y-auto p-3">
 							{selectedProducts.map((product) => {
-								const d = DISP[dispOf(product)];
+								const display =
+									DISP[lineDisp(product, availMap.get(product.id))];
 								const isWeighPending =
-									product.is_sellable_by_weight && !product.quantityKg;
+									product.is_sellable_by_weight && product.quantityKg === null;
+								const showPieceControls =
+									!product.is_sellable_by_weight ||
+									!!product.is_sellable_by_unit;
+								const lineAmount = lineTotal(product);
 								return (
 									<div key={product.id} className="rounded-xl border p-3">
 										<div className="mb-2 flex items-center justify-between gap-2">
@@ -655,61 +762,70 @@ export default function POSPage() {
 											<button
 												type="button"
 												onClick={() => handleRemoveProduct(product.id)}
-												className="text-primary"
+												className="min-h-11 min-w-11 p-2 text-primary"
 												aria-label={tc("remove")}
 											>
-												<Trash2Icon className="h-4 w-4" />
+												<Trash2Icon className="h-5 w-5" />
 											</button>
 										</div>
+
 										<div className="flex flex-wrap items-center justify-between gap-2">
 											<span
-												className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-xs ${d.cls}`}
+												className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-xs ${display.cls}`}
 											>
-												<d.Icon className="h-3 w-3" />
-												{d.label}
+												<display.Icon className="h-3 w-3" />
+												{display.label}
 											</span>
-											<div className="flex items-center gap-2">
+
+											{showPieceControls ? (
 												<div className="flex items-center overflow-hidden rounded-lg border">
 													<button
 														type="button"
-														className="h-8 w-8 bg-muted/60 font-bold text-foreground disabled:opacity-40"
+														className="h-11 w-11 bg-muted/60 font-bold text-foreground disabled:opacity-40"
 														onClick={() => handleQuantityChange(product.id, -1)}
 														disabled={product.quantityPieces <= 1}
+														aria-label={t("decreaseQty")}
 													>
-														−
+														<MinusIcon className="h-4 w-4" />
 													</button>
-													<span className="min-w-7 text-center font-bold font-mono text-sm">
+													<span
+														className="min-w-7 px-2 text-center font-bold font-mono text-sm"
+														aria-live="polite"
+													>
 														{product.quantityPieces}
 													</span>
 													<button
 														type="button"
-														className="h-8 w-8 bg-muted/60 font-bold text-foreground"
+														className="h-11 w-11 bg-muted/60 font-bold text-foreground"
 														onClick={() => handleQuantityChange(product.id, 1)}
+														aria-label={t("increaseQty")}
 													>
-														+
+														<PlusIcon className="h-4 w-4" />
 													</button>
 												</div>
-												<span className="min-w-16 text-right font-bold font-mono text-sm">
-													{isWeighPending
-														? "~pesar"
-														: formatCurrency(subtotalOf(product) * 100, locale)}
-												</span>
-											</div>
+											) : null}
+
+											<span className="min-w-16 text-right font-bold font-mono text-sm">
+												{isWeighPending
+													? "~pesar"
+													: formatCurrency(lineAmount * 100, locale)}
+											</span>
 										</div>
+
 										{product.is_sellable_by_weight ? (
 											<Input
 												type="number"
 												step="0.001"
 												inputMode="decimal"
 												placeholder="Kg (se define al pesar)"
-												className="mt-2 h-8"
+												className="mt-2 h-11"
 												value={
 													product.quantityKg === null
 														? ""
 														: String(product.quantityKg)
 												}
-												onChange={(e) => {
-													const raw = e.target.value.trim();
+												onChange={(event) => {
+													const raw = event.target.value.trim();
 													handleSetQuantityKg(
 														product.id,
 														raw ? Number(raw) : null,
@@ -723,26 +839,24 @@ export default function POSPage() {
 						</div>
 					)}
 
-					{/* Avisos de iAntonella */}
 					{despieceCount > 0 || faltanteCount > 0 ? (
 						<div className="flex flex-col gap-1.5 px-3 pb-2">
 							{despieceCount > 0 ? (
-								<div className="flex items-center gap-2 rounded-lg bg-cg-blue-wash px-2.5 py-2 font-semibold text-cg-blue text-xs">
+								<div className="flex items-center gap-2 rounded-lg bg-cg-blue-wash px-2.5 py-2 font-semibold text-[#1e4560] text-xs dark:text-cg-blue">
 									<ScissorsIcon className="h-3.5 w-3.5 shrink-0" />
-									{despieceCount} pieza(s) requieren despiece de canal.
+									{t("despieceBanner", { count: despieceCount })}
 								</div>
 							) : null}
 							{faltanteCount > 0 ? (
 								<div className="flex items-center gap-2 rounded-lg bg-[var(--cg-red-wash)] px-2.5 py-2 font-semibold text-destructive text-xs">
 									<AlertTriangleIcon className="h-3.5 w-3.5 shrink-0" />
-									{faltanteCount} pieza(s) sin stock — quedarán pendientes de
-									compra.
+									{t("pendingPurchaseBanner", { count: faltanteCount })}
 								</div>
 							) : null}
 						</div>
 					) : null}
 
-					<div className="border-t px-4 py-4">
+					<div className="hidden border-t px-4 py-4 lg:block">
 						<div className="mb-3 flex items-center justify-between">
 							<span className="font-semibold text-muted-foreground text-xs uppercase tracking-wider">
 								Total estimado
@@ -755,7 +869,7 @@ export default function POSPage() {
 							<input
 								type="checkbox"
 								checked={emitNfce}
-								onChange={(e) => setEmitNfce(e.target.checked)}
+								onChange={(event) => setEmitNfce(event.target.checked)}
 								className="h-4 w-4 rounded border-gray-300"
 							/>
 							<ReceiptTextIcon className="h-4 w-4 text-muted-foreground" />
@@ -777,8 +891,46 @@ export default function POSPage() {
 							)}
 							{needWeigh ? t("orderRequiresWeighing") : t("createOrder")}
 						</Button>
+						{createDisabledReason ? (
+							<p className="mt-2 text-center text-muted-foreground text-xs">
+								{createDisabledReason}
+							</p>
+						) : null}
 					</div>
 				</Card>
+			</div>
+
+			<div className="fixed inset-x-0 bottom-0 z-20 border-t bg-background px-4 py-3 shadow-lg lg:hidden">
+				<div className="mx-auto flex max-w-6xl items-center gap-3">
+					<div className="min-w-0 flex-1">
+						<div className="font-semibold text-muted-foreground text-xs uppercase tracking-wider">
+							Total estimado
+						</div>
+						<div className="truncate font-display text-2xl text-foreground">
+							{formatCurrency(total * 100, locale)}
+						</div>
+					</div>
+					<Button
+						onClick={handleCreateOrder}
+						disabled={!canCreate || createOrderMutation.isPending}
+						size="lg"
+						variant={needWeigh ? "secondary" : "default"}
+					>
+						{createOrderMutation.isPending ? (
+							<Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+						) : needWeigh ? (
+							<ScaleIcon className="mr-2 h-4 w-4" />
+						) : (
+							<CheckIcon className="mr-2 h-4 w-4" />
+						)}
+						{needWeigh ? t("orderRequiresWeighing") : t("createOrder")}
+					</Button>
+				</div>
+				{createDisabledReason ? (
+					<p className="mx-auto mt-1 max-w-6xl text-center text-muted-foreground text-xs">
+						{createDisabledReason}
+					</p>
+				) : null}
 			</div>
 		</div>
 	);
