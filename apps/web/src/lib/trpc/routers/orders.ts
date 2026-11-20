@@ -1706,6 +1706,7 @@ export const ordersRouter = router({
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
 						),
 					)
+					.for("update")
 					.limit(1);
 				if (!order) {
 					throw new TRPCError({
@@ -1751,38 +1752,69 @@ export const ordersRouter = router({
 				}
 
 				for (const item of requested) {
-					if (!item.product_id) {
-						await tx
-							.update(orderItems)
-							.set({ status: "COMPLETADO", updated_at: new Date() })
-							.where(eq(orderItems.id, item.id));
-						continue;
+					let product: typeof products.$inferSelect | undefined;
+					if (item.product_id) {
+						const [row] = await tx
+							.select()
+							.from(products)
+							.where(eq(products.id, item.product_id))
+							.for("update")
+							.limit(1);
+						product = row;
 					}
-					const [product] = await tx
-						.select()
-						.from(products)
-						.where(eq(products.id, item.product_id))
-						.limit(1);
-					if (product?.is_sellable_by_weight) {
-						await tx
-							.update(orderItems)
-							.set({
-								status: "PENDIENTE_PESAJE",
+
+					const isWeight = Boolean(product?.is_sellable_by_weight);
+					const quantityKg = isWeight ? Number(item.quantity_kg ?? 0) : 0;
+					const quantityPieces = isWeight ? 0 : (item.quantity_pieces ?? 0);
+					const itemUpdate = isWeight
+						? {
+								status: "PENDIENTE_PESAJE" as const,
 								updated_at: new Date(),
-							})
-							.where(eq(orderItems.id, item.id));
+							}
+						: {
+								status: "COMPLETADO" as const,
+								subtotal: String(
+									Math.round(quantityPieces * Number(item.unit_price ?? 0)),
+								),
+								updated_at: new Date(),
+							};
+
+					const [updatedItem] = await tx
+						.update(orderItems)
+						.set(itemUpdate)
+						.where(
+							and(
+								eq(orderItems.id, item.id),
+								eq(orderItems.status, "PENDIENTE_COMPRA"),
+							),
+						)
+						.returning({ id: orderItems.id });
+					if (!updatedItem || !product) {
 						continue;
 					}
-					const subtotal =
-						(item.quantity_pieces ?? 0) * Number(item.unit_price ?? 0);
+					if (quantityPieces <= 0 && quantityKg <= 0) {
+						continue;
+					}
+
 					await tx
-						.update(orderItems)
+						.update(products)
 						.set({
-							status: "COMPLETADO",
-							subtotal: String(Math.round(subtotal)),
+							stock_pieces: (product.stock_pieces ?? 0) + quantityPieces,
+							stock_kg:
+								quantityKg > 0
+									? (Number(product.stock_kg ?? 0) + quantityKg).toFixed(3)
+									: product.stock_kg,
 							updated_at: new Date(),
 						})
-						.where(eq(orderItems.id, item.id));
+						.where(eq(products.id, product.id));
+					await tx.insert(inventoryTransactions).values({
+						product_id: product.id,
+						quantity_change_pieces: quantityPieces > 0 ? quantityPieces : null,
+						quantity_change_kg: quantityKg > 0 ? quantityKg.toFixed(3) : null,
+						transaction_type: "COMPRA",
+						reference_id: order.id,
+						notes: `Compra recibida pedido #${order.id}, línea #${item.id}`,
+					});
 				}
 
 				const remaining = await tx
