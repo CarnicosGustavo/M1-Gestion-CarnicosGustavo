@@ -2013,4 +2013,146 @@ describe("orders R4-13 — Compra recibida suma stock", () => {
 			);
 		expect(supplierHistory).toHaveLength(0);
 	});
+
+	async function createWeightOnlyFaltante(quantityKg = 2000) {
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "0",
+		});
+		return caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					requiresPurchase: true,
+					quantityKg,
+				},
+			],
+		});
+	}
+
+	it("P28-R2-1: canEdit es false y replaceItems rechaza si hay compra recibida aún no pesada", async () => {
+		const order = await createWeightOnlyFaltante(2000);
+		const before = await caller.get({ id: order.id });
+		expect(before?.canEdit).toBe(true);
+		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_COMPRA");
+
+		await caller.receivePurchase({ orderId: order.id });
+		const itemsAfterReceive = await getItems(order.id);
+		expect(itemsAfterReceive).toHaveLength(1);
+		expect(itemsAfterReceive[0]?.status).toBe("PENDIENTE_PESAJE");
+		const itemId = itemsAfterReceive[0]!.id;
+		expect(await stockKg()).toBe(0);
+
+		const detail = await caller.get({ id: order.id });
+		expect(detail?.canEdit).toBe(false);
+
+		await expect(
+			caller.replaceItems({
+				orderId: order.id,
+				items: [
+					{
+						productId: weightProductId,
+						productName: "Producto peso RP",
+						quantityPieces: 0,
+						quantityKg: 3,
+						unitPrice: 10000,
+					},
+				],
+			}),
+		).rejects.toThrow(/compra recibida pendiente de pesaje o cobro/i);
+
+		const itemsAfterEdit = await getItems(order.id);
+		expect(itemsAfterEdit).toHaveLength(1);
+		expect(itemsAfterEdit[0]?.id).toBe(itemId);
+		expect(itemsAfterEdit[0]?.status).toBe("PENDIENTE_PESAJE");
+		const moves = await purchaseMoves(order.id);
+		expect(moves).toHaveLength(1);
+		expect(moves[0]?.reference_id).toBe(order.id);
+		expect(moves[0]?.quantity_change_kg).toBeNull();
+		expect(await stockKg()).toBe(0);
+	});
+
+	it("P28-R2-1: también bloquea la edición después de pesar y antes de cobrar", async () => {
+		const order = await createWeightOnlyFaltante(2000);
+		await caller.receivePurchase({ orderId: order.id });
+		const weightItem = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_PESAJE",
+		);
+		await caller.updateOrderItemWeight({
+			orderItemId: weightItem!.id,
+			actualWeightGrams: 2000,
+		});
+		expect(await stockKg()).toBe(2);
+		const detail = await caller.get({ id: order.id });
+		expect(detail?.canEdit).toBe(false);
+		await expect(
+			caller.replaceItems({
+				orderId: order.id,
+				items: [
+					{
+						productId: weightProductId,
+						productName: "Producto peso RP",
+						quantityPieces: 0,
+						quantityKg: 1,
+						unitPrice: 10000,
+					},
+				],
+			}),
+		).rejects.toThrow(/compra recibida pendiente de pesaje o cobro/i);
+		expect((await getItems(order.id))[0]?.id).toBe(weightItem!.id);
+		expect((await getItems(order.id))[0]?.status).toBe("PESADO");
+		expect(await stockKg()).toBe(2);
+	});
+
+	it("P28-R2-2: el pesaje rechaza un pedido cancelado y no suma stock", async () => {
+		const order = await createWeightOnlyFaltante(2000);
+		await caller.receivePurchase({ orderId: order.id });
+		const weightItem = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_PESAJE",
+		);
+		expect(weightItem).toBeDefined();
+		const createdAt = (await purchaseMoves(order.id))[0]?.created_at;
+
+		await caller.update({ id: order.id, status: "cancelled" });
+		expect((await getOrder(order.id))?.status).toBe("cancelled");
+
+		await expect(
+			caller.updateOrderItemWeight({
+				orderItemId: weightItem!.id,
+				actualWeightGrams: 2000,
+			}),
+		).rejects.toThrow(/cancelado, completado o en cobro/i);
+
+		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
+		expect((await getOrder(order.id))?.status).toBe("cancelled");
+		expect(await stockKg()).toBe(0);
+		const moves = await purchaseMoves(order.id);
+		expect(moves[0]?.quantity_change_kg).toBeNull();
+		expect(moves[0]?.created_at?.getTime()).toBe(createdAt?.getTime());
+	});
+
+	it("P28-R2-2: el pesaje también rechaza un pedido cerrado COMPLETADA", async () => {
+		const order = await createWeightOnlyFaltante(2000);
+		await caller.receivePurchase({ orderId: order.id });
+		const weightItem = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_PESAJE",
+		);
+		await db
+			.update(orders)
+			.set({ status: "COMPLETADA" })
+			.where(eq(orders.id, order.id));
+
+		await expect(
+			caller.updateOrderItemWeight({
+				orderItemId: weightItem!.id,
+				actualWeightGrams: 2500,
+			}),
+		).rejects.toThrow(/cancelado, completado o en cobro/i);
+
+		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
+		expect(await stockKg()).toBe(0);
+	});
 });

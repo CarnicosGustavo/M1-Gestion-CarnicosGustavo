@@ -37,6 +37,16 @@ const sheetInput = z.object({
 // Mapea cuántos canales de cada tipo deja una compra: 1 cerdo americano = 1
 // CANAL AMERICANO (canal completo); 1 cerdo nacional = 1 lado Lomo + 1 lado
 // Espilomo. Devuelve cuántos "comprados" corresponden al nombre del canal.
+
+/** Normaliza db.execute: node-postgres/`pg` devuelve un array; PGlite, { rows }. */
+function executeRows<T>(res: unknown): T[] {
+	if (Array.isArray(res)) return res as T[];
+	if (res && typeof res === "object" && "rows" in res) {
+		return ((res as { rows?: T[] }).rows ?? []) as T[];
+	}
+	return [];
+}
+
 function purchasedForCanal(name: string, amer: number, nac: number): number {
 	const n = name.toUpperCase();
 	if (n.includes("AMERICANO")) return amer;
@@ -465,7 +475,15 @@ export const yieldsRouter = router({
 	supplierPurchaseHistory: protectedProcedure
 		.input(z.object({ date: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const res = (await db.execute(sql`
+			const res = executeRows<{
+				id: number;
+				name: string;
+				pieces: number | null;
+				kg: string | null;
+				notes: string | null;
+				created_at: string;
+			}>(
+				await db.execute(sql`
 				SELECT it.id, p.name, it.quantity_change_pieces AS pieces,
 				       it.quantity_change_kg AS kg, it.notes, it.created_at
 				FROM inventory_transactions it
@@ -475,14 +493,8 @@ export const yieldsRouter = router({
 				  AND it.reference_id IS NULL
 				  AND it.created_at::date = ${input.date}
 				ORDER BY it.created_at DESC
-			`)) as unknown as {
-				id: number;
-				name: string;
-				pieces: number | null;
-				kg: string | null;
-				notes: string | null;
-				created_at: string;
-			}[];
+			`),
+			);
 			return res.map((r) => ({
 				id: Number(r.id),
 				name: r.name,
@@ -579,7 +591,16 @@ export const yieldsRouter = router({
 			}),
 		)
 		.query(async ({ ctx, input }) => {
-			const res = (await db.execute(sql`
+			const res = executeRows<{
+				pid: number;
+				name: string;
+				category: string | null;
+				entro_pz: number;
+				entro_kg: string | number;
+				salio_pz: number;
+				salio_kg: string | number;
+			}>(
+				await db.execute(sql`
 				SELECT p.id AS pid, p.name, p.category,
 					COALESCE(SUM(CASE WHEN it.transaction_type IN ('DESPIECE','PRODUCCION','PESAJE','COMPRA') AND it.quantity_change_pieces > 0 THEN it.quantity_change_pieces ELSE 0 END),0)::int AS entro_pz,
 					COALESCE(SUM(CASE WHEN it.transaction_type IN ('DESPIECE','PRODUCCION','PESAJE','COMPRA') AND COALESCE(it.quantity_change_kg,0) > 0 THEN it.quantity_change_kg ELSE 0 END),0) AS entro_kg,
@@ -591,15 +612,8 @@ export const yieldsRouter = router({
 				  AND it.created_at::date = ${input.date}
 				GROUP BY p.id, p.name, p.category
 				ORDER BY p.name
-			`)) as unknown as {
-				pid: number;
-				name: string;
-				category: string | null;
-				entro_pz: number;
-				entro_kg: string | number;
-				salio_pz: number;
-				salio_kg: string | number;
-			}[];
+			`),
+			);
 
 			const rows = res
 				.map((r) => ({
