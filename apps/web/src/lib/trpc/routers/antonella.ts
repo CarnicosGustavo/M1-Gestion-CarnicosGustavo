@@ -1845,7 +1845,7 @@ export const antonicellaRouter = router({
 				FROM order_items oi JOIN orders o ON o.id = oi.order_id
 				WHERE o.user_uid = ${uid}
 				  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
-				  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO')
+				  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO','COBRADO')
 			`)) as unknown as { pz: number }[];
 			const demandPz = Number(demand[0]?.pz ?? 0);
 			if (demandPz > 0) {

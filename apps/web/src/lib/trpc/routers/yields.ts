@@ -649,7 +649,7 @@ export const yieldsRouter = router({
 				SELECT oi.product_id AS pid, COALESCE(SUM(oi.quantity_kg),0) AS kg
 				FROM order_items oi
 				JOIN orders o ON o.id = oi.order_id
-				WHERE oi.status = 'PESADO'
+				WHERE oi.status IN ('PESADO','COBRADO')
 				  AND oi.product_id IS NOT NULL
 				  AND o.created_at::date = ${input.date}
 				GROUP BY oi.product_id
@@ -803,7 +803,7 @@ export const yieldsRouter = router({
 			JOIN orders o ON o.id = oi.order_id
 			WHERE oi.product_id IS NOT NULL
 			  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
-			  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO')
+			  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO','COBRADO')
 			GROUP BY oi.product_id
 		`)) as unknown as { pid: number; pieces: number; kg: string | number }[];
 		const demandByProduct: Record<number, { pieces: number; kg: number }> = {};
@@ -902,7 +902,7 @@ export const yieldsRouter = router({
 				JOIN orders o ON o.id = oi.order_id
 				WHERE oi.product_id IS NOT NULL
 				  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
-				  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO')
+				  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO','COBRADO')
 				GROUP BY oi.product_id
 			`)) as unknown as { pid: number; pieces: number }[];
 			const demand = new Map<number, number>();
