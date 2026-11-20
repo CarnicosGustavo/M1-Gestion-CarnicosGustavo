@@ -61,36 +61,33 @@ export const ticketsRouter = router({
 			const totalCents = Number(order.total_amount) || 0;
 			const totalPesos = totalCents / 100;
 
-			// Estado de cobro del pedido:
-			//  - Si hay una transacción de venta (contado): PAGADO = total.
-			//  - Si hay un cargo en cuenta por cobrar (crédito): POR COBRAR = total.
-			//  - Si no hay ninguno (aún no se cobra): POR COBRAR = total.
-			const [txn] = await db
-				.select({ id: transactions.id })
+			// R4-5: amountPaid es la suma real de ingresos de contado (centavos →
+			// pesos), no el total del pedido. amountDue = total − cobrado − crédito.
+			const incomeRows = await db
+				.select({ amount: transactions.amount })
 				.from(transactions)
 				.where(
 					and(
 						eq(transactions.order_id, order.id),
 						eq(transactions.type, "income"),
 					),
-				)
-				.limit(1);
-			const charge = order.customer_id
-				? await db.query.creditCharges.findFirst({
-						where: eq(creditCharges.order_id, order.id),
-					})
-				: null;
+				);
+			const creditRows = await db
+				.select({ amount: creditCharges.amount })
+				.from(creditCharges)
+				.where(eq(creditCharges.order_id, order.id));
 
-			let amountPaid = 0;
-			let amountDue = totalPesos;
+			const amountPaid =
+				incomeRows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0) / 100;
+			const creditPesos = creditRows.reduce(
+				(sum, row) => sum + Number(row.amount ?? 0),
+				0,
+			);
+			const amountDue = Math.max(0, totalPesos - amountPaid - creditPesos);
 			let paymentStatus: "PAGADO" | "CREDITO" | "PENDIENTE" = "PENDIENTE";
-			if (txn) {
-				amountPaid = totalPesos;
-				amountDue = 0;
+			if (amountPaid > 0) {
 				paymentStatus = "PAGADO";
-			} else if (charge) {
-				amountPaid = 0;
-				amountDue = totalPesos;
+			} else if (creditPesos > 0) {
 				paymentStatus = "CREDITO";
 			}
 

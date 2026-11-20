@@ -34,6 +34,15 @@ export function chargeableSubtotalCents(
 	}, 0);
 }
 
+export function chargedSubtotalCents(
+	items: readonly OrderItemForCharge[],
+): number {
+	return items.reduce((total, item) => {
+		if (!isChargedItem(item)) return total;
+		return total + Math.round(Number(item.subtotal ?? 0));
+	}, 0);
+}
+
 export function nextStatusAfterCharge(
 	items: readonly OrderItemForCharge[],
 ): OrderStatusAfterCharge {
