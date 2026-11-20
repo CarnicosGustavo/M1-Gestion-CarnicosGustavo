@@ -6,7 +6,9 @@ mock.module("@/lib/db", () => ({ db, pglite: pg }));
 
 const { dashboardRouter } = await import("../dashboard");
 const { createCallerFactory } = await import("../../init");
-const { transactions } = await import("@/lib/db/schema");
+const { transactions, products, orders, orderItems } = await import(
+	"@/lib/db/schema"
+);
 
 const caller = createCallerFactory(dashboardRouter)({
 	user: makeUser("user-1"),
@@ -209,5 +211,123 @@ describe("dashboard.stats", () => {
 		expect(pmMap["2025-01-16"]).toBe(60);
 		// "unknown": ingreso=25, gasto=0 → 100
 		expect(pmMap.unknown).toBe(100);
+	});
+
+	it("R4-2: dos cobros del mismo pedido no duplican el ingreso por categoría", async () => {
+		const [product] = await db
+			.insert(products)
+			.values({
+				name: "Pieza dashboard",
+				category: "res",
+				user_uid: "user-1",
+				is_sellable_by_unit: true,
+				stock_pieces: 10,
+				stock_kg: "0",
+			})
+			.returning();
+		const [order] = await db
+			.insert(orders)
+			.values({
+				status: "PARCIAL_DISPONIBLE",
+				total_amount: "16000",
+				user_uid: "user-1",
+			})
+			.returning();
+		await db.insert(orderItems).values([
+			{
+				order_id: order.id,
+				product_id: product.id,
+				product_name: product.name,
+				quantity_pieces: 2,
+				unit_price: "10000",
+				subtotal: "10000",
+				status: "COBRADO",
+			},
+			{
+				order_id: order.id,
+				product_id: product.id,
+				product_name: product.name,
+				quantity_pieces: 3,
+				unit_price: "6000",
+				subtotal: "6000",
+				status: "COBRADO",
+			},
+		]);
+		await db.insert(transactions).values([
+			{
+				description: "parcial",
+				order_id: order.id,
+				amount: 10000,
+				user_uid: "user-1",
+				type: "income",
+				category: "selling",
+				status: "completed",
+			},
+			{
+				description: "final",
+				order_id: order.id,
+				amount: 6000,
+				user_uid: "user-1",
+				type: "income",
+				category: "selling",
+				status: "completed",
+			},
+		]);
+
+		const { revenueByCategory } = await caller.stats();
+		// Subtotales 10000+6000=16000, no 32000 por el join 2 txs × 2 líneas.
+		expect(revenueByCategory.res).toBe(16000);
+	});
+
+	it("R5-4: la rama histórica cuenta estados cerrados y no LISTA_PARA_COBRO", async () => {
+		const [product] = await db
+			.insert(products)
+			.values({
+				name: "Pieza cerdo legado",
+				category: "cerdo",
+				user_uid: "user-1",
+				is_sellable_by_unit: true,
+				stock_pieces: 20,
+				stock_kg: "0",
+			})
+			.returning();
+		const legacyStatuses = [
+			"completed",
+			"paid",
+			"delivered",
+			"COMPLETADA",
+			"LISTA_PARA_COBRO",
+		] as const;
+		for (const status of legacyStatuses) {
+			const [order] = await db
+				.insert(orders)
+				.values({
+					status,
+					total_amount: "3000",
+					user_uid: "user-1",
+				})
+				.returning();
+			await db.insert(orderItems).values({
+				order_id: order.id,
+				product_id: product.id,
+				product_name: product.name,
+				quantity_pieces: 1,
+				unit_price: "3000",
+				subtotal: "3000",
+				status: "COMPLETADO",
+			});
+			await db.insert(transactions).values({
+				description: `legado ${status}`,
+				order_id: order.id,
+				amount: 3000,
+				user_uid: "user-1",
+				type: "income",
+				category: "selling",
+				status: "completed",
+			});
+		}
+
+		const { revenueByCategory } = await caller.stats();
+		expect(revenueByCategory.cerdo).toBe(12000);
 	});
 });

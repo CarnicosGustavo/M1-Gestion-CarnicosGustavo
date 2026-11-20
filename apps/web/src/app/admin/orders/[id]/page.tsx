@@ -205,6 +205,22 @@ export default function OrderDetailPage({
 		}),
 	);
 
+	const receivePurchaseMutation = useMutation(
+		trpc.orders.receivePurchase.mutationOptions({
+			onSuccess: (result) => {
+				toast.success(
+					result.status === "PENDIENTE_PESAJE"
+						? "Compra recibida: las líneas por peso pasan a báscula"
+						: "Compra recibida: ya puedes cobrar el resto",
+				);
+				refetch();
+				queryClient.invalidateQueries({ queryKey: invalidateKey });
+			},
+			onError: (err: any) =>
+				toast.error(err.message ?? "No se pudo registrar la compra recibida"),
+		}),
+	);
+
 	const openPay = () => {
 		setPayMethodId(paymentMethods?.[0]?.id?.toString() ?? "");
 		setPayType("contado");
@@ -279,7 +295,6 @@ export default function OrderDetailPage({
 				unitPrice: Number.parseFloat(r.price) || 0,
 			}));
 		const allowed = [
-			"COMPLETADA",
 			"pending",
 			"cancelled",
 			"PENDIENTE_PESAJE",
@@ -318,7 +333,45 @@ export default function OrderDetailPage({
 	const base = getStatusDisplay(order.status);
 	const statusLabel = isProduction ? "Producción → inventario" : base.label;
 	const statusColor = isProduction ? "text-purple-600" : base.color;
-	const canCharge = order.status === "LISTA_PARA_COBRO" && !isProduction;
+	const hasChargeableItems = (order.orderItems ?? []).some((item: any) =>
+		["COMPLETADO", "PESADO", "WEIGHED"].includes(item.status),
+	);
+	const hasPendingPurchase = (order.orderItems ?? []).some(
+		(item: any) => item.status === "PENDIENTE_COMPRA",
+	);
+	const hasChargedLines = (order.orderItems ?? []).some(
+		(item: any) => item.status === "COBRADO",
+	);
+	const canReplaceItems =
+		order.canEdit === true
+			? true
+			: order.canEdit === false
+				? false
+				: !hasChargedLines && (order.chargeCount ?? 0) <= 1;
+	const canReceivePurchase =
+		hasPendingPurchase &&
+		!isProduction &&
+		order.status !== "cancelled" &&
+		order.status !== "COMPLETADA" &&
+		order.status !== "PROCESANDO_PAGO";
+	const chargeableCents = (order.orderItems ?? [])
+		.filter((item: any) =>
+			["COMPLETADO", "PESADO", "WEIGHED"].includes(item.status),
+		)
+		.reduce(
+			(sum: number, item: any) => sum + Math.round(Number(item.subtotal ?? 0)),
+			0,
+		);
+	const alreadyChargedCents = (order.orderItems ?? [])
+		.filter((item: any) => item.status === "COBRADO")
+		.reduce(
+			(sum: number, item: any) => sum + Math.round(Number(item.subtotal ?? 0)),
+			0,
+		);
+	const canCharge =
+		!isProduction &&
+		(order.status === "LISTA_PARA_COBRO" ||
+			(order.status === "PARCIAL_DISPONIBLE" && hasChargeableItems));
 
 	// Estimación de costo de items aún no pesados (piezas × peso promedio × precio/kg)
 	const avgWeightMap = new Map<number, number>();
@@ -370,7 +423,27 @@ export default function OrderDetailPage({
 							onClick={openPay}
 						>
 							<BanknoteIcon className="mr-2 h-4 w-4" />
-							Liquidar / Cobrar
+							{order.status === "PARCIAL_DISPONIBLE"
+								? "Cobrar lo disponible"
+								: "Liquidar / Cobrar"}
+						</Button>
+					)}
+					{canReceivePurchase && (
+						<Button
+							size="sm"
+							variant="outline"
+							disabled={receivePurchaseMutation.isPending}
+							onClick={() => {
+								const ok = window.confirm(
+									"¿Registrar la compra recibida de todas las líneas pendientes? Las líneas por peso pasarán a la báscula y después se cobran por separado.",
+								);
+								if (!ok) return;
+								receivePurchaseMutation.mutate({ orderId });
+							}}
+						>
+							{receivePurchaseMutation.isPending
+								? "Registrando…"
+								: "Compra recibida"}
 						</Button>
 					)}
 					{order.status === "COMPLETADA" && !isProduction && (
@@ -393,7 +466,23 @@ export default function OrderDetailPage({
 						<PrinterIcon className="mr-2 h-4 w-4" />
 						Imprimir Ticket
 					</Button>
-					<Button variant="outline" size="sm" onClick={openEdit}>
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={openEdit}
+						disabled={!canReplaceItems}
+						title={
+							canReplaceItems
+								? undefined
+								: hasChargedLines
+									? "No se puede editar un pedido con líneas ya cobradas"
+									: (order.chargeCount ?? 0) > 1
+										? "Pedido con varios cobros: edítalo desde soporte"
+										: order.status === "PROCESANDO_PAGO"
+											? "No se puede editar un pedido en cobro"
+											: "No se puede editar este pedido"
+						}
+					>
 						<FilePenIcon className="mr-2 h-4 w-4" />
 						{tc("edit")}
 					</Button>
@@ -536,21 +625,25 @@ export default function OrderDetailPage({
 												? "text-green-600 bg-green-50"
 												: item.status === "PESADO"
 													? "text-blue-600 bg-blue-50"
-													: item.status === "PENDIENTE_PESAJE"
-														? "text-yellow-600 bg-yellow-50"
-														: item.status === "PENDIENTE_COMPRA"
-															? "text-red-600 bg-red-50"
-															: "text-gray-600 bg-gray-50";
+													: item.status === "COBRADO"
+														? "text-emerald-800 bg-emerald-50"
+														: item.status === "PENDIENTE_PESAJE"
+															? "text-yellow-600 bg-yellow-50"
+															: item.status === "PENDIENTE_COMPRA"
+																? "text-red-600 bg-red-50"
+																: "text-gray-600 bg-gray-50";
 										const statusLabel =
 											item.status === "COMPLETADO"
 												? "Completado"
 												: item.status === "PESADO"
 													? "Pesado"
-													: item.status === "PENDIENTE_PESAJE"
-														? "Por Pesar"
-														: item.status === "PENDIENTE_COMPRA"
-															? "Pendiente Compra"
-															: item.status;
+													: item.status === "COBRADO"
+														? "Cobrado"
+														: item.status === "PENDIENTE_PESAJE"
+															? "Por Pesar"
+															: item.status === "PENDIENTE_COMPRA"
+																? "Pendiente Compra"
+																: item.status;
 										return (
 											<TableRow key={item.id}>
 												<TableCell className="font-medium">
@@ -696,7 +789,6 @@ export default function OrderDetailPage({
 									<SelectItem value="LISTA_PARA_COBRO">
 										Lista para cobro
 									</SelectItem>
-									<SelectItem value="COMPLETADA">Pagada</SelectItem>
 									<SelectItem value="cancelled">Cancelada</SelectItem>
 								</SelectContent>
 							</Select>
@@ -872,16 +964,34 @@ export default function OrderDetailPage({
 			<Dialog open={payOpen} onOpenChange={(o) => !o && setPayOpen(false)}>
 				<DialogContent>
 					<DialogHeader>
-						<DialogTitle>Liquidar pedido #{order.id}</DialogTitle>
+						<DialogTitle>
+							{alreadyChargedCents > 0 && !hasPendingPurchase
+								? `Cobro final pedido #${order.id}`
+								: hasPendingPurchase || alreadyChargedCents > 0
+									? `Cobro parcial pedido #${order.id}`
+									: `Liquidar pedido #${order.id}`}
+						</DialogTitle>
 					</DialogHeader>
 					<div className="grid gap-4 py-2">
-						<div className="rounded-lg bg-slate-50 p-3">
-							<div className="text-muted-foreground text-xs">
-								Total a cobrar
+						<div className="space-y-2 rounded-lg bg-slate-50 p-3">
+							<div>
+								<div className="text-muted-foreground text-xs">
+									Total a cobrar
+								</div>
+								<div className="font-bold text-2xl">
+									{formatCurrency(chargeableCents, locale)}
+								</div>
 							</div>
-							<div className="font-bold text-2xl">
-								{formatCurrency(order.total_amount, locale)}
-							</div>
+							{alreadyChargedCents > 0 ? (
+								<div>
+									<div className="text-muted-foreground text-xs">
+										Ya cobrado
+									</div>
+									<div className="font-semibold text-lg">
+										{formatCurrency(alreadyChargedCents, locale)}
+									</div>
+								</div>
+							) : null}
 						</div>
 						{/* Tipo de cobro */}
 						<div className="space-y-1">
@@ -931,8 +1041,8 @@ export default function OrderDetailPage({
 						)}
 						<p className="text-muted-foreground text-xs">
 							{payType === "contado"
-								? "Al liquidar se descuenta el inventario y se registra el cobro."
-								: "Se descuenta el inventario y el total queda como cuenta por cobrar en Cobranza."}
+								? "Al liquidar se descuenta el inventario y se registra el cobro de las líneas disponibles."
+								: "Se descuenta el inventario y el importe de las líneas disponibles queda como cuenta por cobrar en Cobranza."}
 						</p>
 					</div>
 					<DialogFooter>

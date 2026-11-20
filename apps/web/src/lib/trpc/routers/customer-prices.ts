@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
@@ -9,19 +10,35 @@ import {
 } from "@/lib/db/schema";
 import { protectedProcedure, router } from "../init";
 
+function toNumOrNull(value: number | string | null | undefined): number | null {
+	if (value === null || value === undefined) return null;
+	const n = typeof value === "number" ? value : Number(value);
+	return Number.isFinite(n) ? n : null;
+}
+
 export const customerPricesRouter = router({
-	// Lista TODOS los productos del usuario con el precio guardado del cliente (si existe)
 	getByCustomer: protectedProcedure
 		.input(z.object({ customerId: z.number() }))
 		.query(async ({ ctx, input }) => {
-			// Lista de precios asignada al cliente (del diseño). Si la tiene, sus
-			// precios caen a esa lista cuando no hay precio propio del cliente.
 			const [cust] = await db
 				.select({ priceListId: customers.price_list_id })
 				.from(customers)
-				.where(eq(customers.id, input.customerId))
+				.where(
+					and(
+						eq(customers.id, input.customerId),
+						eq(customers.user_uid, ctx.user.id),
+					),
+				)
 				.limit(1);
-			const listId = cust?.priceListId ?? -1;
+
+			if (!cust) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Cliente no encontrado",
+				});
+			}
+
+			const listId = cust.priceListId ?? -1;
 
 			const rows = await db
 				.select({
@@ -53,27 +70,31 @@ export const customerPricesRouter = router({
 				.where(eq(products.user_uid, ctx.user.id))
 				.orderBy(products.category, products.name);
 
-			return rows.map((r) => ({
-				productId: r.productId,
-				productName: r.productName,
-				category: r.category,
-				// Prioridad: precio propio del cliente → lista asignada → precio base.
+			return rows.map((row) => ({
+				productId: row.productId,
+				productName: row.productName,
+				category: row.category,
 				pricePerKg:
-					r.customerPricePerKg ??
-					(r.listPricePerKg != null ? String(r.listPricePerKg) : null) ??
-					r.basePricePerKg ??
+					row.customerPricePerKg ??
+					(row.listPricePerKg != null ? String(row.listPricePerKg) : null) ??
+					row.basePricePerKg ??
 					null,
 				pricePerPiece:
-					r.customerPricePerPiece ??
-					(r.listPricePerPiece != null ? String(r.listPricePerPiece) : null) ??
-					r.basePricePerPiece ??
+					row.customerPricePerPiece ??
+					(row.listPricePerPiece != null
+						? String(row.listPricePerPiece)
+						: null) ??
+					row.basePricePerPiece ??
 					null,
 				hasCustomPrice:
-					r.customerPricePerKg != null || r.customerPricePerPiece != null,
+					row.customerPricePerKg != null || row.customerPricePerPiece != null,
+				customerPricePerKg: toNumOrNull(row.customerPricePerKg),
+				customerPricePerPiece: toNumOrNull(row.customerPricePerPiece),
+				listPricePerKg: toNumOrNull(row.listPricePerKg),
+				listPricePerPiece: toNumOrNull(row.listPricePerPiece),
 			}));
 		}),
 
-	// Guarda (upsert) los precios de un cliente para varios productos
 	bulkUpsert: protectedProcedure
 		.input(
 			z.object({
@@ -89,26 +110,27 @@ export const customerPricesRouter = router({
 		)
 		.mutation(async ({ input }) => {
 			let saved = 0;
-			for (const it of input.items) {
-				// Si ambos precios son nulos, no guardamos override
-				if (it.pricePerKg == null && it.pricePerPiece == null) continue;
+			for (const item of input.items) {
+				if (item.pricePerKg == null && item.pricePerPiece == null) continue;
 				await db
 					.insert(customerPrices)
 					.values({
 						customer_id: input.customerId,
-						product_id: it.productId,
+						product_id: item.productId,
 						price_per_kg:
-							it.pricePerKg != null ? it.pricePerKg.toFixed(2) : null,
+							item.pricePerKg != null ? item.pricePerKg.toFixed(2) : null,
 						price_per_piece:
-							it.pricePerPiece != null ? it.pricePerPiece.toFixed(2) : null,
+							item.pricePerPiece != null ? item.pricePerPiece.toFixed(2) : null,
 					})
 					.onConflictDoUpdate({
 						target: [customerPrices.customer_id, customerPrices.product_id],
 						set: {
 							price_per_kg:
-								it.pricePerKg != null ? it.pricePerKg.toFixed(2) : null,
+								item.pricePerKg != null ? item.pricePerKg.toFixed(2) : null,
 							price_per_piece:
-								it.pricePerPiece != null ? it.pricePerPiece.toFixed(2) : null,
+								item.pricePerPiece != null
+									? item.pricePerPiece.toFixed(2)
+									: null,
 							updated_at: sql`now()`,
 						},
 					});

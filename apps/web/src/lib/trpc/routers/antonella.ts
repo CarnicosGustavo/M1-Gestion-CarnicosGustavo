@@ -23,6 +23,12 @@ import {
 	products,
 	productTransformations,
 } from "@/lib/db/schema";
+import {
+	CLOSED_ORDER_STATUS_SQL,
+	sqlOpenOrder,
+	sqlUnsatisfiedItem,
+	UNSATISFIED_ITEM_STATUS_SQL,
+} from "@/lib/orders/demand-sql";
 import { protectedProcedure, router } from "../init";
 
 // System prompt por defecto (precargado). El usuario lo puede editar en
@@ -1177,8 +1183,8 @@ async function getDemand(period: string, userId: string): Promise<string> {
 		.where(
 			and(
 				eq(orders.user_uid, userId),
-				// Status NOT IN (cancelled, completed, delivered, paid) — solo valores válidos del enum order_status
-				sql`${orders.status} NOT IN ('cancelled', 'completed', 'COMPLETADA', 'delivered', 'paid')`,
+				sql`${orders.status} NOT IN (${sql.raw(CLOSED_ORDER_STATUS_SQL)})`,
+				sql`${orderItems.status} NOT IN (${sql.raw(UNSATISFIED_ITEM_STATUS_SQL)})`,
 				sql`${orders.created_at} >= ${startDate.toISOString()}`,
 			),
 		);
@@ -1314,7 +1320,8 @@ async function getCoverage(userId: string): Promise<string> {
 		.where(
 			and(
 				eq(orders.user_uid, userId),
-				sql`${orders.status} NOT IN ('cancelled', 'completed', 'COMPLETADA', 'delivered', 'paid')`,
+				sql`${orders.status} NOT IN (${sql.raw(CLOSED_ORDER_STATUS_SQL)})`,
+				sql`${orderItems.status} NOT IN (${sql.raw(UNSATISFIED_ITEM_STATUS_SQL)})`,
 			),
 		)
 		.groupBy(products.name);
@@ -1825,7 +1832,7 @@ export const antonicellaRouter = router({
 				SELECT count(DISTINCT o.id) AS n
 				FROM orders o JOIN order_items oi ON oi.order_id = o.id
 				WHERE o.user_uid = ${uid}
-				  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
+				  AND ${sqlOpenOrder}
 				  AND oi.status IN ('PENDIENTE_PESAJE','PENDING')
 			`)) as unknown as { n: number }[];
 			const weighN = Number(weigh[0]?.n ?? 0);
@@ -1844,8 +1851,8 @@ export const antonicellaRouter = router({
 				SELECT COALESCE(SUM(oi.quantity_pieces),0)::int AS pz
 				FROM order_items oi JOIN orders o ON o.id = oi.order_id
 				WHERE o.user_uid = ${uid}
-				  AND o.status NOT IN ('cancelled','completed','COMPLETADA','delivered','paid')
-				  AND oi.status NOT IN ('PESADO','WEIGHED','COMPLETADO')
+				  AND ${sqlOpenOrder}
+				  AND ${sqlUnsatisfiedItem}
 			`)) as unknown as { pz: number }[];
 			const demandPz = Number(demand[0]?.pz ?? 0);
 			if (demandPz > 0) {

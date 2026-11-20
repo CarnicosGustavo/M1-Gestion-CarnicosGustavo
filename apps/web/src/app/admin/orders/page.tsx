@@ -65,7 +65,6 @@ import { formatCurrency } from "@/lib/utils";
 type Order = RouterOutputs["orders"]["list"][number];
 // Estados que acepta orders.update (ver routers/orders.ts).
 const EDITABLE_ORDER_STATUSES = [
-	"COMPLETADA",
 	"pending",
 	"cancelled",
 	"PENDIENTE_PESAJE",
@@ -73,12 +72,24 @@ const EDITABLE_ORDER_STATUSES = [
 ] as const;
 type OrderStatus = (typeof EDITABLE_ORDER_STATUSES)[number];
 
-// "completed" es el valor heredado; el flujo actual usa "COMPLETADA".
 function toEditableStatus(status: string | null): OrderStatus | "" {
-	const s = status === "completed" ? "COMPLETADA" : (status ?? "pending");
+	const s = status ?? "pending";
 	return (EDITABLE_ORDER_STATUSES as readonly string[]).includes(s)
 		? (s as OrderStatus)
 		: "";
+}
+
+const STATUS_CHANGE_LOCKED = [
+	"COMPLETADA",
+	"paid",
+	"completed",
+	"delivered",
+	"cancelled",
+	"PROCESANDO_PAGO",
+] as const;
+
+function isStatusChangeLocked(status: string | null): boolean {
+	return (STATUS_CHANGE_LOCKED as readonly string[]).includes(status ?? "");
 }
 
 // Mapea cualquier estado interno a etiqueta y color visible en la lista
@@ -89,6 +100,8 @@ function getOrderStatusDisplay(status: string): {
 	switch (status) {
 		case "COMPLETADA":
 		case "completed":
+		case "paid":
+		case "delivered":
 			return { label: "Pagada", color: "text-green-600" };
 		case "LISTA_PARA_COBRO":
 			return { label: "Lista para cobro", color: "text-blue-600" };
@@ -226,6 +239,7 @@ export default function OrdersPage() {
 	const [searchTerm, setSearchTerm] = useState("");
 	const [statusFilter, setStatusFilter] = useState("all");
 	const [editCustomerName, setEditCustomerName] = useState("");
+	const [editStatusRaw, setEditStatusRaw] = useState<string>("pending");
 
 	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
 
@@ -377,6 +391,7 @@ export default function OrdersPage() {
 		form.reset();
 		form.setFieldValue("total", (Number(o.total_amount) / 100).toString());
 		form.setFieldValue("status", toEditableStatus(o.status));
+		setEditStatusRaw(o.status ?? "pending");
 		setIsDialogOpen(true);
 	};
 
@@ -709,23 +724,32 @@ export default function OrdersPage() {
 								{(field) => (
 									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="status">{tc("status")}</Label>
-										<Select
-											value={field.state.value}
-											onValueChange={(value) =>
-												field.handleChange(value as OrderStatus)
-											}
-										>
-											<SelectTrigger id="status" className="col-span-3">
-												<SelectValue placeholder={t("selectStatus")} />
-											</SelectTrigger>
-											<SelectContent>
-												{EDITABLE_ORDER_STATUSES.map((st) => (
-													<SelectItem key={st} value={st}>
-														{getOrderStatusDisplay(st).label}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
+										{isStatusChangeLocked(editStatusRaw) ? (
+											<span
+												id="status"
+												className={`col-span-3 ${getOrderStatusDisplay(editStatusRaw).color}`}
+											>
+												{getOrderStatusDisplay(editStatusRaw).label}
+											</span>
+										) : (
+											<Select
+												value={field.state.value}
+												onValueChange={(value) =>
+													field.handleChange(value as OrderStatus)
+												}
+											>
+												<SelectTrigger id="status" className="col-span-3">
+													<SelectValue placeholder={t("selectStatus")} />
+												</SelectTrigger>
+												<SelectContent>
+													{EDITABLE_ORDER_STATUSES.map((st) => (
+														<SelectItem key={st} value={st}>
+															{getOrderStatusDisplay(st).label}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										)}
 									</div>
 								)}
 							</form.Field>

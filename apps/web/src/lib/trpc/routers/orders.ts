@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
@@ -17,6 +17,12 @@ import {
 	transactions,
 } from "@/lib/db/schema";
 import { almacenProcedure, protectedProcedure, router } from "../init";
+import {
+	isChargeableItem,
+	isChargedItem,
+	nextStatusAfterCharge,
+	nextStatusAfterReceive,
+} from "./order-charge";
 
 const orderWithCustomerSchema = z.object({
 	id: z.number(),
@@ -116,6 +122,129 @@ const orderPrepareDisassemblyResultSchema = z.object({
 	ok: z.boolean(),
 });
 
+type OrdersTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function productIsDerivable(
+	tx: OrdersTx,
+	productId: number,
+	userId: string,
+): Promise<boolean> {
+	const links = await tx
+		.select({ parentId: productTransformations.parent_product_id })
+		.from(productTransformations)
+		.where(
+			and(
+				eq(productTransformations.child_product_id, productId),
+				eq(productTransformations.is_active, true),
+			),
+		);
+	if (links.length === 0) return false;
+	const parents = await tx
+		.select({
+			stock_pieces: products.stock_pieces,
+			stock_kg: products.stock_kg,
+		})
+		.from(products)
+		.where(
+			and(
+				inArray(
+					products.id,
+					links.map((link) => link.parentId),
+				),
+				eq(products.user_uid, userId),
+			),
+		);
+	return parents.some(
+		(parent) => (parent.stock_pieces ?? 0) > 0 || Number(parent.stock_kg) > 0,
+	);
+}
+
+function lineIsActuallyFaltante(
+	product: {
+		is_sellable_by_weight: boolean | null;
+		stock_pieces: number | null;
+		stock_kg: unknown;
+	},
+	item: { quantityPieces?: number; quantityKg?: number },
+	derivable: boolean,
+): boolean {
+	if (product.is_sellable_by_weight) {
+		const stockKg = Number(product.stock_kg ?? 0);
+		if (item.quantityKg && item.quantityKg > 0) {
+			if (item.quantityKg / 1000 <= stockKg) return false;
+			return !derivable;
+		}
+		if (stockKg > 0) return false;
+		return !derivable;
+	}
+	if ((item.quantityPieces ?? 0) <= (product.stock_pieces ?? 0)) return false;
+	return !derivable;
+}
+
+async function deductStockAndMarkCharged(
+	tx: OrdersTx,
+	items: {
+		id: number;
+		status: string | null;
+		subtotal: string | number | null;
+		product_id: number | null;
+		quantity_kg: string | number | null;
+		quantity_pieces: number | null;
+	}[],
+	orderId: number,
+	notes: string,
+): Promise<number> {
+	let cents = 0;
+	for (const item of items) {
+		if (!isChargeableItem(item)) continue;
+		cents += Math.round(Number(item.subtotal ?? 0));
+		if (item.product_id) {
+			const [product] = await tx
+				.select()
+				.from(products)
+				.where(eq(products.id, item.product_id))
+				.limit(1);
+			if (product) {
+				const itemQuantityKg = item.quantity_kg ? Number(item.quantity_kg) : 0;
+				const newStockKg = Number(product.stock_kg) - itemQuantityKg;
+				const nextPieces =
+					product.is_sellable_by_weight || !item.quantity_pieces
+						? (product.stock_pieces ?? 0)
+						: (product.stock_pieces ?? 0) - item.quantity_pieces;
+				const nextWeighedPieces = Math.min(
+					product.weighed_pieces ?? 0,
+					nextPieces,
+				);
+				await tx
+					.update(products)
+					.set({
+						stock_pieces: nextPieces,
+						weighed_pieces: Math.max(0, nextWeighedPieces),
+						stock_kg: newStockKg.toFixed(3),
+					})
+					.where(eq(products.id, item.product_id));
+				await tx.insert(inventoryTransactions).values({
+					product_id: item.product_id,
+					quantity_change_pieces:
+						product.is_sellable_by_weight || !item.quantity_pieces
+							? null
+							: -item.quantity_pieces,
+					quantity_change_kg:
+						itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
+					transaction_type: "VENTA",
+					reference_id: orderId,
+					notes,
+				});
+			}
+		}
+		await tx
+			.update(orderItems)
+			.set({ status: "COBRADO", updated_at: new Date() })
+			.where(eq(orderItems.id, item.id));
+	}
+	return cents;
+}
+
 export const ordersRouter = router({
 	get: protectedProcedure
 		.meta({
@@ -127,7 +256,14 @@ export const ordersRouter = router({
 			},
 		})
 		.input(z.object({ id: z.number() }))
-		.output(orderDetailSchema.nullable())
+		.output(
+			orderDetailSchema
+				.extend({
+					chargeCount: z.number(),
+					canEdit: z.boolean(),
+				})
+				.nullable(),
+		)
 		.query(async ({ ctx, input }) => {
 			const result = await db.query.orders.findFirst({
 				where: and(
@@ -152,12 +288,32 @@ export const ordersRouter = router({
 				},
 			});
 			if (!result) return null;
+			const incomeTxs = await db
+				.select({ id: transactions.id })
+				.from(transactions)
+				.where(
+					and(
+						eq(transactions.order_id, result.id),
+						eq(transactions.type, "income"),
+					),
+				);
+			const credits = await db
+				.select({ id: creditCharges.id })
+				.from(creditCharges)
+				.where(eq(creditCharges.order_id, result.id));
+			const chargeCount = incomeTxs.length + credits.length;
+			const canEdit =
+				!result.orderItems.some((item) => item.status === "COBRADO") &&
+				chargeCount <= 1 &&
+				result.status !== "PROCESANDO_PAGO";
 			return {
 				...result,
 				orderItems: result.orderItems.map((item) => ({
 					...item,
 					product: item.product ?? null,
 				})),
+				chargeCount,
+				canEdit,
 			};
 		}),
 
@@ -264,6 +420,12 @@ export const ordersRouter = router({
 				throw new TRPCError({
 					code: "NOT_FOUND",
 					message: "Orden no encontrada",
+				});
+			}
+			if (order.status === "PROCESANDO_PAGO") {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "No se puede preparar el despiece de un pedido en cobro",
 				});
 			}
 
@@ -456,7 +618,10 @@ export const ordersRouter = router({
 			};
 
 			const items = order.orderItems
-				.filter((i) => i.product && i.product.user_uid === uid)
+				.filter(
+					(i) =>
+						i.product && i.product.user_uid === uid && i.status !== "COBRADO",
+				)
 				.map((i) => {
 					const productId = i.product!.id;
 					const productName = i.product!.name;
@@ -804,6 +969,7 @@ export const ordersRouter = router({
 				(typeof order.orderItems)[number]["product"]
 			>();
 			for (const i of order.orderItems) {
+				if (i.status === "COBRADO") continue;
 				if (i.product && i.product.user_uid === uid) {
 					productsById.set(i.product.id, i.product);
 				}
@@ -814,6 +980,7 @@ export const ordersRouter = router({
 			};
 
 			for (const item of order.orderItems) {
+				if (item.status === "COBRADO") continue;
 				if (!item.product || item.product.user_uid !== uid) continue;
 				const p = item.product;
 
@@ -939,7 +1106,37 @@ export const ordersRouter = router({
 				if (n > canalPiecesToProcess) canalPiecesToProcess = n;
 			}
 
+			if (canalPiecesToProcess <= 0 && intermediateToProcess.size === 0) {
+				return {
+					orderId: input.orderId,
+					transformationType: input.transformationType,
+					canal: { id: canal.id, name: canal.name },
+					canalPiecesProcessed: 0,
+					intermediatesProcessed: [],
+					ok: true,
+				};
+			}
+
 			return db.transaction(async (tx) => {
+				const [locked] = await tx
+					.select({ id: orders.id, status: orders.status })
+					.from(orders)
+					.where(and(eq(orders.id, input.orderId), eq(orders.user_uid, uid)))
+					.for("update")
+					.limit(1);
+				if (!locked) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Orden no encontrada",
+					});
+				}
+				if (locked.status === "PROCESANDO_PAGO") {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No se puede preparar el despiece de un pedido en cobro",
+					});
+				}
+
 				const applyDisassemblyTx = async (args: {
 					parentProductId: number;
 					quantityToProcess: number;
@@ -1159,10 +1356,10 @@ export const ordersRouter = router({
 				items: z.array(
 					z.object({
 						productId: z.number(),
-						quantityPieces: z.number().int().optional(),
-						quantityKg: z.number().int().optional(),
-						unitPrice: z.number().int(),
-						requiresPurchase: z.boolean().optional(), // NUEVO: indica si el item está pendiente de compra
+						quantityPieces: z.number().int().nonnegative().optional(),
+						quantityKg: z.number().int().nonnegative().optional(),
+						unitPrice: z.number().int().nonnegative(),
+						requiresPurchase: z.boolean().optional(),
 					}),
 				),
 				notes: z.string().optional(),
@@ -1174,6 +1371,7 @@ export const ordersRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			return db.transaction(async (tx) => {
 				let requiresWeighing = false;
+				let pendingPurchase = false;
 				const processedItems = [];
 
 				for (const item of input.items) {
@@ -1200,8 +1398,28 @@ export const ordersRouter = router({
 
 					// No se bloquea por stock: el pedido se acepta aunque el producto no
 					// exista todavía en inventario. El stock puede quedar negativo y se
-					// compensa al despiezar las canales. (Se ignora requiresPurchase.)
-					if (product.is_sellable_by_weight) {
+					// compensa al despiezar las canales.
+					// R2-3: requiresPurchase solo cuenta si la línea es realmente
+					// faltante (stock real + derivabilidad).
+					const derivable = await productIsDerivable(
+						tx,
+						product.id,
+						ctx.user.id,
+					);
+					const actuallyMissing =
+						item.requiresPurchase === true &&
+						lineIsActuallyFaltante(product, item, derivable);
+					if (actuallyMissing) {
+						// F12 / regla (b): el ítem no se cobra todavía (subtotal 0).
+						itemStatus = "PENDIENTE_COMPRA";
+						pendingPurchase = true;
+						if (product.is_sellable_by_weight) {
+							quantityKg = quantityKg
+								? ((quantityKg / 1000).toFixed(3) as any)
+								: null;
+						}
+						subtotal = 0;
+					} else if (product.is_sellable_by_weight) {
 						// Producto por peso: SIEMPRE va a la estación de pesaje. El peso
 						// real se mide en la báscula y de ahí sale el cálculo. La cantidad
 						// capturada (kg solicitados) queda como referencia y se reemplaza
@@ -1221,7 +1439,10 @@ export const ordersRouter = router({
 						product_id: item.productId,
 						product_name: product.name,
 						quantity: item.quantityKg ?? item.quantityPieces ?? 0,
-						quantity_pieces: item.quantityPieces,
+						// R2-5: las líneas por kg no guardan piezas.
+						quantity_pieces: product.is_sellable_by_weight
+							? null
+							: item.quantityPieces,
 						quantity_kg: quantityKg,
 						unit_price: item.unitPrice,
 						subtotal: subtotal,
@@ -1233,9 +1454,13 @@ export const ordersRouter = router({
 					(sum, i) => sum + Number(i.subtotal),
 					0,
 				);
+				// Pesaje manda sobre compra pendiente.
+				// PENDIENTE_COMPRA y PARCIAL_DISPONIBLE ya existen en el schema.
 				const orderStatus = requiresWeighing
 					? "PENDIENTE_PESAJE"
-					: "LISTA_PARA_COBRO";
+					: pendingPurchase
+						? "PARCIAL_DISPONIBLE"
+						: "LISTA_PARA_COBRO";
 
 				const [orderData] = await tx
 					.insert(orders)
@@ -1264,18 +1489,7 @@ export const ordersRouter = router({
 					})),
 				);
 
-				if (!requiresWeighing && input.paymentMethodId) {
-					await tx.insert(transactions).values({
-						order_id: orderData.id,
-						payment_method_id: input.paymentMethodId,
-						amount: Math.round(totalAmount),
-						user_uid: ctx.user.id,
-						status: "completed",
-						category: "selling",
-						type: "income",
-						description: `Pago de pedido #${orderData.id}`,
-					});
-				}
+				// R2-2: el cobro se registra en la Cola de Cobro, no al crear.
 
 				const customer = input.customerId
 					? await tx.query.customers.findFirst({
@@ -1418,6 +1632,9 @@ export const ordersRouter = router({
 				const allWeighed = allItems.every((i) =>
 					i.id === input.orderItemId ? true : i.status !== "PENDIENTE_PESAJE",
 				);
+				const hasPendingPurchase = allItems.some(
+					(i) => i.id !== input.orderItemId && i.status === "PENDIENTE_COMPRA",
+				);
 
 				// ¿Es un pesaje de producción? (pedido sin cliente etiquetado)
 				const [ord] = await tx
@@ -1458,13 +1675,162 @@ export const ordersRouter = router({
 								? "COMPLETADA"
 								: "PENDIENTE_PESAJE"
 							: allWeighed
-								? "LISTA_PARA_COBRO"
+								? hasPendingPurchase
+									? "PARCIAL_DISPONIBLE"
+									: "LISTA_PARA_COBRO"
 								: "PENDIENTE_PESAJE",
 						requires_weighing: !allWeighed,
 					})
 					.where(eq(orders.id, item.order_id!));
 
 				return { success: true };
+			});
+		}),
+
+	receivePurchase: protectedProcedure
+		.input(
+			z.object({
+				orderId: z.number(),
+				itemIds: z.array(z.number()).optional(),
+			}),
+		)
+		.output(z.object({ success: z.boolean(), status: z.string() }))
+		.mutation(async ({ ctx, input }) => {
+			return db.transaction(async (tx) => {
+				const [order] = await tx
+					.select()
+					.from(orders)
+					.where(
+						and(
+							eq(orders.id, input.orderId),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
+					)
+					.limit(1);
+				if (!order) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Pedido no encontrado",
+					});
+				}
+
+				if (
+					order.status === "cancelled" ||
+					order.status === "COMPLETADA" ||
+					order.status === "PROCESANDO_PAGO"
+				) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede registrar una compra recibida en un pedido cancelado, completado o en cobro",
+					});
+				}
+
+				const items = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const pending = items.filter(
+					(item) => item.status === "PENDIENTE_COMPRA",
+				);
+				const requested = input.itemIds
+					? pending.filter((item) => input.itemIds?.includes(item.id))
+					: pending;
+
+				if (requested.length === 0) {
+					if (pending.length === 0) {
+						return {
+							success: true,
+							status: order.status ?? nextStatusAfterReceive(items),
+						};
+					}
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No hay líneas pendientes de compra para recibir",
+					});
+				}
+
+				for (const item of requested) {
+					if (!item.product_id) {
+						await tx
+							.update(orderItems)
+							.set({ status: "COMPLETADO", updated_at: new Date() })
+							.where(eq(orderItems.id, item.id));
+						continue;
+					}
+					const [product] = await tx
+						.select()
+						.from(products)
+						.where(eq(products.id, item.product_id))
+						.limit(1);
+					if (product?.is_sellable_by_weight) {
+						await tx
+							.update(orderItems)
+							.set({
+								status: "PENDIENTE_PESAJE",
+								updated_at: new Date(),
+							})
+							.where(eq(orderItems.id, item.id));
+						continue;
+					}
+					const subtotal =
+						(item.quantity_pieces ?? 0) * Number(item.unit_price ?? 0);
+					await tx
+						.update(orderItems)
+						.set({
+							status: "COMPLETADO",
+							subtotal: String(Math.round(subtotal)),
+							updated_at: new Date(),
+						})
+						.where(eq(orderItems.id, item.id));
+				}
+
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const nextStatus = nextStatusAfterReceive(remaining);
+				const orderTotal = remaining
+					.filter(
+						(item) =>
+							item.status !== "PENDIENTE_COMPRA" &&
+							item.status !== "PENDIENTE_PESAJE",
+					)
+					.reduce(
+						(sum, item) => sum + Math.round(Number(item.subtotal ?? 0)),
+						0,
+					);
+				const requiresWeighing = remaining.some(
+					(item) => item.status === "PENDIENTE_PESAJE",
+				);
+				const [updated] = await tx
+					.update(orders)
+					.set({
+						status: nextStatus,
+						total_amount: String(orderTotal),
+						requires_weighing: requiresWeighing,
+						updated_at: new Date(),
+					})
+					.where(
+						and(
+							eq(orders.id, input.orderId),
+							notInArray(orders.status, [
+								"cancelled",
+								"COMPLETADA",
+								"PROCESANDO_PAGO",
+							]),
+						),
+					)
+					.returning({ id: orders.id });
+				if (!updated) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede registrar una compra recibida en un pedido cancelado, completado o en cobro",
+					});
+				}
+
+				return { success: true, status: nextStatus };
 			});
 		}),
 
@@ -1489,7 +1855,10 @@ export const ordersRouter = router({
 						and(
 							eq(orders.id, input.orderId),
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
-							eq(orders.status, "LISTA_PARA_COBRO"),
+							inArray(orders.status, [
+								"LISTA_PARA_COBRO",
+								"PARCIAL_DISPONIBLE",
+							]),
 						),
 					)
 					.returning();
@@ -1507,69 +1876,50 @@ export const ordersRouter = router({
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
 
-				for (const item of items) {
-					if (item.product_id) {
-						const [product] = await tx
-							.select()
-							.from(products)
-							.where(eq(products.id, item.product_id))
-							.limit(1);
-
-						if (product) {
-							const currentStockKg = Number(product.stock_kg);
-							const itemQuantityKg = item.quantity_kg
-								? Number(item.quantity_kg)
-								: 0;
-							const newStockKg = currentStockKg - itemQuantityKg;
-							const nextPieces = item.quantity_pieces
-								? (product.stock_pieces ?? 0) - item.quantity_pieces
-								: (product.stock_pieces ?? 0);
-							const nextWeighedPieces = Math.min(
-								product.weighed_pieces ?? 0,
-								nextPieces,
-							);
-
-							// Pieza ya pesada y lista para entrega: el cobro no se bloquea por stock.
-							await tx
-								.update(products)
-								.set({
-									stock_pieces: nextPieces,
-									weighed_pieces: Math.max(0, nextWeighedPieces),
-									stock_kg: newStockKg.toFixed(3),
-									// Stock puede quedar negativo: se compensa al despiezar.
-								})
-								.where(eq(products.id, item.product_id));
-
-							await tx.insert(inventoryTransactions).values({
-								product_id: item.product_id,
-								quantity_change_pieces: item.quantity_pieces
-									? -item.quantity_pieces
-									: null,
-								quantity_change_kg:
-									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
-								transaction_type: "VENTA",
-								reference_id: input.orderId,
-								notes: `Venta pedido #${input.orderId}`,
-							});
-						}
+				const chargeable = items.filter(isChargeableItem);
+				if (chargeable.length === 0) {
+					if (!items.some(isChargedItem)) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: "No hay líneas disponibles para cobro",
+						});
 					}
+					await tx
+						.update(orders)
+						.set({ status: nextStatusAfterCharge(items) })
+						.where(eq(orders.id, input.orderId));
+					return { success: true };
 				}
+
+				const cents = await deductStockAndMarkCharged(
+					tx,
+					chargeable,
+					input.orderId,
+					`Venta pedido #${input.orderId}`,
+				);
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const nextStatus = nextStatusAfterCharge(remaining);
 
 				await tx
 					.update(orders)
-					.set({ status: "COMPLETADA" })
+					.set({ status: nextStatus })
 					.where(eq(orders.id, input.orderId));
 
 				await tx.insert(transactions).values({
 					order_id: input.orderId,
 					payment_method_id: input.paymentMethodId,
-					// total_amount ya está en centavos (misma convención que el path de creación)
-					amount: Math.round(Number(orderData.total_amount)),
+					amount: cents,
 					user_uid: ctx.user.id,
 					status: "completed",
 					category: "selling",
 					type: "income",
-					description: `Cobro final pedido #${input.orderId}`,
+					description:
+						nextStatus === "COMPLETADA"
+							? `Cobro final pedido #${input.orderId}`
+							: `Cobro parcial pedido #${input.orderId}`,
 				});
 
 				return { success: true };
@@ -1589,7 +1939,10 @@ export const ordersRouter = router({
 						and(
 							eq(orders.id, input.orderId),
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
-							eq(orders.status, "LISTA_PARA_COBRO"),
+							inArray(orders.status, [
+								"LISTA_PARA_COBRO",
+								"PARCIAL_DISPONIBLE",
+							]),
 						),
 					)
 					.returning();
@@ -1614,62 +1967,47 @@ export const ordersRouter = router({
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
 
-				for (const item of items) {
-					if (item.product_id) {
-						const [product] = await tx
-							.select()
-							.from(products)
-							.where(eq(products.id, item.product_id))
-							.limit(1);
-						if (product) {
-							const currentStockKg = Number(product.stock_kg);
-							const itemQuantityKg = item.quantity_kg
-								? Number(item.quantity_kg)
-								: 0;
-							const newStockKg = currentStockKg - itemQuantityKg;
-							const nextPieces = item.quantity_pieces
-								? (product.stock_pieces ?? 0) - item.quantity_pieces
-								: (product.stock_pieces ?? 0);
-							const nextWeighedPieces = Math.min(
-								product.weighed_pieces ?? 0,
-								nextPieces,
-							);
-							// El stock puede quedar negativo: se compensa al despiezar.
-							await tx
-								.update(products)
-								.set({
-									stock_pieces: nextPieces,
-									weighed_pieces: Math.max(0, nextWeighedPieces),
-									stock_kg: newStockKg.toFixed(3),
-								})
-								.where(eq(products.id, item.product_id));
-
-							await tx.insert(inventoryTransactions).values({
-								product_id: item.product_id,
-								quantity_change_pieces: item.quantity_pieces
-									? -item.quantity_pieces
-									: null,
-								quantity_change_kg:
-									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
-								transaction_type: "VENTA",
-								reference_id: input.orderId,
-								notes: `Venta a crédito pedido #${input.orderId}`,
-							});
-						}
+				const chargeable = items.filter(isChargeableItem);
+				if (chargeable.length === 0) {
+					if (!items.some(isChargedItem)) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: "No hay líneas disponibles para cobro",
+						});
 					}
+					await tx
+						.update(orders)
+						.set({ status: nextStatusAfterCharge(items) })
+						.where(eq(orders.id, input.orderId));
+					return { success: true };
 				}
+
+				const cents = await deductStockAndMarkCharged(
+					tx,
+					chargeable,
+					input.orderId,
+					`Venta a crédito pedido #${input.orderId}`,
+				);
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const nextStatus = nextStatusAfterCharge(remaining);
 
 				await tx
 					.update(orders)
-					.set({ status: "COMPLETADA" })
+					.set({ status: nextStatus })
 					.where(eq(orders.id, input.orderId));
 
-				// Cargo a la cuenta del cliente (cobranza). total_amount está en centavos → pesos
+				// Cargo a la cuenta del cliente (cobranza). subtotales en centavos → pesos
 				await tx.insert(creditCharges).values({
 					customer_id: orderData.customer_id,
 					order_id: input.orderId,
-					amount: (Number(orderData.total_amount) / 100).toFixed(2),
-					concept: `Pedido #${input.orderId} (crédito)`,
+					amount: (cents / 100).toFixed(2),
+					concept:
+						nextStatus === "COMPLETADA"
+							? `Pedido #${input.orderId} (crédito)`
+							: `Pedido #${input.orderId} (crédito parcial)`,
 					source: "pedido",
 				});
 
@@ -1713,12 +2051,27 @@ export const ordersRouter = router({
 						message: "El pedido no tiene cliente",
 					});
 				}
-				const [existing] = await tx
+				const existingCredits = await tx
 					.select({ id: creditCharges.id })
 					.from(creditCharges)
-					.where(eq(creditCharges.order_id, input.orderId))
-					.limit(1);
-				if (existing) {
+					.where(eq(creditCharges.order_id, input.orderId));
+				const incomeTxs = await tx
+					.select({ id: transactions.id })
+					.from(transactions)
+					.where(
+						and(
+							eq(transactions.order_id, input.orderId),
+							eq(transactions.type, "income"),
+						),
+					);
+				if (existingCredits.length > 0 && incomeTxs.length > 0) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"Este pedido tiene cobros mixtos de contado y crédito y no se puede pasar a crédito",
+					});
+				}
+				if (existingCredits.length > 0) {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
 						message: "Este pedido ya está en crédito",
@@ -1757,7 +2110,7 @@ export const ordersRouter = router({
 				.where(
 					and(
 						inArray(orders.user_uid, [ctx.user.id, "system"]),
-						eq(orders.status, "LISTA_PARA_COBRO"),
+						inArray(orders.status, ["LISTA_PARA_COBRO", "PARCIAL_DISPONIBLE"]),
 					),
 				)
 				.orderBy(orders.id);
@@ -1773,6 +2126,7 @@ export const ordersRouter = router({
 						quantityPieces: orderItems.quantity_pieces,
 						unitPrice: orderItems.unit_price,
 						savedPriceKg: customerPrices.price_per_kg,
+						status: orderItems.status,
 					})
 					.from(orderItems)
 					.leftJoin(
@@ -1783,7 +2137,12 @@ export const ordersRouter = router({
 						),
 					)
 					.where(eq(orderItems.order_id, o.id));
-				result.push({ ...o, items });
+				const chargeable = items.filter(isChargeableItem);
+				if (chargeable.length === 0) continue;
+				result.push({
+					...o,
+					items: chargeable.map(({ status: _status, ...item }) => item),
+				});
 			}
 			return result;
 		}),
@@ -1814,7 +2173,10 @@ export const ordersRouter = router({
 						and(
 							eq(orders.id, input.orderId),
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
-							eq(orders.status, "LISTA_PARA_COBRO"),
+							inArray(orders.status, [
+								"LISTA_PARA_COBRO",
+								"PARCIAL_DISPONIBLE",
+							]),
 						),
 					)
 					.returning();
@@ -1826,19 +2188,38 @@ export const ordersRouter = router({
 					});
 				}
 
-				// 1. Precio por item + guardar en lista del cliente
-				let totalCents = 0;
+				if (input.paymentType === "contado" && !input.paymentMethodId) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Indica un método de pago para cobrar de contado",
+					});
+				}
+
+				// 1. Precio solo en líneas cobrables (no pendientes ni ya cobradas)
 				for (const it of input.items) {
 					const [oi] = await tx
 						.select()
 						.from(orderItems)
 						.where(eq(orderItems.id, it.orderItemId))
 						.limit(1);
-					if (!oi) continue;
+					if (!oi || !isChargeableItem(oi)) continue;
 					const kg = Number(oi.quantity_kg) || 0;
+					const pieces = oi.quantity_pieces ?? 0;
 					const unitPriceCents = Math.round(it.pricePerKg * 100);
-					const subtotalCents = Math.round(kg * it.pricePerKg * 100);
-					totalCents += subtotalCents;
+					// R4-7: una línea por pieza no puede quedar en 0 por falta de kg.
+					const subtotalCents =
+						kg > 0
+							? Math.round(kg * it.pricePerKg * 100)
+							: pieces > 0
+								? Math.round(pieces * it.pricePerKg * 100)
+								: Math.round(Number(oi.subtotal ?? 0));
+					if (subtotalCents <= 0) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message:
+								"Una línea cobrable no puede quedar en 0. Revisa cantidad y precio.",
+						});
+					}
 					await tx
 						.update(orderItems)
 						.set({
@@ -1847,7 +2228,7 @@ export const ordersRouter = router({
 						})
 						.where(eq(orderItems.id, it.orderItemId));
 
-					if (it.productId && orderData.customer_id) {
+					if (kg > 0 && it.productId && orderData.customer_id) {
 						await tx
 							.insert(customerPrices)
 							.values({
@@ -1865,64 +2246,76 @@ export const ordersRouter = router({
 					}
 				}
 
-				await tx
-					.update(orders)
-					.set({ total_amount: String(totalCents) })
-					.where(eq(orders.id, input.orderId));
+				const allChargeableItems = await tx
+					.select({
+						id: orderItems.id,
+						subtotal: orderItems.subtotal,
+					})
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
 
-				// 2. Descontar inventario
+				for (const chargeableItem of allChargeableItems) {
+					const [oi] = await tx
+						.select()
+						.from(orderItems)
+						.where(eq(orderItems.id, chargeableItem.id))
+						.limit(1);
+					if (!oi || !isChargeableItem(oi)) continue;
+					if (Number(oi.subtotal ?? 0) <= 0) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message:
+								"Una línea cobrable no puede quedar en 0. Revisa cantidad y precio.",
+						});
+					}
+				}
+
+				// 2. Descontar inventario de líneas cobrables
 				const allItems = await tx
 					.select()
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
-				for (const item of allItems) {
-					if (item.product_id) {
-						const [product] = await tx
-							.select()
-							.from(products)
-							.where(eq(products.id, item.product_id))
-							.limit(1);
-						if (product) {
-							const itemQuantityKg = item.quantity_kg
-								? Number(item.quantity_kg)
-								: 0;
-							// La pieza ya fue pesada y está físicamente lista para entrega:
-							// el cobro NO se bloquea por stock. Se descuenta sin bajar de 0.
-							// Stock puede quedar negativo: se compensa al despiezar.
-							const finalStockKg = Number(product.stock_kg) - itemQuantityKg;
-							const finalPieces = item.quantity_pieces
-								? (product.stock_pieces ?? 0) - item.quantity_pieces
-								: (product.stock_pieces ?? 0);
-							await tx
-								.update(products)
-								.set({
-									stock_pieces: finalPieces,
-									weighed_pieces: Math.max(
-										0,
-										Math.min(product.weighed_pieces ?? 0, finalPieces),
-									),
-									stock_kg: finalStockKg.toFixed(3),
-								})
-								.where(eq(products.id, item.product_id));
-							await tx.insert(inventoryTransactions).values({
-								product_id: item.product_id,
-								quantity_change_pieces: item.quantity_pieces
-									? -item.quantity_pieces
-									: null,
-								quantity_change_kg:
-									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
-								transaction_type: "VENTA",
-								reference_id: input.orderId,
-								notes: `Venta pedido #${input.orderId}`,
-							});
-						}
+				const chargeable = allItems.filter(isChargeableItem);
+				if (chargeable.length === 0) {
+					if (!allItems.some(isChargedItem)) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: "No hay líneas disponibles para cobro",
+						});
 					}
+					const status = nextStatusAfterCharge(allItems);
+					await tx
+						.update(orders)
+						.set({ status })
+						.where(eq(orders.id, input.orderId));
+					return { success: true, total: 0 };
 				}
 
-				// 3. Completar + pago
+				const totalCents = await deductStockAndMarkCharged(
+					tx,
+					chargeable,
+					input.orderId,
+					`Venta pedido #${input.orderId}`,
+				);
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const nextStatus = nextStatusAfterCharge(remaining);
+				const orderTotal = remaining
+					.filter(
+						(item) =>
+							item.status !== "PENDIENTE_COMPRA" &&
+							item.status !== "PENDIENTE_PESAJE",
+					)
+					.reduce(
+						(sum, item) => sum + Math.round(Number(item.subtotal ?? 0)),
+						0,
+					);
+
 				await tx
 					.update(orders)
-					.set({ status: "COMPLETADA" })
+					.set({ status: nextStatus, total_amount: String(orderTotal) })
 					.where(eq(orders.id, input.orderId));
 
 				if (input.paymentType === "credito") {
@@ -1937,7 +2330,10 @@ export const ordersRouter = router({
 						customer_id: orderData.customer_id,
 						order_id: input.orderId,
 						amount: (totalCents / 100).toFixed(2),
-						concept: `Pedido #${input.orderId} (crédito)`,
+						concept:
+							nextStatus === "COMPLETADA"
+								? `Pedido #${input.orderId} (crédito)`
+								: `Pedido #${input.orderId} (crédito parcial)`,
 						source: "pedido",
 					});
 				} else if (input.paymentMethodId) {
@@ -1949,7 +2345,10 @@ export const ordersRouter = router({
 						status: "completed",
 						category: "selling",
 						type: "income",
-						description: `Cobro pedido #${input.orderId}`,
+						description:
+							nextStatus === "COMPLETADA"
+								? `Cobro pedido #${input.orderId}`
+								: `Cobro parcial pedido #${input.orderId}`,
 					});
 				}
 
@@ -1972,7 +2371,6 @@ export const ordersRouter = router({
 				total_amount: z.number().optional(),
 				status: z
 					.enum([
-						"COMPLETADA",
 						"pending",
 						"cancelled",
 						"PENDIENTE_PESAJE",
@@ -1983,34 +2381,71 @@ export const ordersRouter = router({
 		)
 		.output(orderWithCustomerSchema)
 		.mutation(async ({ ctx, input }) => {
-			const { id, total_amount, ...data } = input;
-			const updateData: any = {
-				...data,
-				user_uid: ctx.user.id,
-				updated_at: new Date(),
-			};
-			if (total_amount !== undefined)
-				updateData.total_amount = total_amount.toFixed(2);
+			const { id, total_amount, status, ...data } = input;
 
-			const [updated] = await db
-				.update(orders)
-				.set(updateData)
-				.where(
-					and(
-						eq(orders.id, id),
-						inArray(orders.user_uid, [ctx.user.id, "system"]),
-					),
-				)
-				.returning();
+			return db.transaction(async (tx) => {
+				const [order] = await tx
+					.select()
+					.from(orders)
+					.where(
+						and(
+							eq(orders.id, id),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
+					)
+					.for("update")
+					.limit(1);
+				if (!order) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Pedido no encontrado",
+					});
+				}
 
-			const customer = updated?.customer_id
-				? await db.query.customers.findFirst({
-						where: eq(customers.id, updated.customer_id),
-						columns: { name: true },
-					})
-				: null;
+				const closedStatuses = [
+					"COMPLETADA",
+					"paid",
+					"completed",
+					"delivered",
+					"cancelled",
+					"PROCESANDO_PAGO",
+				];
+				if (
+					status !== undefined &&
+					status !== order.status &&
+					closedStatuses.includes(order.status ?? "")
+				) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede cambiar el estado de un pedido cerrado o en cobro",
+					});
+				}
 
-			return { ...updated, customer: customer ?? null };
+				const updateData: any = {
+					...data,
+					user_uid: ctx.user.id,
+					updated_at: new Date(),
+				};
+				if (status !== undefined) updateData.status = status;
+				if (total_amount !== undefined)
+					updateData.total_amount = total_amount.toFixed(2);
+
+				const [updated] = await tx
+					.update(orders)
+					.set(updateData)
+					.where(eq(orders.id, id))
+					.returning();
+
+				const customer = updated?.customer_id
+					? await tx.query.customers.findFirst({
+							where: eq(customers.id, updated.customer_id),
+							columns: { name: true },
+						})
+					: null;
+
+				return { ...updated, customer: customer ?? null };
+			});
 		}),
 
 	// Crea un "pedido" de pesaje de producción: entra a la cola de la estación
@@ -2067,11 +2502,11 @@ export const ordersRouter = router({
 				notes: z.string().optional(),
 				status: z
 					.enum([
-						"COMPLETADA",
 						"pending",
 						"cancelled",
 						"PENDIENTE_PESAJE",
 						"LISTA_PARA_COBRO",
+						"PARCIAL_DISPONIBLE",
 					])
 					.optional(),
 				items: z.array(
@@ -2088,7 +2523,7 @@ export const ordersRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			return db.transaction(async (tx) => {
 				const [ord] = await tx
-					.select({ id: orders.id })
+					.select({ id: orders.id, status: orders.status })
 					.from(orders)
 					.where(
 						and(
@@ -2096,6 +2531,7 @@ export const ordersRouter = router({
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
 						),
 					)
+					.for("update")
 					.limit(1);
 				if (!ord) {
 					throw new TRPCError({
@@ -2103,49 +2539,202 @@ export const ordersRouter = router({
 						message: "Pedido no encontrado",
 					});
 				}
-
-				const rows = input.items
-					.filter((it) => it.productName.trim().length > 0)
-					.map((it) => {
-						const kg = it.quantityKg || 0;
-						const pieces = Math.round(it.quantityPieces || 0);
-						const unitCents = Math.round((it.unitPrice || 0) * 100);
-						const qty = kg > 0 ? kg : pieces;
-						const subtotalCents = Math.round(qty * unitCents);
-						return {
-							order_id: input.orderId,
-							product_id: it.productId ?? null,
-							product_name: it.productName.trim(),
-							quantity_pieces: pieces,
-							quantity_kg: kg > 0 ? kg.toFixed(3) : null,
-							unit_price: unitCents.toFixed(2),
-							subtotal: subtotalCents.toFixed(2),
-							status: (kg > 0 ? "PESADO" : "PENDIENTE_PESAJE") as
-								| "PESADO"
-								| "PENDIENTE_PESAJE",
-						};
+				if (ord.status === "PROCESANDO_PAGO") {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No se puede editar un pedido en cobro",
 					});
+				}
 
-				const totalCents = rows.reduce((s, r) => s + Number(r.subtotal), 0);
-				const requiresWeighing = rows.some(
-					(r) => r.status === "PENDIENTE_PESAJE",
+				const incoming = input.items.filter(
+					(item) => item.productName.trim().length > 0,
+				);
+				if (incoming.length === 0) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No se puede guardar un pedido sin líneas",
+					});
+				}
+
+				const existing = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const incomeTxs = await tx
+					.select({ id: transactions.id })
+					.from(transactions)
+					.where(
+						and(
+							eq(transactions.order_id, input.orderId),
+							eq(transactions.type, "income"),
+						),
+					);
+				const credits = await tx
+					.select({ id: creditCharges.id })
+					.from(creditCharges)
+					.where(eq(creditCharges.order_id, input.orderId));
+				const chargeCount = incomeTxs.length + credits.length;
+				if (
+					existing.some((item) => item.status === "COBRADO") ||
+					chargeCount > 1
+				) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede editar un pedido con líneas ya cobradas o con más de un cobro",
+					});
+				}
+				const preserved = existing.filter(
+					(item) => item.status === "PENDIENTE_COMPRA",
 				);
 
-				await tx
-					.delete(orderItems)
-					.where(eq(orderItems.order_id, input.orderId));
+				const usedPendingInput = new Set<number>();
+				for (const pending of preserved) {
+					const idx = input.items.findIndex(
+						(item, index) =>
+							!usedPendingInput.has(index) &&
+							(item.productId ?? null) === (pending.product_id ?? null) &&
+							Math.round(item.quantityPieces || 0) ===
+								(pending.quantity_pieces ?? 0) &&
+							Math.round(item.unitPrice * 100) ===
+								Math.round(Number(pending.unit_price ?? 0)),
+					);
+					if (idx < 0) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message:
+								"No se puede editar ni quitar una línea pendiente de compra",
+						});
+					}
+					usedPendingInput.add(idx);
+				}
+				const usedPreserved = new Set<number>();
+
+				const inputProductIds = [
+					...new Set(
+						input.items
+							.map((item) => item.productId)
+							.filter((id): id is number => id != null),
+					),
+				];
+				const weightIds = new Set<number>();
+				if (inputProductIds.length > 0) {
+					const weightRows = await tx
+						.select({
+							id: products.id,
+							is_sellable_by_weight: products.is_sellable_by_weight,
+						})
+						.from(products)
+						.where(inArray(products.id, inputProductIds));
+					for (const row of weightRows) {
+						if (row.is_sellable_by_weight) weightIds.add(row.id);
+					}
+				}
+
+				const rows = [];
+				for (const it of input.items.filter(
+					(item) => item.productName.trim().length > 0,
+				)) {
+					const productId = it.productId ?? null;
+					const pieces = Math.round(it.quantityPieces || 0);
+					const kg = it.quantityKg || 0;
+					let match = preserved.find(
+						(item) =>
+							!usedPreserved.has(item.id) &&
+							item.product_id === productId &&
+							(item.quantity_pieces ?? 0) === pieces,
+					);
+					if (!match && productId != null) {
+						match = preserved.find(
+							(item) =>
+								!usedPreserved.has(item.id) && item.product_id === productId,
+						);
+					}
+					if (match) {
+						usedPreserved.add(match.id);
+						continue;
+					}
+					const unitCents = Math.round((it.unitPrice || 0) * 100);
+					const qty = kg > 0 ? kg : pieces;
+					const subtotalCents = Math.round(qty * unitCents);
+					const isWeight = productId != null && weightIds.has(productId);
+					rows.push({
+						order_id: input.orderId,
+						product_id: productId,
+						product_name: it.productName.trim(),
+						quantity_pieces: pieces,
+						quantity_kg: kg > 0 ? kg.toFixed(3) : null,
+						unit_price: unitCents.toFixed(2),
+						subtotal: subtotalCents.toFixed(2),
+						status: (isWeight
+							? kg > 0
+								? "PESADO"
+								: "PENDIENTE_PESAJE"
+							: "COMPLETADO") as "PESADO" | "PENDIENTE_PESAJE" | "COMPLETADO",
+					});
+				}
+
+				if (preserved.length === 0) {
+					await tx
+						.delete(orderItems)
+						.where(eq(orderItems.order_id, input.orderId));
+				} else {
+					await tx.delete(orderItems).where(
+						and(
+							eq(orderItems.order_id, input.orderId),
+							notInArray(
+								orderItems.id,
+								preserved.map((item) => item.id),
+							),
+						),
+					);
+				}
 				if (rows.length > 0) {
 					await tx.insert(orderItems).values(rows);
 				}
+
+				const remaining = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.orderId));
+				const totalCents = remaining.reduce(
+					(sum, item) => sum + Math.round(Number(item.subtotal ?? 0)),
+					0,
+				);
+				const requiresWeighing = remaining.some(
+					(item) => item.status === "PENDIENTE_PESAJE",
+				);
+				const derivedStatus = nextStatusAfterReceive(remaining);
 
 				const upd: Record<string, unknown> = {
 					total_amount: totalCents.toFixed(2),
 					requires_weighing: requiresWeighing,
 					updated_at: new Date(),
 				};
-				if (input.status) upd.status = input.status;
 				if (input.customerId !== undefined) upd.customer_id = input.customerId;
 				if (input.notes !== undefined) upd.notes = input.notes;
+				if (
+					ord.status === "COMPLETADA" ||
+					ord.status === "cancelled" ||
+					ord.status === "paid" ||
+					ord.status === "completed" ||
+					ord.status === "delivered"
+				) {
+					// R4-11: no reabrir un pedido ya pagado o cancelado.
+					upd.status = ord.status;
+				} else if (
+					remaining.some((item) => item.status === "PENDIENTE_PESAJE")
+				) {
+					upd.status = "PENDIENTE_PESAJE";
+				} else if (
+					remaining.some((item) => item.status === "PENDIENTE_COMPRA")
+				) {
+					upd.status = "PARCIAL_DISPONIBLE";
+				} else if (input.status) {
+					upd.status = input.status;
+				} else {
+					upd.status = derivedStatus;
+				}
 
 				await tx.update(orders).set(upd).where(eq(orders.id, input.orderId));
 
@@ -2161,7 +2750,12 @@ export const ordersRouter = router({
 				const adjustedSale = await tx
 					.update(transactions)
 					.set({ amount: totalCents })
-					.where(eq(transactions.order_id, input.orderId))
+					.where(
+						and(
+							eq(transactions.order_id, input.orderId),
+							eq(transactions.type, "income"),
+						),
+					)
 					.returning({ id: transactions.id });
 
 				return {

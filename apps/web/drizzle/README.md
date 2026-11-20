@@ -83,6 +83,10 @@ igual la migración para mantener el historial consistente.
 
 - `0004_scale_readings_webserial` — **PENDIENTE, no aplicada**; agrega a `scale_readings` las columnas `source` (default `trss3`), `captured_by`, `voided_at`, `voided_by`, `container_id` y `tare_g` (recipiente y tara por captura), además del índice `(order_item_id, id)` para la lectura por Web Serial. Aplicar después de `0003`.
 
+- `0005_add_cobrado_to_order_item_status` — **NO APLICADA.** Añade `COBRADO` al enum `order_item_status` en bases **nuevas** creadas con `0000_baseline` (ese enum no lo trae). En producción la columna ya es `varchar(50)` y el tipo no existe: la migración es un no-op ahí. Idempotente (`IF NOT EXISTS`).
+
+> **Importante:** `cd apps/web && bun run db:migrate` aplica **todas** las migraciones pendientes del journal, en orden. Hoy también aplicaría **0003** y **0004** (`scale_readings`), que siguen pendientes y **no deben aplicarse sin OK de Beto**. No corras `db:migrate` contra producción ni contra `carnicos` hasta que Beto lo autorice, migración por migración.
+
 ## Triggers y datos semilla
 
 Los triggers SQL y seeds siguen viviendo en [`../../../sql/`](../../../sql/) y se
