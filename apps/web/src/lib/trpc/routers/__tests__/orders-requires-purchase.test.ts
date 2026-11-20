@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { createTestDb, makeUser, SCHEMA_DDL } from "./helpers";
 
 const { pg, db } = createTestDb();
@@ -1840,7 +1840,7 @@ describe("orders R4-13 — Compra recibida suma stock", () => {
 		).toHaveLength(2);
 	});
 
-	it("en una línea por peso suma los kg pedidos; pesar y cobrar no deja negativo si el peso coincide", async () => {
+	async function createWeightFaltanteOrder(quantityKg?: number) {
 		await updateProductStock(weightProductId, {
 			stock_pieces: 0,
 			stock_kg: "0",
@@ -1849,6 +1849,17 @@ describe("orders R4-13 — Compra recibida suma stock", () => {
 			stock_pieces: 5,
 			stock_kg: "0",
 		});
+		const weightItem: {
+			productId: number;
+			unitPrice: number;
+			requiresPurchase: boolean;
+			quantityKg?: number;
+		} = {
+			productId: weightProductId,
+			unitPrice: 10000,
+			requiresPurchase: true,
+		};
+		if (quantityKg !== undefined) weightItem.quantityKg = quantityKg;
 		const order = await caller.create({
 			customerId,
 			paymentMethodId,
@@ -1858,62 +1869,148 @@ describe("orders R4-13 — Compra recibida suma stock", () => {
 					quantityPieces: 1,
 					unitPrice: 1000,
 				},
-				{
-					productId: weightProductId,
-					quantityKg: 2000,
-					unitPrice: 10000,
-					requiresPurchase: true,
-				},
+				weightItem,
 			],
 		});
 		await caller.completeOrderPayment({
 			orderId: order.id,
 			paymentMethodId,
 		});
+		return order;
+	}
 
-		await caller.receivePurchase({ orderId: order.id });
-		let [weight] = await db
+	async function stockKg() {
+		const [weight] = await db
 			.select()
 			.from(products)
 			.where(eq(products.id, weightProductId));
-		expect(Number(weight.stock_kg)).toBe(2);
+		return Number(weight.stock_kg);
+	}
 
-		const firstMoves = await purchaseMoves(order.id);
-		expect(firstMoves).toHaveLength(1);
-		expect(Number(firstMoves[0]?.quantity_change_kg)).toBe(2);
-		expect(firstMoves[0]?.quantity_change_pieces).toBeNull();
-
-		await caller.receivePurchase({ orderId: order.id });
-		[weight] = await db
-			.select()
-			.from(products)
-			.where(eq(products.id, weightProductId));
-		expect(Number(weight.stock_kg)).toBe(2);
-		expect(await purchaseMoves(order.id)).toHaveLength(1);
-
-		const weightItem = (await getItems(order.id)).find(
+	async function weighAndCharge(orderId: number, actualWeightGrams: number) {
+		const weightItem = (await getItems(orderId)).find(
 			(item) => item.status === "PENDIENTE_PESAJE",
 		);
 		expect(weightItem).toBeDefined();
 		await caller.updateOrderItemWeight({
 			orderItemId: weightItem!.id,
-			actualWeightGrams: 2000,
+			actualWeightGrams,
 		});
 		await caller.completeOrderPayment({
-			orderId: order.id,
+			orderId,
 			paymentMethodId,
 		});
+	}
 
+	it("P28-1: al recibir una línea por peso no suma los kg pedidos; suma el real al pesar", async () => {
+		const order = await createWeightFaltanteOrder(2000);
+		await caller.receivePurchase({ orderId: order.id });
+		expect(await stockKg()).toBe(0);
+
+		const firstMoves = await purchaseMoves(order.id);
+		expect(firstMoves).toHaveLength(1);
+		expect(firstMoves[0]?.quantity_change_kg).toBeNull();
+		expect(firstMoves[0]?.quantity_change_pieces).toBeNull();
+
+		await caller.receivePurchase({ orderId: order.id });
+		expect(await stockKg()).toBe(0);
+		expect(await purchaseMoves(order.id)).toHaveLength(1);
+
+		await weighAndCharge(order.id, 2000);
 		expect((await getOrder(order.id))?.status).toBe("COMPLETADA");
-		[weight] = await db
-			.select()
-			.from(products)
-			.where(eq(products.id, weightProductId));
-		expect(Number(weight.stock_kg)).toBe(0);
+		expect(await stockKg()).toBe(0);
+		const moves = await purchaseMoves(order.id);
+		expect(moves).toHaveLength(1);
+		expect(Number(moves[0]?.quantity_change_kg)).toBe(2);
 		const [piece] = await db
 			.select()
 			.from(products)
 			.where(eq(products.id, pieceProductId));
 		expect(Number(piece.stock_pieces)).toBe(4);
+	});
+
+	it("P28-1: si pesan de más, el stock recibe el peso real y el cobro deja neto 0", async () => {
+		const order = await createWeightFaltanteOrder(2000);
+		await caller.receivePurchase({ orderId: order.id });
+		expect(await stockKg()).toBe(0);
+		const weightItem = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_PESAJE",
+		);
+		await caller.updateOrderItemWeight({
+			orderItemId: weightItem!.id,
+			actualWeightGrams: 2500,
+		});
+		expect(await stockKg()).toBe(2.5);
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+		expect(await stockKg()).toBe(0);
+		expect(Number((await purchaseMoves(order.id))[0]?.quantity_change_kg)).toBe(
+			2.5,
+		);
+	});
+
+	it("P28-1: si pesan de menos, no sobra el kg pedido que no entró", async () => {
+		const order = await createWeightFaltanteOrder(2000);
+		await caller.receivePurchase({ orderId: order.id });
+		const weightItem = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_PESAJE",
+		);
+		await caller.updateOrderItemWeight({
+			orderItemId: weightItem!.id,
+			actualWeightGrams: 1500,
+		});
+		expect(await stockKg()).toBe(1.5);
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+		expect(await stockKg()).toBe(0);
+	});
+
+	it("P28-1: un faltante por peso sin kg se suma al pesar y el cobro no deja negativo", async () => {
+		const order = await createWeightFaltanteOrder();
+		const pending = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_COMPRA",
+		);
+		expect(pending).toBeDefined();
+		expect(Number(pending?.quantity_kg ?? 0)).toBe(0);
+
+		await caller.receivePurchase({ orderId: order.id });
+		expect(await stockKg()).toBe(0);
+		expect((await purchaseMoves(order.id))[0]?.quantity_change_kg).toBeNull();
+
+		await weighAndCharge(order.id, 2000);
+		expect((await getOrder(order.id))?.status).toBe("COMPLETADA");
+		expect(await stockKg()).toBe(0);
+		expect(Number((await purchaseMoves(order.id))[0]?.quantity_change_kg)).toBe(
+			2,
+		);
+	});
+
+	it("P28-2 y P28-3: la recepción no va al historial de proveedor y sí cuenta como entrada", async () => {
+		const order = await createPartialOrder();
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+		await caller.receivePurchase({ orderId: order.id });
+		const moves = await purchaseMoves(order.id);
+		expect(moves).toHaveLength(1);
+		expect(moves[0]?.reference_id).toBe(order.id);
+		expect(moves[0]?.quantity_change_pieces).toBe(10);
+
+		const supplierHistory = await db
+			.select()
+			.from(inventoryTransactions)
+			.where(
+				and(
+					eq(inventoryTransactions.transaction_type, "COMPRA"),
+					isNull(inventoryTransactions.reference_id),
+					eq(inventoryTransactions.id, moves[0]!.id),
+				),
+			);
+		expect(supplierHistory).toHaveLength(0);
 	});
 });
