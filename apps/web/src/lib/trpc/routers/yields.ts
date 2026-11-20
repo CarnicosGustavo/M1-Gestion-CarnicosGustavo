@@ -559,7 +559,7 @@ export const yieldsRouter = router({
 	}),
 
 	// Cierre del día: por producto, Entró (producido) − Salió (vendido) = Quedó.
-	//  - Entró: producción del día (DESPIECE/PRODUCCION/PESAJE, piezas/kg positivos)
+	//  - Entró: producción y compras del día (DESPIECE/PRODUCCION/PESAJE/COMPRA, piezas/kg positivos)
 	//  - Salió: ventas del día (VENTA, en valor absoluto)
 	cierre: protectedProcedure
 		.input(z.object({ date: z.string() }))
@@ -581,8 +581,8 @@ export const yieldsRouter = router({
 		.query(async ({ ctx, input }) => {
 			const res = (await db.execute(sql`
 				SELECT p.id AS pid, p.name, p.category,
-					COALESCE(SUM(CASE WHEN it.transaction_type IN ('DESPIECE','PRODUCCION','PESAJE') AND it.quantity_change_pieces > 0 THEN it.quantity_change_pieces ELSE 0 END),0)::int AS entro_pz,
-					COALESCE(SUM(CASE WHEN it.transaction_type IN ('DESPIECE','PRODUCCION','PESAJE') AND COALESCE(it.quantity_change_kg,0) > 0 THEN it.quantity_change_kg ELSE 0 END),0) AS entro_kg,
+					COALESCE(SUM(CASE WHEN it.transaction_type IN ('DESPIECE','PRODUCCION','PESAJE','COMPRA') AND it.quantity_change_pieces > 0 THEN it.quantity_change_pieces ELSE 0 END),0)::int AS entro_pz,
+					COALESCE(SUM(CASE WHEN it.transaction_type IN ('DESPIECE','PRODUCCION','PESAJE','COMPRA') AND COALESCE(it.quantity_change_kg,0) > 0 THEN it.quantity_change_kg ELSE 0 END),0) AS entro_kg,
 					COALESCE(SUM(CASE WHEN it.transaction_type = 'VENTA' THEN -it.quantity_change_pieces ELSE 0 END),0)::int AS salio_pz,
 					COALESCE(SUM(CASE WHEN it.transaction_type = 'VENTA' THEN -COALESCE(it.quantity_change_kg,0) ELSE 0 END),0) AS salio_kg
 				FROM inventory_transactions it
