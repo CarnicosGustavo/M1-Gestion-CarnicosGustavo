@@ -203,14 +203,15 @@ async function deductStockAndMarkCharged(
 				.select()
 				.from(products)
 				.where(eq(products.id, item.product_id))
+				.for("update")
 				.limit(1);
 			if (product) {
 				const itemQuantityKg = item.quantity_kg ? Number(item.quantity_kg) : 0;
-				const newStockKg = Number(product.stock_kg) - itemQuantityKg;
-				const nextPieces =
+				const deductPieces =
 					product.is_sellable_by_weight || !item.quantity_pieces
-						? (product.stock_pieces ?? 0)
-						: (product.stock_pieces ?? 0) - item.quantity_pieces;
+						? 0
+						: item.quantity_pieces;
+				const nextPieces = (product.stock_pieces ?? 0) - deductPieces;
 				const nextWeighedPieces = Math.min(
 					product.weighed_pieces ?? 0,
 					nextPieces,
@@ -218,17 +219,20 @@ async function deductStockAndMarkCharged(
 				await tx
 					.update(products)
 					.set({
-						stock_pieces: nextPieces,
+						stock_pieces:
+							deductPieces > 0
+								? sql`${products.stock_pieces} - ${deductPieces}`
+								: products.stock_pieces,
 						weighed_pieces: Math.max(0, nextWeighedPieces),
-						stock_kg: newStockKg.toFixed(3),
+						stock_kg:
+							itemQuantityKg > 0
+								? sql`${products.stock_kg} - ${itemQuantityKg.toFixed(3)}::numeric`
+								: products.stock_kg,
 					})
 					.where(eq(products.id, item.product_id));
 				await tx.insert(inventoryTransactions).values({
 					product_id: item.product_id,
-					quantity_change_pieces:
-						product.is_sellable_by_weight || !item.quantity_pieces
-							? null
-							: -item.quantity_pieces,
+					quantity_change_pieces: deductPieces > 0 ? -deductPieces : null,
 					quantity_change_kg:
 						itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
 					transaction_type: "VENTA",
