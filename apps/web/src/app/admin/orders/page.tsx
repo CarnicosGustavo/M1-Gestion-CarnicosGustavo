@@ -65,7 +65,6 @@ import { formatCurrency } from "@/lib/utils";
 type Order = RouterOutputs["orders"]["list"][number];
 // Estados que acepta orders.update (ver routers/orders.ts).
 const EDITABLE_ORDER_STATUSES = [
-	"COMPLETADA",
 	"pending",
 	"cancelled",
 	"PENDIENTE_PESAJE",
@@ -73,9 +72,8 @@ const EDITABLE_ORDER_STATUSES = [
 ] as const;
 type OrderStatus = (typeof EDITABLE_ORDER_STATUSES)[number];
 
-// "completed" es el valor heredado; el flujo actual usa "COMPLETADA".
 function toEditableStatus(status: string | null): OrderStatus | "" {
-	const s = status === "completed" ? "COMPLETADA" : (status ?? "pending");
+	const s = status ?? "pending";
 	return (EDITABLE_ORDER_STATUSES as readonly string[]).includes(s)
 		? (s as OrderStatus)
 		: "";
