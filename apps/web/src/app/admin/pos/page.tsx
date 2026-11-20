@@ -753,6 +753,9 @@ export default function POSPage() {
 									!product.is_sellable_by_weight ||
 									!!product.is_sellable_by_unit;
 								const lineAmount = lineTotal(product);
+								const displayedPrice = product.is_sellable_by_weight
+									? product.unitPricePerKg
+									: product.unitPricePerPiece;
 								return (
 									<div key={product.id} className="rounded-xl border p-3">
 										<div className="mb-2 flex items-center justify-between gap-2">
@@ -788,12 +791,21 @@ export default function POSPage() {
 													>
 														<MinusIcon className="h-4 w-4" />
 													</button>
-													<span
-														className="min-w-7 px-2 text-center font-bold font-mono text-sm"
+													<Input
+														type="number"
+														inputMode="numeric"
+														min={1}
+														value={product.quantityPieces}
+														onChange={(event) =>
+															handleSetQuantityPieces(
+																product.id,
+																Number(event.target.value),
+															)
+														}
+														className="h-11 w-16 border-0 border-x border-y-0 px-1 text-center font-bold font-mono text-sm"
+														aria-label={t("qty")}
 														aria-live="polite"
-													>
-														{product.quantityPieces}
-													</span>
+													/>
 													<button
 														type="button"
 														className="h-11 w-11 bg-muted/60 font-bold text-foreground"
@@ -833,6 +845,28 @@ export default function POSPage() {
 												}}
 											/>
 										) : null}
+
+										<div className="mt-2 flex items-center gap-2">
+											<Input
+												type="number"
+												step="0.01"
+												inputMode="decimal"
+												value={displayedPrice}
+												onChange={(event) => {
+													const value = Number(event.target.value);
+													if (product.is_sellable_by_weight) {
+														handleSetUnitPriceKg(product.id, value);
+													} else {
+														handleSetUnitPricePiece(product.id, value);
+													}
+												}}
+												className="h-11 flex-1"
+												aria-label={t("linePrice")}
+											/>
+											<span className="shrink-0 text-muted-foreground text-sm">
+												{product.is_sellable_by_weight ? "/kg" : "/pza"}
+											</span>
+										</div>
 									</div>
 								);
 							})}
