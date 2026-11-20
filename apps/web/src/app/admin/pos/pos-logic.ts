@@ -182,3 +182,11 @@ export function isFaltanteLine(
 export function isMissingPrice(value: number): boolean {
 	return !Number.isFinite(value) || value <= 0;
 }
+
+/** N3-1 / R4-14: solo confirmar el precio si el número cambió. */
+export function shouldCommitPrice(
+	normalized: number,
+	current: number,
+): boolean {
+	return normalized !== current;
+}

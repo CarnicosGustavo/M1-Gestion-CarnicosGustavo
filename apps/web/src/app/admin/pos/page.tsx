@@ -40,6 +40,7 @@ import {
 	needsWeigh,
 	quantityKgGramsForPayload,
 	resolvePrice,
+	shouldCommitPrice,
 	unitPriceCentsForPayload,
 } from "./pos-logic";
 
@@ -123,7 +124,7 @@ function LinePriceInput({ value, onCommit, ariaLabel }: LinePriceInputProps) {
 		const parsed = Number(text);
 		const normalized = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 		setText(String(normalized));
-		if (normalized !== value) onCommit(normalized);
+		if (shouldCommitPrice(normalized, value)) onCommit(normalized);
 	};
 
 	return (
