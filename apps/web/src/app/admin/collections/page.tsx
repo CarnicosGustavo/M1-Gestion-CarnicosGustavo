@@ -34,6 +34,7 @@ import {
 } from "@finopenpos/ui/components/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+	AlertTriangleIcon,
 	BanknoteIcon,
 	FileTextIcon,
 	MessageCircleIcon,
@@ -45,6 +46,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { PaymentReceiptModal } from "@/components/payment-receipt-modal";
+import { ScreenHead } from "@/components/screen-head";
 import { TicketModal } from "@/components/ticket-modal";
 import { useTRPC } from "@/lib/trpc/client";
 
@@ -264,38 +266,54 @@ export default function CollectionsPage() {
 	const accountsList = (accounts ?? []) as any[];
 	const conSaldo = accountsList.filter((a) => a.balance > 0.001);
 	const totalPorCobrar = conSaldo.reduce((s, a) => s + a.balance, 0);
+	const vencido60 = conSaldo.filter((a) => a.diasVencido > 60);
+	const totalVencido60 = vencido60.reduce((s, a) => s + a.balance, 0);
 
 	return (
-		<div className="space-y-6 max-w-5xl">
-			<div className="flex items-center justify-between gap-4 flex-wrap">
-				<div>
-					<h1 className="text-2xl font-bold">Cobranza</h1>
-					<p className="text-sm text-muted-foreground">
-						Cuentas por cobrar: pedidos a crédito y tickets viejos. Registra
-						abonos.
-					</p>
-				</div>
-				<Button onClick={() => setChargeOpen(true)}>
-					<PlusIcon className="w-4 h-4 mr-2" />
-					Capturar ticket viejo
-				</Button>
-			</div>
+		<div className="max-w-5xl space-y-6">
+			<ScreenHead
+				title="Cobranza"
+				desc="Cuentas por cobrar: pedidos a crédito y tickets viejos. Registra abonos."
+				right={
+					<Button onClick={() => setChargeOpen(true)}>
+						<PlusIcon className="mr-2 h-4 w-4" />
+						Capturar ticket viejo
+					</Button>
+				}
+			/>
 
-			{/* Total por cobrar */}
-			<Card>
-				<CardContent className="pt-6 flex items-center justify-between">
-					<div>
-						<p className="text-xs text-muted-foreground">Total por cobrar</p>
-						<p className="text-3xl font-bold text-red-600">
+			{/* KPIs de cobranza */}
+			<div className="grid gap-4 sm:grid-cols-3">
+				<Card>
+					<CardContent className="pt-6">
+						<p className="text-muted-foreground text-xs">Total por cobrar</p>
+						<p className="font-display text-3xl text-red-600">
 							{fmt(totalPorCobrar)}
 						</p>
-					</div>
-					<div className="text-right">
-						<p className="text-xs text-muted-foreground">Clientes con saldo</p>
-						<p className="text-3xl font-bold">{conSaldo.length}</p>
-					</div>
-				</CardContent>
-			</Card>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent className="pt-6">
+						<p className="text-muted-foreground text-xs">Clientes con saldo</p>
+						<p className="font-display text-3xl">{conSaldo.length}</p>
+					</CardContent>
+				</Card>
+				<Card className="border-destructive/40 bg-[var(--cg-red-wash)]">
+					<CardContent className="pt-6">
+						<p className="flex items-center gap-1.5 text-destructive text-xs">
+							<AlertTriangleIcon className="h-3.5 w-3.5" />
+							Vencido +60 días
+						</p>
+						<p className="font-display text-3xl text-destructive">
+							{fmt(totalVencido60)}
+						</p>
+						<p className="mt-0.5 text-muted-foreground text-xs">
+							{vencido60.length} {vencido60.length === 1 ? "cuenta" : "cuentas"}{" "}
+							en mora
+						</p>
+					</CardContent>
+				</Card>
+			</div>
 
 			<Card>
 				<CardHeader>
@@ -319,7 +337,7 @@ export default function CollectionsPage() {
 									<TableRow>
 										<TableCell
 											colSpan={6}
-											className="text-center text-muted-foreground py-6"
+											className="py-6 text-center text-muted-foreground"
 										>
 											Sin cuentas por cobrar
 										</TableCell>
@@ -368,7 +386,7 @@ export default function CollectionsPage() {
 															})
 														}
 													>
-														<BanknoteIcon className="w-4 h-4 mr-1" />
+														<BanknoteIcon className="mr-1 h-4 w-4" />
 														Abonar
 													</Button>
 													<Button
@@ -381,7 +399,7 @@ export default function CollectionsPage() {
 															})
 														}
 													>
-														<FileTextIcon className="w-4 h-4 mr-1" />
+														<FileTextIcon className="mr-1 h-4 w-4" />
 														Estado
 													</Button>
 													<Button
@@ -391,7 +409,7 @@ export default function CollectionsPage() {
 														title="Enviar recordatorio de pago por WhatsApp"
 														onClick={() => sendReminder(a)}
 													>
-														<MessageCircleIcon className="w-4 h-4 mr-1" />
+														<MessageCircleIcon className="mr-1 h-4 w-4" />
 														Recordar
 													</Button>
 												</div>
@@ -533,7 +551,7 @@ export default function CollectionsPage() {
 					</DialogHeader>
 					{statement.data ? (
 						<div className="space-y-3">
-							<div className="overflow-x-auto max-h-80 overflow-y-auto">
+							<div className="max-h-80 overflow-x-auto overflow-y-auto">
 								<Table>
 									<TableHeader>
 										<TableRow className="bg-muted/50">
@@ -571,7 +589,7 @@ export default function CollectionsPage() {
 																	})
 																}
 															>
-																<PrinterIcon className="w-4 h-4" />
+																<PrinterIcon className="h-4 w-4" />
 															</Button>
 														) : l.orderId ? (
 															<Button
@@ -580,7 +598,7 @@ export default function CollectionsPage() {
 																title="Recibo de compra (ticket)"
 																onClick={() => setTicketOrderId(l.orderId)}
 															>
-																<PrinterIcon className="w-4 h-4" />
+																<PrinterIcon className="h-4 w-4" />
 															</Button>
 														) : null}
 														<Button
@@ -589,7 +607,7 @@ export default function CollectionsPage() {
 															title="Corregir movimiento"
 															onClick={() => openEditMovement(l)}
 														>
-															<PencilIcon className="w-4 h-4" />
+															<PencilIcon className="h-4 w-4" />
 														</Button>
 														<Button
 															variant="ghost"
@@ -598,7 +616,7 @@ export default function CollectionsPage() {
 															title="Eliminar movimiento"
 															onClick={() => deleteMovement(l)}
 														>
-															<Trash2Icon className="w-4 h-4" />
+															<Trash2Icon className="h-4 w-4" />
 														</Button>
 													</div>
 												</TableCell>
@@ -609,17 +627,17 @@ export default function CollectionsPage() {
 							</div>
 							<div className="grid grid-cols-3 gap-3 border-t pt-3">
 								<div className="rounded-lg bg-slate-50 p-3">
-									<p className="text-xs text-muted-foreground">Cargos</p>
+									<p className="text-muted-foreground text-xs">Cargos</p>
 									<p className="font-bold">{fmt(statement.data.totalCargos)}</p>
 								</div>
 								<div className="rounded-lg bg-slate-50 p-3">
-									<p className="text-xs text-muted-foreground">Abonos</p>
+									<p className="text-muted-foreground text-xs">Abonos</p>
 									<p className="font-bold text-green-700">
 										{fmt(statement.data.totalAbonos)}
 									</p>
 								</div>
 								<div className="rounded-lg bg-red-50 p-3">
-									<p className="text-xs text-muted-foreground">Saldo</p>
+									<p className="text-muted-foreground text-xs">Saldo</p>
 									<p className="font-bold text-red-600">
 										{fmt(statement.data.balance)}
 									</p>
@@ -627,7 +645,7 @@ export default function CollectionsPage() {
 							</div>
 						</div>
 					) : (
-						<p className="text-sm text-muted-foreground py-4">Cargando…</p>
+						<p className="py-4 text-muted-foreground text-sm">Cargando…</p>
 					)}
 				</DialogContent>
 			</Dialog>
