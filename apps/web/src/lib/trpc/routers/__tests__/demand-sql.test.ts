@@ -91,9 +91,11 @@ describe("demand-sql — M17/M18", () => {
 			GROUP BY oi.product_id
 		`;
 
-		const demand = await pg.query<{ pid: number; pieces: number; kg: string | number }>(
-			demandSql,
-		);
+		const demand = await pg.query<{
+			pid: number;
+			pieces: number;
+			kg: string | number;
+		}>(demandSql);
 		expect(demand.rows).toHaveLength(0);
 
 		const realKg = await pg.query<{ pid: number; kg: string | number }>(
