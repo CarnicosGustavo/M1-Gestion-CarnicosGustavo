@@ -123,7 +123,7 @@ function LinePriceInput({ value, onCommit, ariaLabel }: LinePriceInputProps) {
 		const parsed = Number(text);
 		const normalized = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 		setText(String(normalized));
-		onCommit(normalized);
+		if (normalized !== value) onCommit(normalized);
 	};
 
 	return (
@@ -159,11 +159,6 @@ export default function POSPage() {
 		isError: customersError,
 	} = useQuery(trpc.customers.list.queryOptions());
 	const {
-		data: paymentMethods = [],
-		isLoading: loadingMethods,
-		isError: paymentMethodsError,
-	} = useQuery(trpc.paymentMethods.list.queryOptions());
-	const {
 		data: priceLists = [],
 		isLoading: loadingPriceLists,
 		isError: priceListsError,
@@ -173,10 +168,6 @@ export default function POSPage() {
 	);
 
 	const [selectedProducts, setSelectedProducts] = useState<POSProduct[]>([]);
-	const [paymentMethod, setPaymentMethod] = useState<{
-		id: number;
-		name: string;
-	} | null>(null);
 	const [selectedCustomer, setSelectedCustomer] = useState<{
 		id: number;
 		name: string | null;
@@ -308,8 +299,7 @@ export default function POSPage() {
 		[priceLists],
 	);
 
-	const loading =
-		loadingProducts || loadingCustomers || loadingMethods || loadingPriceLists;
+	const loading = loadingProducts || loadingCustomers || loadingPriceLists;
 
 	const pricesLoading =
 		(!!selectedCustomer && customerPricesQuery.isFetching) ||
@@ -320,11 +310,7 @@ export default function POSPage() {
 		(selectedPriceListId !== "base" && priceListItemsQuery.isError);
 
 	const loadError =
-		productsError ||
-		customersError ||
-		availabilityError ||
-		paymentMethodsError ||
-		priceListsError;
+		productsError || customersError || availabilityError || priceListsError;
 
 	const hasMissingPrice = selectedProducts.some((product) =>
 		product.is_sellable_by_weight
@@ -353,7 +339,6 @@ export default function POSPage() {
 
 				setSelectedProducts([]);
 				setSelectedCustomer(null);
-				setPaymentMethod(null);
 			},
 			onError: (error) => toast.error(error.message || tOrders("createError")),
 		}),
@@ -430,11 +415,6 @@ export default function POSPage() {
 				phone: customer.phone,
 			});
 		}
-	};
-
-	const handleSelectPaymentMethod = (paymentMethodId: number | string) => {
-		const method = paymentMethods.find((item) => item.id === paymentMethodId);
-		if (method) setPaymentMethod(method);
 	};
 
 	const handleQuantityChange = (productId: number, delta: number) => {
@@ -702,7 +682,7 @@ export default function POSPage() {
 			<div className="grid items-start gap-4 lg:grid-cols-[1fr_360px]">
 				<div className="flex flex-col gap-4">
 					<Card>
-						<CardContent className="grid gap-3 pt-6 sm:grid-cols-3">
+						<CardContent className="grid gap-3 pt-6 sm:grid-cols-2">
 							<Combobox
 								items={customers.map((customer: Customer) => ({
 									id: customer.id,
@@ -713,12 +693,6 @@ export default function POSPage() {
 								value={selectedCustomerValue}
 								placeholder="Cliente"
 								onSelect={handleSelectCustomer}
-							/>
-							<Combobox
-								items={paymentMethods}
-								value={paymentMethod?.name ?? ""}
-								placeholder={t("selectPaymentMethod")}
-								onSelect={handleSelectPaymentMethod}
 							/>
 							<Combobox
 								items={priceListOptions}

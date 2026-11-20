@@ -135,6 +135,19 @@ describe("Regla (a) y F5 — lineDisp", () => {
 		).toBe("pesaje");
 	});
 
+	it("por peso con 0 kg tecleados queda pesaje, no stock", () => {
+		expect(
+			lineDisp({
+				id: 1,
+				stock_pieces: 0,
+				stock_kg: 2,
+				is_sellable_by_weight: true,
+				quantityPieces: 1,
+				quantityKg: 0,
+			}),
+		).toBe("pesaje");
+	});
+
 	it("por peso con kg dentro del stock queda stock", () => {
 		expect(
 			lineDisp({

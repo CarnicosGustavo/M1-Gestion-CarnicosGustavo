@@ -133,11 +133,12 @@ export function lineDisp(
 	const derivable = avail?.derivable ?? false;
 
 	if (p.is_sellable_by_weight) {
-		if (p.quantityKg !== null && p.quantityKg !== undefined) {
-			if (p.quantityKg <= stockKg) return "stock";
+		// N3-3: 0 kg (como null) sigue siendo pesaje, no "en stock".
+		if (!p.quantityKg) {
+			if (stockKg > 0) return "pesaje";
 			return derivable ? "despiece" : "faltante";
 		}
-		if (stockKg > 0) return "pesaje";
+		if (p.quantityKg <= stockKg) return "stock";
 		return derivable ? "despiece" : "faltante";
 	}
 
