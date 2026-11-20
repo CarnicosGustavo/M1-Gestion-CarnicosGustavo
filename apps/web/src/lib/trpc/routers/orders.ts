@@ -1587,6 +1587,44 @@ export const ordersRouter = router({
 						message: "Ítem no encontrado",
 					});
 
+				if (!item.order_id) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Pedido no encontrado",
+					});
+				}
+				// Si la línea ya no está pendiente, el UPDATE condicional más abajo
+				// devuelve CONFLICT («ya fue pesado»). El cierre/cancelación solo
+				// se rechaza cuando todavía habría que pesar.
+				if (item.status === "PENDIENTE_PESAJE") {
+					const [lockedOrder] = await tx
+						.select({ id: orders.id, status: orders.status })
+						.from(orders)
+						.where(eq(orders.id, item.order_id))
+						.for("update")
+						.limit(1);
+					if (!lockedOrder) {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "Pedido no encontrado",
+						});
+					}
+					if (
+						lockedOrder.status === "cancelled" ||
+						lockedOrder.status === "COMPLETADA" ||
+						lockedOrder.status === "paid" ||
+						lockedOrder.status === "completed" ||
+						lockedOrder.status === "delivered" ||
+						lockedOrder.status === "PROCESANDO_PAGO"
+					) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message:
+								"No se puede pesar un artículo de un pedido cancelado, completado o en cobro",
+						});
+					}
+				}
+
 				const subtotal = Math.round((grams * Number(item.unit_price)) / 1000);
 				const actualWeightKg = (grams / 1000).toFixed(3);
 
