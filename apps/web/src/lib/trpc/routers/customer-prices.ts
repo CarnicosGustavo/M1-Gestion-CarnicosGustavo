@@ -9,6 +9,12 @@ import {
 } from "@/lib/db/schema";
 import { protectedProcedure, router } from "../init";
 
+function toNumOrNull(value: number | string | null | undefined): number | null {
+	if (value === null || value === undefined) return null;
+	const n = typeof value === "number" ? value : Number(value);
+	return Number.isFinite(n) ? n : null;
+}
+
 export const customerPricesRouter = router({
 	// Lista TODOS los productos del usuario con el precio guardado del cliente (si existe)
 	getByCustomer: protectedProcedure
@@ -70,6 +76,12 @@ export const customerPricesRouter = router({
 					null,
 				hasCustomPrice:
 					r.customerPricePerKg != null || r.customerPricePerPiece != null,
+				// Valores CRUDOS (sin rellenar con la cascada): null cuando la columna es null.
+				customerPricePerKg: toNumOrNull(r.customerPricePerKg),
+				customerPricePerPiece: toNumOrNull(r.customerPricePerPiece),
+				// Lista ASIGNADA al cliente (price_list_id)
+				listPricePerKg: toNumOrNull(r.listPricePerKg),
+				listPricePerPiece: toNumOrNull(r.listPricePerPiece),
 			}));
 		}),
 
