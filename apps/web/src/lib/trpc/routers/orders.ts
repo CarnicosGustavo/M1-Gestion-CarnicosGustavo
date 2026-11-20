@@ -116,6 +116,75 @@ const orderPrepareDisassemblyResultSchema = z.object({
 	ok: z.boolean(),
 });
 
+type OrdersTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function productIsDerivable(
+	tx: OrdersTx,
+	productId: number,
+	userId: string,
+): Promise<boolean> {
+	const links = await tx
+		.select({ parentId: productTransformations.parent_product_id })
+		.from(productTransformations)
+		.where(
+			and(
+				eq(productTransformations.child_product_id, productId),
+				eq(productTransformations.is_active, true),
+			),
+		);
+	if (links.length === 0) return false;
+	const parents = await tx
+		.select({
+			stock_pieces: products.stock_pieces,
+			stock_kg: products.stock_kg,
+		})
+		.from(products)
+		.where(
+			and(
+				inArray(
+					products.id,
+					links.map((link) => link.parentId),
+				),
+				eq(products.user_uid, userId),
+			),
+		);
+	return parents.some(
+		(parent) => (parent.stock_pieces ?? 0) > 0 || Number(parent.stock_kg) > 0,
+	);
+}
+
+function lineIsActuallyFaltante(
+	product: {
+		is_sellable_by_weight: boolean | null;
+		stock_pieces: number | null;
+		stock_kg: unknown;
+	},
+	item: { quantityPieces?: number; quantityKg?: number },
+	derivable: boolean,
+): boolean {
+	if (product.is_sellable_by_weight) {
+		const stockKg = Number(product.stock_kg ?? 0);
+		if (item.quantityKg && item.quantityKg > 0) {
+			if (item.quantityKg / 1000 <= stockKg) return false;
+			return !derivable;
+		}
+		if (stockKg > 0) return false;
+		return !derivable;
+	}
+	if ((item.quantityPieces ?? 0) <= (product.stock_pieces ?? 0)) return false;
+	return !derivable;
+}
+
+function assertNoPendingPurchase(items: { status: string | null }[]): void {
+	if (items.some((item) => item.status === "PENDIENTE_COMPRA")) {
+		throw new TRPCError({
+			code: "BAD_REQUEST",
+			message:
+				"El pedido tiene líneas pendientes de compra y no se puede cobrar",
+		});
+	}
+}
+
 export const ordersRouter = router({
 	get: protectedProcedure
 		.meta({
@@ -1159,10 +1228,10 @@ export const ordersRouter = router({
 				items: z.array(
 					z.object({
 						productId: z.number(),
-						quantityPieces: z.number().int().optional(),
-						quantityKg: z.number().int().optional(),
-						unitPrice: z.number().int(),
-						requiresPurchase: z.boolean().optional(), // NUEVO: indica si el item está pendiente de compra
+						quantityPieces: z.number().int().nonnegative().optional(),
+						quantityKg: z.number().int().nonnegative().optional(),
+						unitPrice: z.number().int().nonnegative(),
+						requiresPurchase: z.boolean().optional(),
 					}),
 				),
 				notes: z.string().optional(),
@@ -1202,10 +1271,18 @@ export const ordersRouter = router({
 					// No se bloquea por stock: el pedido se acepta aunque el producto no
 					// exista todavía en inventario. El stock puede quedar negativo y se
 					// compensa al despiezar las canales.
-					if (item.requiresPurchase === true) {
-						// F12 / regla (b): respeta requiresPurchase. El ítem no se cobra
-						// todavía (subtotal 0). Ya existía el status PENDIENTE_COMPRA;
-						// no hace falta migración.
+					// R2-3: requiresPurchase solo cuenta si la línea es realmente
+					// faltante (stock real + derivabilidad).
+					const derivable = await productIsDerivable(
+						tx,
+						product.id,
+						ctx.user.id,
+					);
+					const actuallyMissing =
+						item.requiresPurchase === true &&
+						lineIsActuallyFaltante(product, item, derivable);
+					if (actuallyMissing) {
+						// F12 / regla (b): el ítem no se cobra todavía (subtotal 0).
 						itemStatus = "PENDIENTE_COMPRA";
 						pendingPurchase = true;
 						if (product.is_sellable_by_weight) {
@@ -1234,7 +1311,10 @@ export const ordersRouter = router({
 						product_id: item.productId,
 						product_name: product.name,
 						quantity: item.quantityKg ?? item.quantityPieces ?? 0,
-						quantity_pieces: item.quantityPieces,
+						// R2-5: las líneas por kg no guardan piezas.
+						quantity_pieces: product.is_sellable_by_weight
+							? null
+							: item.quantityPieces,
 						quantity_kg: quantityKg,
 						unit_price: item.unitPrice,
 						subtotal: subtotal,
@@ -1281,18 +1361,7 @@ export const ordersRouter = router({
 					})),
 				);
 
-				if (orderStatus === "LISTA_PARA_COBRO" && input.paymentMethodId) {
-					await tx.insert(transactions).values({
-						order_id: orderData.id,
-						payment_method_id: input.paymentMethodId,
-						amount: Math.round(totalAmount),
-						user_uid: ctx.user.id,
-						status: "completed",
-						category: "selling",
-						type: "income",
-						description: `Pago de pedido #${orderData.id}`,
-					});
-				}
+				// R2-2: el cobro se registra en la Cola de Cobro, no al crear.
 
 				const customer = input.customerId
 					? await tx.query.customers.findFirst({
@@ -1435,6 +1504,9 @@ export const ordersRouter = router({
 				const allWeighed = allItems.every((i) =>
 					i.id === input.orderItemId ? true : i.status !== "PENDIENTE_PESAJE",
 				);
+				const hasPendingPurchase = allItems.some(
+					(i) => i.id !== input.orderItemId && i.status === "PENDIENTE_COMPRA",
+				);
 
 				// ¿Es un pesaje de producción? (pedido sin cliente etiquetado)
 				const [ord] = await tx
@@ -1475,7 +1547,9 @@ export const ordersRouter = router({
 								? "COMPLETADA"
 								: "PENDIENTE_PESAJE"
 							: allWeighed
-								? "LISTA_PARA_COBRO"
+								? hasPendingPurchase
+									? "PARCIAL_DISPONIBLE"
+									: "LISTA_PARA_COBRO"
 								: "PENDIENTE_PESAJE",
 						requires_weighing: !allWeighed,
 					})
@@ -1524,7 +1598,10 @@ export const ordersRouter = router({
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
 
+				assertNoPendingPurchase(items);
+
 				for (const item of items) {
+					if (item.status === "PENDIENTE_COMPRA") continue;
 					if (item.product_id) {
 						const [product] = await tx
 							.select()
@@ -1538,9 +1615,10 @@ export const ordersRouter = router({
 								? Number(item.quantity_kg)
 								: 0;
 							const newStockKg = currentStockKg - itemQuantityKg;
-							const nextPieces = item.quantity_pieces
-								? (product.stock_pieces ?? 0) - item.quantity_pieces
-								: (product.stock_pieces ?? 0);
+							const nextPieces =
+								product.is_sellable_by_weight || !item.quantity_pieces
+									? (product.stock_pieces ?? 0)
+									: (product.stock_pieces ?? 0) - item.quantity_pieces;
 							const nextWeighedPieces = Math.min(
 								product.weighed_pieces ?? 0,
 								nextPieces,
@@ -1559,9 +1637,10 @@ export const ordersRouter = router({
 
 							await tx.insert(inventoryTransactions).values({
 								product_id: item.product_id,
-								quantity_change_pieces: item.quantity_pieces
-									? -item.quantity_pieces
-									: null,
+								quantity_change_pieces:
+									product.is_sellable_by_weight || !item.quantity_pieces
+										? null
+										: -item.quantity_pieces,
 								quantity_change_kg:
 									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
 								transaction_type: "VENTA",
@@ -1631,7 +1710,10 @@ export const ordersRouter = router({
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
 
+				assertNoPendingPurchase(items);
+
 				for (const item of items) {
+					if (item.status === "PENDIENTE_COMPRA") continue;
 					if (item.product_id) {
 						const [product] = await tx
 							.select()
@@ -1644,9 +1726,10 @@ export const ordersRouter = router({
 								? Number(item.quantity_kg)
 								: 0;
 							const newStockKg = currentStockKg - itemQuantityKg;
-							const nextPieces = item.quantity_pieces
-								? (product.stock_pieces ?? 0) - item.quantity_pieces
-								: (product.stock_pieces ?? 0);
+							const nextPieces =
+								product.is_sellable_by_weight || !item.quantity_pieces
+									? (product.stock_pieces ?? 0)
+									: (product.stock_pieces ?? 0) - item.quantity_pieces;
 							const nextWeighedPieces = Math.min(
 								product.weighed_pieces ?? 0,
 								nextPieces,
@@ -1663,9 +1746,10 @@ export const ordersRouter = router({
 
 							await tx.insert(inventoryTransactions).values({
 								product_id: item.product_id,
-								quantity_change_pieces: item.quantity_pieces
-									? -item.quantity_pieces
-									: null,
+								quantity_change_pieces:
+									product.is_sellable_by_weight || !item.quantity_pieces
+										? null
+										: -item.quantity_pieces,
 								quantity_change_kg:
 									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
 								transaction_type: "VENTA",
@@ -1892,7 +1976,9 @@ export const ordersRouter = router({
 					.select()
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
+				assertNoPendingPurchase(allItems);
 				for (const item of allItems) {
+					if (item.status === "PENDIENTE_COMPRA") continue;
 					if (item.product_id) {
 						const [product] = await tx
 							.select()
@@ -1907,9 +1993,10 @@ export const ordersRouter = router({
 							// el cobro NO se bloquea por stock. Se descuenta sin bajar de 0.
 							// Stock puede quedar negativo: se compensa al despiezar.
 							const finalStockKg = Number(product.stock_kg) - itemQuantityKg;
-							const finalPieces = item.quantity_pieces
-								? (product.stock_pieces ?? 0) - item.quantity_pieces
-								: (product.stock_pieces ?? 0);
+							const finalPieces =
+								product.is_sellable_by_weight || !item.quantity_pieces
+									? (product.stock_pieces ?? 0)
+									: (product.stock_pieces ?? 0) - item.quantity_pieces;
 							await tx
 								.update(products)
 								.set({
@@ -1923,9 +2010,10 @@ export const ordersRouter = router({
 								.where(eq(products.id, item.product_id));
 							await tx.insert(inventoryTransactions).values({
 								product_id: item.product_id,
-								quantity_change_pieces: item.quantity_pieces
-									? -item.quantity_pieces
-									: null,
+								quantity_change_pieces:
+									product.is_sellable_by_weight || !item.quantity_pieces
+										? null
+										: -item.quantity_pieces,
 								quantity_change_kg:
 									itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
 								transaction_type: "VENTA",

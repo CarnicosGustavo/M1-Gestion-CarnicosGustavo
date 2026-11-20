@@ -15,8 +15,8 @@ const callerAs = (uid: string) =>
 	createCallerFactory(ordersRouter)({ user: makeUser(uid) });
 
 let customerId: number;
-let pieceProductId: number; // se vende por pieza (no requiere pesaje)
-let weightProductId: number; // se vende por peso (va a pesaje)
+let pieceProductId: number;
+let weightProductId: number;
 let paymentMethodId: number;
 
 beforeAll(async () => {
@@ -99,7 +99,7 @@ describe("orders.list", () => {
 });
 
 describe("orders.create", () => {
-	it("producto por pieza: orden LISTA_PARA_COBRO + items + transacción", async () => {
+	it("producto por pieza: orden LISTA_PARA_COBRO + items, sin transacción (el cobro es posterior)", async () => {
 		const order = await caller.create({
 			customerId,
 			paymentMethodId,
@@ -128,13 +128,7 @@ describe("orders.create", () => {
 			.select()
 			.from(transactions)
 			.where(eq(transactions.order_id, order.id));
-		expect(txns.length).toBe(1);
-		expect(Number(txns[0].amount)).toBe(3000);
-		expect(txns[0].type).toBe("income");
-		expect(txns[0].category).toBe("selling");
-		expect(txns[0].status).toBe("completed");
-		expect(txns[0].user_uid).toBe("user-1");
-		expect(Number(txns[0].payment_method_id)).toBe(paymentMethodId);
+		expect(txns.length).toBe(0);
 	});
 
 	it("producto por peso: orden PENDIENTE_PESAJE, sin transacción", async () => {
