@@ -36,7 +36,7 @@ alto, p. ej. 1366×768).
 | 1 | Pedidos | Se selecciona el pedido (J/K + Enter). |
 | 2 | Pedido | Detalles: pedido, cliente, producto en báscula, piezas, neto acumulado (suma de capturas), total. |
 | 3 | Pendientes de pesar | Renglones `PENDIENTE_PESAJE`; el seleccionado va a la báscula. |
-| 4 | Báscula I-QY | Bisel oscuro, título «Cárnicos Gustavo» naranja, LCD de 7 segmentos (SVG) con «8» fantasma, indicadores CERO/TARA/ESTABLE/HOLD/PICO/M+/HML/BATERÍA, unidades pcs/lb/kg y botones físicos ON/OFF, →0←/▲, →T←/▼ (rojos), M+/◀, HOLD/▶ (naranjas), f/↵ (cian). |
+| 4 | Báscula I-QY (protagonista) | Carcasa plata de esquinas muy redondeadas y frente negro brillante. Placa centrada con «Cárnicos Gustavo» en dorado (sustituye el logo Rhino). LCD celeste retroiluminado, dígitos de 7 segmentos negros con «8» fantasma, unidades pcs/lb/kg con ▶, icono de batería, marcas en el borde inferior del LCD y etiquetas blancas debajo (CERO, TARA, ESTABLE, HOLD, PICO, M+, HML, BATERÍA). «I-QY» a la izquierda bajo las etiquetas. Botones de membrana con borde blanco: ON/OFF, →0←/▲, →T←/▼ (rojos), M+/◀, HOLD/▶ (amarillos), f/↵ (azul). Línea discreta B/T/N dentro del LCD. |
 | 5 | Venta / ticket | Lo ya pesado pasa aquí con el **precio del cliente** (editable), subtotal y total. «Cobrar e imprimir» abre el cobro existente (`/admin/checkout?order=N`), que imprime el ticket. |
 | 7 | Pantalla de funciones | LCD verde con menús: Inicio (capturas, deshacer), Tara (recipientes), Serial (conexión Web Serial y ajustes), Tramas (diagnóstico), Tema, Teclado (peso manual y lecturas de báscula), Atajos. |
 

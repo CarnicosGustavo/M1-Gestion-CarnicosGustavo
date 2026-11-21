@@ -34,13 +34,13 @@ function FunctionKey({ item }: { item: FnKey }) {
 			disabled={item.disabled}
 			onClick={item.onPress}
 			className={cn(
-				"relative flex min-h-[3rem] w-full min-w-[4.2rem] flex-col items-center justify-center rounded-md border border-b-[3px] px-2 py-1.5 font-bold font-mono text-[11px] uppercase tracking-wide shadow-[0_3px_5px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f39a1e] active:translate-y-px active:shadow-[0_1px_2px_rgba(0,0,0,0.4)] disabled:cursor-not-allowed disabled:opacity-40 [@media(max-height:860px)]:min-h-[2rem] [@media(max-height:860px)]:flex-row [@media(max-height:860px)]:gap-1.5 [@media(max-height:860px)]:py-0.5",
+				"relative flex min-h-[2.15rem] w-full min-w-[4.6rem] flex-row items-center justify-center gap-1.5 rounded-md border border-b-[3px] px-2 py-1 font-bold font-mono text-[11px] uppercase tracking-wide shadow-[0_3px_5px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f39a1e] active:translate-y-px active:shadow-[0_1px_2px_rgba(0,0,0,0.4)] disabled:cursor-not-allowed disabled:opacity-40",
 				keyTones[item.tone ?? "neutral"],
 				item.active && "border-[#f39a1e] ring-1 ring-[#f39a1e]/70",
 			)}
 		>
 			<span className="max-w-full truncate">{item.label}</span>
-			<kbd className="mt-1 rounded border border-current/20 bg-black/20 px-1 font-bold font-mono text-[8px] leading-none opacity-70 [@media(max-height:860px)]:mt-0">
+			<kbd className="rounded border border-current/20 bg-black/20 px-1 font-bold font-mono text-[8px] leading-none opacity-70">
 				{item.shortcut}
 			</kbd>
 			{item.active ? (

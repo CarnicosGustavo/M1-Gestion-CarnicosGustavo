@@ -1210,7 +1210,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				</div>
 
 				{/* Fila superior: 1 | (2 · 3 / 4) | 5 */}
-				<div className="grid min-h-0 flex-[1.45] grid-cols-[minmax(11rem,20fr)_minmax(0,62fr)_minmax(13rem,16fr)] gap-2">
+				<div className="grid min-h-0 flex-[1.7] grid-cols-[minmax(10rem,16fr)_minmax(0,70fr)_minmax(12rem,14fr)] gap-2">
 					<OrdersPanel
 						orders={orders}
 						selectedOrderId={selectedOrderId}
@@ -1224,7 +1224,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 						onFocusPanel={() => setFocusedTile(1)}
 					/>
 					<div className="flex min-h-0 min-w-0 flex-col gap-2">
-						<div className="grid h-[36%] min-h-[7.5rem] shrink-0 grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-2 [@media(max-height:860px)]:h-[30%] [@media(max-height:860px)]:min-h-[5.5rem]">
+						<div className="grid h-[24%] min-h-[6rem] shrink-0 grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-2 [@media(max-height:860px)]:h-[22%] [@media(max-height:860px)]:min-h-[5.25rem]">
 							<OrderPanel
 								order={selectedOrder}
 								currentItem={currentItem}
@@ -1291,7 +1291,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				</div>
 
 				{/* 7 · Pantalla de funciones con sus botones alrededor */}
-				<div className="min-h-0 flex-1">
+				<div className="min-h-0 flex-[1] [@media(max-height:860px)]:flex-[1.05]">
 					<FunctionScreen
 						title={`7 · ${FN_PAGE_TITLES[fnPage]}`}
 						subtitle="Súper+7 · Esc vuelve a Inicio"
