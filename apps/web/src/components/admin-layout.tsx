@@ -260,6 +260,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 		return <div className="min-h-screen w-full bg-muted/40">{children}</div>;
 	}
 
+	// Báscula de una pantalla: ocupa todo el monitor, sin menú ni cabecera.
+	// Todo lo demás se abre desde su fila de teclas (pantalla 7 + ventanas).
+	if (isPesajeV2) {
+		return (
+			<div className="flex h-screen w-full flex-col overflow-hidden bg-background p-1.5">
+				<AntonellaProvider>{children}</AntonellaProvider>
+			</div>
+		);
+	}
+
 	return (
 		<div className="flex h-screen w-full flex-col bg-background">
 			<header className="grid h-[60px] shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b bg-card px-3 sm:px-4">

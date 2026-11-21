@@ -20,14 +20,8 @@ import {
 	SelectValue,
 } from "@finopenpos/ui/components/select";
 import { cn } from "@finopenpos/ui/lib/utils";
-import {
-	useMutation,
-	useQueries,
-	useQuery,
-	useQueryClient,
-} from "@tanstack/react-query";
-import { CheckCircleIcon, PackageIcon, ScaleIcon } from "lucide-react";
-import Link from "next/link";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
+import { CheckCircleIcon, MicIcon, PackageIcon, ScaleIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -46,24 +40,42 @@ import {
 	ScaleSettingsForm,
 } from "@/components/scale-serial/scale-serial-panel";
 import type { LiveReading } from "@/components/scale-serial/use-scale-serial";
+import { TicketModal } from "@/components/ticket-modal";
 import type { LineTotals } from "@/lib/scale/webserial/line-totals";
 import { DEFAULT_SCALE_SETTINGS } from "@/lib/scale/webserial/settings";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
 import {
 	DEMO_CAPTURES,
+	DEMO_CATALOG,
 	DEMO_CUSTOMER_PRICES,
+	DEMO_CUSTOMERS,
 	DEMO_LIVE,
 	DEMO_ORDERS,
 	DEMO_TICKET_LINES,
 } from "./demo-data";
-import { type FnKey, FunctionScreen } from "./instrument/function-screen";
+import {
+	type FnKey,
+	type FnKeyGroup,
+	FunctionScreen,
+} from "./instrument/function-screen";
 import { IqyDisplay, type IqyIndicator } from "./instrument/iqy-display";
+import { ModuleOverlay } from "./overlays/module-overlay";
+import {
+	type CatalogProduct,
+	NewOrderOverlay,
+	type OrderDraft,
+} from "./overlays/new-order-overlay";
 import { OrdersOverlay } from "./overlays/orders-overlay";
 import { TicketsOverlay } from "./overlays/tickets-overlay";
+import { VoiceNote } from "./overlays/voice-note";
 import { usePesajeTheme } from "./pesaje-themes";
 import "./pesaje-themes.css";
-import { type CustomerPriceRow, resolveDefaultPrice } from "./pricing";
+import {
+	type CustomerPriceRow,
+	lineSubtotalCents,
+	resolveDefaultPrice,
+} from "./pricing";
 import {
 	matchPesajeShortcut,
 	type PesajeCommand,
@@ -71,12 +83,19 @@ import {
 } from "./shortcuts";
 import {
 	AtajosPage,
+	CobroPage,
+	ConfigPage,
 	FN_PAGE_TITLES,
 	FnFormCard,
 	InicioPage,
+	ModuleQuickPage,
+	PedidosQuickPage,
+	ProduccionQuickPage,
 	RecipientePage,
 	TecladoPage,
 	TemaPage,
+	TicketsQuickPage,
+	VozPage,
 } from "./tiles/fn-pages";
 import { type SaleLine, SalePanel } from "./tiles/sale-panel";
 import { OrderPanel, OrdersPanel, PendingPanel } from "./tiles/top-panels";
@@ -84,7 +103,10 @@ import {
 	CONTAINERS,
 	type ContainerId,
 	captureNetG,
+	type DetailPage,
 	type FnPage,
+	isDetailPage,
+	isModulePage,
 	itemName,
 	orderTitle,
 	PESAJE_THEMES,
@@ -94,19 +116,139 @@ import {
 	type TileId,
 } from "./types";
 
+/** Páginas técnicas que viven dentro de Config (la tecla Config se ilumina). */
+const CONFIG_PAGES = new Set<FnPage>([
+	"config",
+	"conexion",
+	"diagnostico",
+	"tema",
+	"teclado",
+	"atajos",
+]);
+
+/** Tamaño de letra de la estación (zoom de listas y textos). */
+const FONT_SCALES = ["normal", "mediano", "grande"] as const;
+type FontScale = (typeof FONT_SCALES)[number];
+const FONT_STORAGE_KEY = "cg.pesajeFont";
+
+/** Pedidos que siguen en la estación aunque ya no tengan nada por pesar. */
+const OPEN_STATUSES = [
+	"PENDIENTE_PESAJE",
+	"LISTA_PARA_COBRO",
+	"PARCIAL_DISPONIBLE",
+];
+
+const DEMO_PAYMENT_METHODS = [
+	{ id: 1, name: "Efectivo" },
+	{ id: 2, name: "Transferencia" },
+	{ id: 3, name: "Tarjeta" },
+];
+
+const DEMO_TICKETS = [
+	{
+		id: 1839,
+		title: "Carnicería El Toro",
+		total: "$3,412.00",
+		when: "hoy 09:42",
+	},
+	{
+		id: 1838,
+		title: "Taquería Los Primos",
+		total: "$1,186.50",
+		when: "hoy 09:15",
+	},
+	{
+		id: 1836,
+		title: "Mercado San Juan",
+		total: "$5,020.00",
+		when: "ayer 18:03",
+	},
+];
+
+type SpeechRecognitionLike = {
+	lang: string;
+	interimResults: boolean;
+	continuous: boolean;
+	onresult:
+		| ((event: {
+				results: ArrayLike<ArrayLike<{ transcript: string }>>;
+		  }) => void)
+		| null;
+	onerror: ((event: { error: string }) => void) | null;
+	onend: (() => void) | null;
+	start: () => void;
+	stop: () => void;
+};
+
+function speechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
+	if (typeof window === "undefined") return null;
+	const w = window as unknown as {
+		SpeechRecognition?: new () => SpeechRecognitionLike;
+		webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+	};
+	return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 const CONTAINER_LABELS: Record<string, string> = Object.fromEntries(
 	CONTAINERS.map((container) => [container.id, container.label]),
 );
 
 export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const trpc = useTRPC();
-	const queryClient = useQueryClient();
 	const locale = useLocale();
 	const { theme, setTheme, cycleTheme } = usePesajeTheme();
 	const router = useRouter();
 	const themeLabel =
 		PESAJE_THEMES.find((item) => item.id === theme)?.label ?? "M1";
 	const antonella = useAntonella();
+
+	// Demostración interactiva: pesar, quitar peso y cobrar cambian estos datos.
+	const [demoOrders, setDemoOrders] = useState<PesajeOrder[]>(DEMO_ORDERS);
+
+	const [fontScale, setFontScale] = useState<FontScale>("normal");
+	useEffect(() => {
+		try {
+			const saved = localStorage.getItem(FONT_STORAGE_KEY);
+			if (saved && (FONT_SCALES as readonly string[]).includes(saved)) {
+				setFontScale(saved as FontScale);
+			}
+		} catch {
+			// sin almacenamiento: se queda en normal
+		}
+	}, []);
+	const chooseFont = useCallback((next: FontScale) => {
+		setFontScale(next);
+		try {
+			localStorage.setItem(FONT_STORAGE_KEY, next);
+		} catch {
+			// sin almacenamiento
+		}
+	}, []);
+	const cycleFont = useCallback(() => {
+		chooseFont(
+			FONT_SCALES[(FONT_SCALES.indexOf(fontScale) + 1) % FONT_SCALES.length],
+		);
+	}, [chooseFont, fontScale]);
+
+	/** Fn armada: la siguiente tecla de módulo abre su ventana grande. */
+	const [fnArmed, setFnArmed] = useState(false);
+	const [chargeType, setChargeType] = useState<"contado" | "credito">(
+		"credito",
+	);
+	const [methodId, setMethodId] = useState<number | null>(null);
+	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
+	const [voice, setVoice] = useState<{
+		status: "idle" | "listening" | "thinking" | "answered" | "error";
+		transcript: string;
+		answer: string;
+	}>({ status: "idle", transcript: "", answer: "" });
+	const [speechSupported, setSpeechSupported] = useState(true);
+	useEffect(() => setSpeechSupported(speechRecognitionCtor() !== null), []);
+	const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+	/** Esc durante el dictado: se descarta lo grabado. */
+	const voiceCancelledRef = useRef(false);
+	const [newOrderDraft, setNewOrderDraft] = useState<OrderDraft | null>(null);
+	const transcriptRef = useRef("");
 
 	const [selectedOrderId, setSelectedOrderId] = useState<number | null>(
 		demo ? (DEMO_ORDERS[0]?.id ?? null) : null,
@@ -147,7 +289,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	});
 	const [focusedTile, setFocusedTile] = useState<TileId>(4);
 	const [overlay, setOverlay] = useState<PesajeOverlay>(null);
-	const [fnPage, setFnPage] = useState<FnPage>(demo ? "recipiente" : "inicio");
+	const [fnPage, setFnPage] = useState<FnPage>("inicio");
 	const [heldKg, setHeldKg] = useState<number | null>(null);
 	const [priceEdits, setPriceEdits] = useState<Record<number, string>>({});
 	const [saleIndex, setSaleIndex] = useState(0);
@@ -187,9 +329,36 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		...trpc.products.list.queryOptions(),
 		enabled: !demo,
 	});
+	const customersQuery = useQuery({
+		...trpc.customers.list.queryOptions(),
+		enabled: !demo && (overlay === "neworder" || overlay === "voicenote"),
+	});
+	const catalog: CatalogProduct[] = useMemo(
+		() =>
+			demo
+				? DEMO_CATALOG
+				: products.map((p) => ({
+						id: p.id,
+						name: p.name,
+						parent_product_id: p.parent_product_id ?? null,
+						category: p.category ?? null,
+						price: p.price_per_kg ?? 0,
+					})),
+		[demo, products],
+	);
+	const catalogCustomers = demo
+		? DEMO_CUSTOMERS
+		: (customersQuery.data ?? []).map((c) => ({
+				id: c.id,
+				name: c.name ?? `Cliente ${c.id}`,
+				contact_name: c.contact_name ?? undefined,
+				phone: c.phone ?? c.whatsapp_phone ?? undefined,
+			}));
 
 	const orders: PesajeOrder[] = demo
-		? DEMO_ORDERS
+		? demoOrders.filter((order) =>
+				order.orderItems.some((item) => item.status === "PENDIENTE_PESAJE"),
+			)
 		: (liveOrders as PesajeOrder[]);
 
 	const [newOrderIds, setNewOrderIds] = useState<Set<number>>(new Set());
@@ -222,18 +391,34 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		prevOrderIdsRef.current = currentIds;
 	}, [orders, demo]);
 
-	const selectedOrder = useMemo(
-		() => orders.find((order) => order.id === selectedOrderId) ?? null,
-		[orders, selectedOrderId],
-	);
+	// Detalle completo del pedido elegido (pesados + por pesar).
+	const orderDetailQuery = useQuery({
+		...trpc.orders.get.queryOptions({ id: selectedOrderId ?? 0 }),
+		enabled: !demo && selectedOrderId !== null,
+	});
+	const selectedOrder = useMemo((): PesajeOrder | null => {
+		if (demo) {
+			return demoOrders.find((order) => order.id === selectedOrderId) ?? null;
+		}
+		const queued = orders.find((order) => order.id === selectedOrderId);
+		if (queued) return queued;
+		// Ya se pesó todo: sale de la cola, pero sigue aquí para cobrarlo.
+		const detail = orderDetailQuery.data as unknown as PesajeOrder | undefined;
+		if (
+			detail &&
+			detail.id === selectedOrderId &&
+			OPEN_STATUSES.includes(detail.status ?? "")
+		) {
+			return detail;
+		}
+		return null;
+	}, [demo, demoOrders, orders, selectedOrderId, orderDetailQuery.data]);
 
 	const pendingItems = useMemo(
 		() =>
 			selectedOrder?.orderItems?.filter(
 				(item) => item.status === "PENDIENTE_PESAJE",
-			) ??
-			selectedOrder?.orderItems ??
-			[],
+			) ?? [],
 		[selectedOrder],
 	);
 
@@ -329,6 +514,57 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					);
 				}
 				void refetchOrders();
+				void orderDetailQuery.refetch();
+			},
+			onError: (error) => toast.error(error.message),
+		}),
+	);
+
+	const createOrderMutation = useMutation(
+		trpc.orders.create.mutationOptions({
+			onSuccess: (order) => {
+				toast.success(`Pedido #${order.id} creado: ya está en la cola`);
+				setOverlay(null);
+				setNewOrderDraft(null);
+				void refetchOrders();
+				setSelectedOrderId(order.id);
+				setCurrentItemIndex(0);
+				setFocusedTile(3);
+			},
+			onError: (error) => toast.error(error.message),
+		}),
+	);
+
+	const createOrder = useCallback(
+		(customerId: number, lines: OrderDraft["lines"]) => {
+			if (demo) {
+				toast.success("Demostración: pedido creado y enviado a Pedidos");
+				setOverlay(null);
+				setNewOrderDraft(null);
+				return;
+			}
+			createOrderMutation.mutate({
+				customerId,
+				items: lines.map((line) => {
+					const product = catalog.find((p) => p.id === line.productId);
+					return {
+						productId: line.productId,
+						quantityPieces: line.pieces || undefined,
+						quantityKg: line.kg ? Math.round(line.kg * 1000) : undefined,
+						unitPrice: Math.round(Number(product?.price ?? 0) * 100),
+					};
+				}),
+			});
+		},
+		[demo, catalog, createOrderMutation],
+	);
+
+	const returnMutation = useMutation(
+		trpc.orders.returnItemToWeighing.mutationOptions({
+			onSuccess: () => {
+				toast.success("Regresó a pendientes de pesar");
+				void refetchOrders();
+				void orderDetailQuery.refetch();
 			},
 			onError: (error) => toast.error(error.message),
 		}),
@@ -369,7 +605,19 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const handleRegisterWeight = useCallback(() => {
 		if (!currentItem || !hasValidWeight) return;
 		if (demo) {
-			toast.success(`Demostración: se registraría ${netKg.toFixed(3)} kg`);
+			const itemId = currentItem.id;
+			const kg = netKg.toFixed(3);
+			setDemoOrders((current) =>
+				current.map((order) => ({
+					...order,
+					orderItems: order.orderItems.map((item) =>
+						item.id === itemId
+							? { ...item, status: "PESADO", quantity_kg: kg }
+							: item,
+					),
+				})),
+			);
+			toast.success(`Demostración: ${kg} kg registrados`);
 			return;
 		}
 		const isProduction = selectedOrder?.notes === "Pesaje de producción";
@@ -488,10 +736,6 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 
 	// --- 5 · Venta: renglones ya pesados con el precio del cliente ---------
 	const customerId = selectedOrder?.customer_id ?? null;
-	const orderDetailQuery = useQuery({
-		...trpc.orders.get.queryOptions({ id: selectedOrderId ?? 0 }),
-		enabled: !demo && selectedOrderId !== null,
-	});
 	const customerPricesQuery = useQuery({
 		...trpc.customerPrices.getByCustomer.queryOptions({
 			customerId: customerId ?? 0,
@@ -519,6 +763,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					const edited = priceEdits[item.id];
 					return {
 						itemId: item.id,
+						productId: item.product_id ?? null,
 						name: itemName(item),
 						kg: Number(item.quantity_kg) || 0,
 						pieces: item.quantity_pieces ?? null,
@@ -534,16 +779,131 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		setSaleIndex(0);
 	}, [selectedOrderId]);
 
-	const goToCharge = useCallback(() => {
-		if (!selectedOrder) return;
-		if (demo) {
-			toast.success(
-				`Demostración: se abriría el cobro e impresión del pedido #${selectedOrder.id}`,
+	const paymentMethodsQuery = useQuery({
+		...trpc.paymentMethods.list.queryOptions(),
+		enabled: !demo,
+	});
+	const paymentMethods: Array<{ id: number; name: string }> = demo
+		? DEMO_PAYMENT_METHODS
+		: ((paymentMethodsQuery.data ?? []) as Array<{ id: number; name: string }>);
+
+	const isProductionOrder = selectedOrder?.notes === "Pesaje de producción";
+	const canCharge =
+		selectedOrder !== null &&
+		!isProductionOrder &&
+		saleLines.length > 0 &&
+		pendingItems.length === 0;
+	const chargeHint = !selectedOrder
+		? "Elige un pedido en 1."
+		: isProductionOrder
+			? "Producción: se suma al inventario, no se cobra."
+			: pendingItems.length > 0
+				? `Faltan ${pendingItems.length} por pesar: pesa todo para cobrar.`
+				: saleLines.length === 0
+					? "Nada pesado todavía."
+					: "Listo: elige contado o crédito.";
+
+	const handleReturn = useCallback(
+		(itemId: number) => {
+			if (demo) {
+				setDemoOrders((current) =>
+					current.map((order) => ({
+						...order,
+						orderItems: order.orderItems.map((item) =>
+							item.id === itemId
+								? { ...item, status: "PENDIENTE_PESAJE" }
+								: item,
+						),
+					})),
+				);
+				return;
+			}
+			returnMutation.mutate({ orderItemId: itemId });
+		},
+		[demo, returnMutation],
+	);
+
+	const startCharge = useCallback(
+		(type: "contado" | "credito") => {
+			if (!canCharge) {
+				toast.info(chargeHint);
+				return;
+			}
+			setChargeType(type);
+			// Contado arranca en Efectivo: solo Enter.
+			setMethodId(
+				(current) =>
+					current ??
+					paymentMethods.find((method) => /efectivo/i.test(method.name))?.id ??
+					paymentMethods[0]?.id ??
+					null,
 			);
+			setFnPage("cobro");
+			setFocusedTile(7);
+			setOverlay(null);
+		},
+		[canCharge, chargeHint, paymentMethods],
+	);
+
+	const chargeMutation = useMutation(
+		trpc.orders.priceAndCharge.mutationOptions({
+			onSuccess: (_data, variables) => {
+				toast.success("Pedido cobrado");
+				setTicketOrderId(variables.orderId);
+				setSelectedOrderId(null);
+				setFnPage("inicio");
+				void refetchOrders();
+			},
+			onError: (error) => toast.error(error.message ?? "Error al cobrar"),
+		}),
+	);
+
+	const confirmCharge = useCallback(() => {
+		if (!selectedOrder || !canCharge) return;
+		const bad = saleLines.find((line) => !(Number.parseFloat(line.price) > 0));
+		if (bad) {
+			toast.error(`Falta el precio de ${bad.name}`);
+			setFocusedTile(5);
 			return;
 		}
-		router.push(`/admin/checkout?order=${selectedOrder.id}`);
-	}, [demo, router, selectedOrder]);
+		if (chargeType === "contado" && methodId === null) {
+			toast.error("Elige el método de pago");
+			return;
+		}
+		if (demo) {
+			toast.success(
+				`Demostración: pedido #${selectedOrder.id} cobrado ${chargeType === "contado" ? "de contado" : "a crédito"}`,
+			);
+			setDemoOrders((current) =>
+				current.filter((order) => order.id !== selectedOrder.id),
+			);
+			setSelectedOrderId(
+				demoOrders.find((order) => order.id !== selectedOrder.id)?.id ?? null,
+			);
+			setFnPage("inicio");
+			return;
+		}
+		chargeMutation.mutate({
+			orderId: selectedOrder.id,
+			paymentType: chargeType,
+			paymentMethodId:
+				chargeType === "contado" ? (methodId ?? undefined) : undefined,
+			items: saleLines.map((line) => ({
+				orderItemId: line.itemId,
+				productId: line.productId,
+				pricePerKg: Number.parseFloat(line.price),
+			})),
+		});
+	}, [
+		selectedOrder,
+		canCharge,
+		saleLines,
+		chargeType,
+		methodId,
+		demo,
+		demoOrders,
+		chargeMutation,
+	]);
 
 	const moveSelection = useCallback(
 		(direction: -1 | 1) => {
@@ -574,6 +934,19 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				cycleTheme();
 				return;
 			}
+			if (focusedTile === 7 && fnPage === "cobro") {
+				if (paymentMethods.length === 0) return;
+				const index = Math.max(
+					0,
+					paymentMethods.findIndex((method) => method.id === methodId),
+				);
+				const next =
+					paymentMethods[
+						(index + direction + paymentMethods.length) % paymentMethods.length
+					];
+				setMethodId(next.id);
+				return;
+			}
 			cycleContainer(direction);
 		},
 		[
@@ -585,8 +958,21 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			saleLines.length,
 			fnPage,
 			cycleTheme,
+			paymentMethods,
+			methodId,
 		],
 	);
+
+	/** Ventana grande de una tecla de dos niveles. */
+	const openDetail = useCallback((page: DetailPage) => {
+		setFnArmed(false);
+		setFnPage(page);
+		setFocusedTile(7);
+		if (page === "pedidos") setOverlay("orders");
+		else if (page === "tickets") setOverlay("tickets");
+		else if (page === "produccion") setOverlay("batch");
+		else setOverlay("module");
+	}, []);
 
 	const selectCurrent = useCallback(() => {
 		if (focusedTile === 1 && selectedOrderId) {
@@ -598,11 +984,27 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			return;
 		}
 		if (focusedTile === 5) {
-			goToCharge();
+			startCharge("credito");
+			return;
+		}
+		if (focusedTile === 7 && fnPage === "cobro") {
+			confirmCharge();
+			return;
+		}
+		if (focusedTile === 7 && isDetailPage(fnPage)) {
+			openDetail(fnPage);
 			return;
 		}
 		handleRegisterWeight();
-	}, [focusedTile, selectedOrderId, handleRegisterWeight, goToCharge]);
+	}, [
+		focusedTile,
+		selectedOrderId,
+		handleRegisterWeight,
+		startCharge,
+		confirmCharge,
+		openDetail,
+		fnPage,
+	]);
 
 	const toggleHold = useCallback(() => {
 		setHeldKg((current) => {
@@ -641,7 +1043,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					handleUndo();
 					return;
 				case "charge":
-					goToCharge();
+					startCharge("contado");
+					return;
+				case "charge-credit":
+					startCharge("credito");
 					return;
 				case "antonella":
 					antonella.open();
@@ -656,7 +1061,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			scaleStatus.connected,
 			toggleHold,
 			handleUndo,
-			goToCharge,
+			startCharge,
 			antonella,
 			router,
 		],
@@ -671,8 +1076,195 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		}
 	}, []);
 
+	/** Pulsar = vista rápida; Fn armada o segunda pulsación = ventana grande. */
+	const pressPage = useCallback(
+		(page: FnPage) => {
+			if (
+				isDetailPage(page) &&
+				(fnArmed || (fnPage === page && overlay === null))
+			) {
+				openDetail(page);
+				return;
+			}
+			setFnArmed(false);
+			openPage(page);
+		},
+		[fnArmed, fnPage, overlay, openDetail, openPage],
+	);
+
+	// ── Voz: mantener 🎤 (o Alt+Espacio) → dictado → Peggy responde en 7
+	const voiceChatMutation = useMutation(
+		trpc.antonella.chat.mutationOptions({
+			onSuccess: (data) => {
+				setVoice((current) => ({
+					...current,
+					status: "answered",
+					answer: data.requiresConfirmation
+						? `${data.answer}\n\n(Esta acción pide confirmación: ábrela en «Chat completo».)`
+						: data.answer,
+				}));
+			},
+			onError: (error) => {
+				setVoice((current) => ({ ...current, status: "error" }));
+				toast.error(error.message ?? "Peggy no respondió");
+			},
+		}),
+	);
+	const voiceOrderMutation = useMutation(
+		trpc.antonella.parseVoiceOrder.mutationOptions({
+			onError: (error) => {
+				setVoice((current) => ({ ...current, status: "error" }));
+				toast.error(error.message ?? "Peggy no respondió");
+			},
+		}),
+	);
+	const askAntonella = useCallback(
+		(text: string) => {
+			setFnPage("voz");
+			setVoice({ status: "thinking", transcript: text, answer: "" });
+			if (demo && /pedido/i.test(text)) {
+				setTimeout(() => {
+					setNewOrderDraft({
+						customerId: 2,
+						lines: [
+							{ productId: 4, pieces: 8, kg: null },
+							{ productId: 69, pieces: 5, kg: null },
+							{ productId: 5, pieces: 3, kg: null },
+						],
+						unmatched: [],
+						transcript: text,
+					});
+					setVoice({
+						status: "answered",
+						transcript: text,
+						answer: "",
+					});
+				}, 900);
+				return;
+			}
+			if (demo) {
+				setTimeout(
+					() =>
+						setVoice({
+							status: "answered",
+							transcript: text,
+							answer:
+								"Demostración: aquí llega la respuesta de Peggy (p. ej. «Pierna: 48 kg en existencia, 3 pedidos la esperan»).",
+						}),
+					900,
+				);
+				return;
+			}
+			// 1) ¿Es un pedido? Peggy lo arma y se abre para confirmar.
+			// 2) Si no, responde como siempre en la pantalla 7.
+			voiceOrderMutation.mutate(
+				{ text },
+				{
+					onSuccess: (result) => {
+						if (result.kind === "order") {
+							setNewOrderDraft({
+								customerId: result.customerId,
+								customerQuery: result.customerQuery,
+								lines: result.lines,
+								unmatched: result.unmatched,
+								transcript: text,
+							});
+							// Se queda en la nota: confirmar (Enter) o editar (E).
+							setVoice({ status: "answered", transcript: text, answer: "" });
+							return;
+						}
+						voiceChatMutation.mutate({ message: text });
+					},
+				},
+			);
+		},
+		[demo, voiceChatMutation, voiceOrderMutation],
+	);
+	const startVoice = useCallback(() => {
+		setFnPage("voz");
+		setFocusedTile(7);
+		setNewOrderDraft(null);
+		setOverlay("voicenote");
+		voiceCancelledRef.current = false;
+		if (demo) {
+			// Vista previa sin micrófono: se simula el dictado de ejemplo.
+			transcriptRef.current =
+				"Nuevo pedido para Mercado San Juan: 8 piernas, 5 pechos y 3 cabezas";
+			setVoice({
+				status: "listening",
+				transcript: transcriptRef.current,
+				answer: "",
+			});
+			return;
+		}
+		const Ctor = speechRecognitionCtor();
+		if (!Ctor) {
+			setVoice({ status: "idle", transcript: "", answer: "" });
+			return;
+		}
+		if (recognitionRef.current) return;
+		const recognition = new Ctor();
+		recognition.lang = "es-MX";
+		recognition.interimResults = true;
+		recognition.continuous = true;
+		transcriptRef.current = "";
+		recognition.onresult = (event) => {
+			const text = Array.from(event.results)
+				.map((result) => result[0]?.transcript ?? "")
+				.join(" ")
+				.trim();
+			transcriptRef.current = text;
+			setVoice((current) => ({ ...current, transcript: text }));
+		};
+		recognition.onerror = (event) => {
+			if (event.error !== "aborted" && event.error !== "no-speech") {
+				toast.error(`Dictado: ${event.error}`);
+			}
+		};
+		recognition.onend = () => {
+			recognitionRef.current = null;
+			if (voiceCancelledRef.current) {
+				setVoice({ status: "idle", transcript: "", answer: "" });
+				return;
+			}
+			const text = transcriptRef.current.trim();
+			if (text) askAntonella(text);
+			else setVoice((current) => ({ ...current, status: "idle" }));
+		};
+		recognitionRef.current = recognition;
+		setVoice({ status: "listening", transcript: "", answer: "" });
+		try {
+			recognition.start();
+		} catch {
+			recognitionRef.current = null;
+			setVoice((current) => ({ ...current, status: "idle" }));
+		}
+	}, [askAntonella, demo]);
+	const stopVoice = useCallback(() => {
+		if (demo) {
+			if (voiceCancelledRef.current) {
+				setVoice({ status: "idle", transcript: "", answer: "" });
+			} else if (transcriptRef.current) {
+				askAntonella(transcriptRef.current);
+			}
+			transcriptRef.current = "";
+			return;
+		}
+		recognitionRef.current?.stop();
+	}, [demo, askAntonella]);
+
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
+			if (
+				voice.status === "listening" &&
+				(event.key === " " || event.code === "Space") &&
+				!event.altKey &&
+				!event.metaKey
+			) {
+				event.preventDefault();
+				stopVoice();
+				return;
+			}
 			const action = matchPesajeShortcut(event, {
 				overlayOpen: overlay !== null,
 			});
@@ -697,12 +1289,20 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					handleCaptureStable();
 					break;
 				case "overlay":
+					if (action.overlay === "neworder") setNewOrderDraft(null);
 					setOverlay((current) =>
 						current === action.overlay ? null : action.overlay,
 					);
 					break;
 				case "page":
-					openPage(action.page);
+					pressPage(action.page);
+					break;
+				case "voice":
+					if (voice.status === "listening") stopVoice();
+					else startVoice();
+					break;
+				case "cycle-font":
+					cycleFont();
 					break;
 				case "command":
 					runCommand(action.command);
@@ -711,8 +1311,14 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					cycleTheme();
 					break;
 				case "close":
-					if (overlay) setOverlay(null);
-					else setFnPage("inicio");
+					// Esc siempre regresa de volada a la pantalla principal.
+					if (voice.status === "listening") {
+						voiceCancelledRef.current = true;
+						stopVoice();
+					}
+					setOverlay(null);
+					setFnArmed(false);
+					setFnPage("inicio");
 					break;
 			}
 		};
@@ -724,9 +1330,43 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		selectCurrent,
 		handleCaptureStable,
 		cycleTheme,
-		openPage,
+		pressPage,
 		runCommand,
+		voice.status,
+		startVoice,
+		stopVoice,
+		cycleFont,
 	]);
+
+	const recentOrdersQuery = useQuery({
+		...trpc.orders.list.queryOptions(),
+		enabled: !demo && fnPage === "tickets",
+	});
+	const recentTickets = demo
+		? DEMO_TICKETS
+		: [...(recentOrdersQuery.data ?? [])]
+				.filter((order) =>
+					["COMPLETADA", "paid", "completed", "delivered"].includes(
+						order.status ?? "",
+					),
+				)
+				.sort(
+					(a, b) =>
+						new Date(b.created_at ?? 0).getTime() -
+						new Date(a.created_at ?? 0).getTime(),
+				)
+				.slice(0, 6)
+				.map((order) => ({
+					id: order.id,
+					title: order.customer?.name ?? "Mostrador",
+					total: formatCurrency(Number(order.total_amount ?? 0), locale),
+					when: order.created_at
+						? new Date(order.created_at).toLocaleString(locale, {
+								dateStyle: "short",
+								timeStyle: "short",
+							})
+						: "",
+				}));
 
 	const ticketDetailQuery = useQuery({
 		...trpc.orders.get.queryOptions({ id: selectedOrderId ?? 0 }),
@@ -936,95 +1576,85 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		},
 	];
 
-	const pageKey = (page: FnPage, label: string, key: string): FnKey => ({
+	const detailKey = (page: DetailPage, label: string, key: string): FnKey => ({
 		id: page,
 		label,
-		shortcut: shortcutLabel(key),
+		shortcut: fnArmed ? "Fn ▸ ventana" : shortcutLabel(key),
 		active: fnPage === page,
-		onPress: () => openPage(page),
+		onPress: () => pressPage(page),
 	});
-	const leftKeys: FnKey[] = [
-		pageKey("inicio", "Inicio", "H"),
-		pageKey("recipiente", "Tara", "C"),
-		pageKey("conexion", "Serial", "B"),
-		pageKey("diagnostico", "Tramas", "X"),
-		pageKey("tema", "Tema", "M"),
-	];
-	const rightKeys: FnKey[] = [
+	const keyGroups: FnKeyGroup[] = [
 		{
-			id: "tickets",
-			label: "Tickets",
-			shortcut: shortcutLabel("T"),
-			onPress: () => setOverlay("tickets"),
+			id: "bascula",
+			label: "Función",
+			keys: [
+				{
+					id: "fn",
+					label: "Fn",
+					shortcut: fnArmed ? "Activa" : "Ventana grande",
+					active: fnArmed,
+					onPress: () => setFnArmed((armed) => !armed),
+				},
+				detailKey("produccion", "Producción", "P"),
+			],
 		},
 		{
-			id: "orders",
-			label: "Cola",
-			shortcut: shortcutLabel("O"),
-			onPress: () => setOverlay("orders"),
+			id: "modulos",
+			label: "Módulos · pulsar = vista rápida · Fn + tecla = ventana",
+			keys: [
+				{
+					id: "nuevo",
+					label: "＋ Nuevo",
+					shortcut: shortcutLabel("N"),
+					tone: "orange",
+					active: overlay === "neworder",
+					onPress: () => {
+						setNewOrderDraft(null);
+						setOverlay("neworder");
+					},
+				},
+				detailKey("pedidos", "Pedidos", "O"),
+				detailKey("tickets", "Tickets", "T"),
+				detailKey("recetas", "Recetas", "E"),
+				detailKey("frio", "Inv. frío", "F"),
+				detailKey("clientes", "Clientes", "U"),
+			],
 		},
 		{
-			id: "batch",
-			label: "Producción",
-			shortcut: shortcutLabel("P"),
-			onPress: () => setOverlay("batch"),
-		},
-		pageKey("teclado", "Teclado", "N"),
-		pageKey("atajos", "Atajos", "/"),
-	];
-	const bottomKeys: FnKey[] = [
-		{
-			id: "capture",
-			label: "M+ Capturar",
-			shortcut: "Espacio",
-			tone: "orange",
-			wide: true,
-			onPress: handleCaptureStable,
-		},
-		{
-			id: "register",
-			label: "Registrar peso",
-			shortcut: "Enter",
-			tone: "green",
-			wide: true,
-			disabled: !hasValidWeight || currentItem === null,
-			onPress: handleRegisterWeight,
-		},
-		{
-			id: "undo",
-			label: "Deshacer",
-			shortcut: shortcutLabel("Z"),
-			onPress: () => runCommand("undo"),
-		},
-		{
-			id: "charge",
-			label: "Cobro",
-			shortcut: shortcutLabel("G"),
-			tone: "cyan",
-			disabled: !selectedOrder,
-			onPress: () => runCommand("charge"),
-		},
-		{
-			id: "antonella",
-			label: "iAntonella",
-			shortcut: shortcutLabel("I"),
-			onPress: () => runCommand("antonella"),
-		},
-		{
-			id: "classic",
-			label: "Clásica",
-			shortcut: shortcutLabel("V"),
-			onPress: () => runCommand("classic"),
-		},
-		{
-			id: "esc",
-			label: "Esc",
-			shortcut: "Esc",
-			tone: "red",
-			onPress: () => {
-				setOverlay(null);
-				setFnPage("inicio");
-			},
+			id: "sistema",
+			label: "Sistema",
+			keys: [
+				{
+					id: "config",
+					label: "Config",
+					shortcut: shortcutLabel(","),
+					active: CONFIG_PAGES.has(fnPage),
+					onPress: () => pressPage("config"),
+				},
+				{
+					id: "voz",
+					label: voice.status === "listening" ? "Escucho" : "Peggy",
+					shortcut: "Mantén · Alt+Espacio",
+					icon: <MicIcon aria-hidden="true" className="size-3.5" />,
+					tone: voice.status === "listening" ? "red" : "neutral",
+					active: fnPage === "voz" && voice.status !== "listening",
+					onPress: () => undefined,
+					onHoldStart: startVoice,
+					onHoldEnd: stopVoice,
+				},
+				{
+					id: "esc",
+					label: "Esc",
+					shortcut: "Volver",
+					tone: "red",
+					onPress: () => {
+						if (voice.status === "listening") stopVoice();
+						setOverlay(null);
+						setFnArmed(false);
+						setFnPage("inicio");
+					},
+				},
+			],
 		},
 	];
 
@@ -1034,7 +1664,98 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			: `${containerDef.label} · ${tareKg.toFixed(3)} kg`;
 
 	const fnContent = (() => {
+		if (isModulePage(fnPage)) {
+			return (
+				<ModuleQuickPage
+					page={fnPage}
+					customerName={selectedOrder ? orderTitle(selectedOrder) : null}
+					onOpenDetail={() => openDetail(fnPage)}
+				/>
+			);
+		}
 		switch (fnPage) {
+			case "pedidos":
+				return (
+					<PedidosQuickPage
+						orders={orders.map((order) => ({
+							id: order.id,
+							title: orderTitle(order),
+							pending: order.orderItems.filter(
+								(item) => item.status === "PENDIENTE_PESAJE",
+							).length,
+							isNew: newOrderIds.has(order.id),
+						}))}
+						onPick={(id) => {
+							setSelectedOrderId(id);
+							setCurrentItemIndex(0);
+							setFocusedTile(3);
+						}}
+						onOpenDetail={() => openDetail("pedidos")}
+					/>
+				);
+			case "tickets":
+				return (
+					<TicketsQuickPage
+						tickets={recentTickets}
+						loading={!demo && recentOrdersQuery.isLoading}
+						onOpenTicket={(id) => {
+							if (demo) {
+								toast.info(`Demostración: se abriría el ticket #${id}`);
+								return;
+							}
+							setTicketOrderId(id);
+						}}
+						onOpenDetail={() => openDetail("tickets")}
+					/>
+				);
+			case "produccion":
+				return (
+					<ProduccionQuickPage onOpenDetail={() => openDetail("produccion")} />
+				);
+			case "cobro":
+				return (
+					<CobroPage
+						type={chargeType}
+						customerName={selectedOrder ? orderTitle(selectedOrder) : "—"}
+						total={formatCurrency(
+							saleLines.reduce(
+								(sum, line) =>
+									sum +
+									lineSubtotalCents(
+										line.kg,
+										Number.parseFloat(line.price) || 0,
+									),
+								0,
+							),
+							locale,
+						)}
+						lineCount={saleLines.length}
+						methods={paymentMethods}
+						methodId={methodId}
+						onMethod={setMethodId}
+						onConfirm={confirmCharge}
+						busy={chargeMutation.isPending}
+					/>
+				);
+			case "voz":
+				return (
+					<VozPage
+						status={voice.status}
+						transcript={voice.transcript}
+						answer={voice.answer}
+						supported={speechSupported}
+					/>
+				);
+			case "config":
+				return (
+					<ConfigPage
+						fontLabel={fontScale}
+						onCycleFont={cycleFont}
+						onOpen={openPage}
+						onClassic={() => runCommand("classic")}
+						onExit={() => router.push("/admin")}
+					/>
+				);
 			case "recipiente":
 				return (
 					<RecipientePage
@@ -1154,18 +1875,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		}
 	})();
 
-	const chargeHint = !selectedOrder
-		? "Elige un pedido en 1."
-		: pendingItems.length > 0 &&
-				selectedOrder.orderItems.some(
-					(item) => item.status === "PENDIENTE_PESAJE",
-				)
-			? `Faltan ${pendingItems.length} por pesar; se cobra lo pesado.`
-			: "Todo pesado: listo para cobrar, imprimir y enviar.";
-
 	return (
 		<div
 			data-pesaje-theme={theme}
+			data-pesaje-font={fontScale}
 			data-pesaje-station=""
 			className="h-full min-h-0 bg-background text-foreground"
 		>
@@ -1186,7 +1899,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			) : null}
 
 			{/* Carcasa del equipo: todo vive dentro del marco */}
-			<div className="pesaje-housing flex h-full min-h-0 flex-col gap-2 rounded-[1.75rem] border-[3px] p-2 sm:p-3">
+			<div className="pesaje-housing flex h-full min-h-0 flex-col gap-2 rounded-[1.5rem] border-[3px] p-2">
 				<div className="flex shrink-0 items-center justify-between gap-3 px-2 font-mono text-[10px] uppercase tracking-[0.2em]">
 					<span className="font-black text-[#f39a1e] text-xs tracking-[0.12em]">
 						Cárnicos Gustavo · Estación de pesaje
@@ -1206,11 +1919,35 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 						</span>
 						<span>{orders.length} pedidos</span>
 						<span>{themeLabel}</span>
+						<fieldset className="m-0 flex items-center gap-0.5 rounded-md border border-[#3a3f46] bg-[#15181c] p-0.5">
+							<legend className="sr-only">Tamaño de letra</legend>
+							{FONT_SCALES.map((scale, index) => (
+								<button
+									key={scale}
+									type="button"
+									aria-pressed={fontScale === scale}
+									aria-label={`Letra ${scale}`}
+									title={`Letra ${scale} (Súper+Shift+A)`}
+									onClick={() => chooseFont(scale)}
+									className={cn(
+										"rounded px-1.5 py-0.5 font-black normal-case tracking-normal transition-colors",
+										index === 0 && "text-[10px]",
+										index === 1 && "text-[12px]",
+										index === 2 && "text-[14px]",
+										fontScale === scale
+											? "bg-[#f39a1e] text-[#1b1206]"
+											: "text-[#9aa4ae] hover:text-white",
+									)}
+								>
+									A
+								</button>
+							))}
+						</fieldset>
 					</span>
 				</div>
 
 				{/* Fila superior: 1 | (2 · 3 / 4) | 5 */}
-				<div className="grid min-h-0 flex-[1.7] grid-cols-[minmax(10rem,16fr)_minmax(0,70fr)_minmax(12rem,14fr)] gap-2">
+				<div className="grid min-h-0 flex-[2.3] grid-cols-[minmax(13rem,17fr)_minmax(0,63fr)_minmax(15rem,20fr)] gap-2">
 					<OrdersPanel
 						orders={orders}
 						selectedOrderId={selectedOrderId}
@@ -1224,10 +1961,11 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 						onFocusPanel={() => setFocusedTile(1)}
 					/>
 					<div className="flex min-h-0 min-w-0 flex-col gap-2">
-						<div className="grid h-[24%] min-h-[6rem] shrink-0 grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-2 [@media(max-height:860px)]:h-[22%] [@media(max-height:860px)]:min-h-[5.25rem]">
+						<div className="grid h-[40%] min-h-[10rem] shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-2 [@media(max-height:860px)]:h-[38%]">
 							<OrderPanel
 								order={selectedOrder}
-								currentItem={currentItem}
+								pendingCount={pendingItems.length}
+								weighedCount={saleLines.length}
 								accumulatedNetKg={accumulatedNetKg}
 								captureCount={captureCount}
 								locale={locale}
@@ -1267,6 +2005,30 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 									net: `${liveNetKg.toFixed(3)} kg`,
 								}}
 								buttons={iqyButtons}
+								item={
+									currentItem
+										? {
+												id: currentItem.id,
+												name: itemName(currentItem),
+												detail: [
+													currentItem.quantity_pieces
+														? `${currentItem.quantity_pieces} pza`
+														: null,
+													Number(currentItem.quantity_kg) > 0
+														? `pedido ${Number(currentItem.quantity_kg).toFixed(3)} kg`
+														: null,
+												]
+													.filter(Boolean)
+													.join(" · "),
+												position: `Renglón ${clampedIndex + 1} de ${pendingItems.length}`,
+											}
+										: null
+								}
+								undo={{
+									label: "Deshacer",
+									shortcut: "Súper+Z",
+									onPress: () => runCommand("undo"),
+								}}
 							/>
 						</div>
 					</div>
@@ -1283,21 +2045,19 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 							setPriceEdits((current) => ({ ...current, [itemId]: value }))
 						}
 						onFocusPanel={() => setFocusedTile(5)}
-						onCharge={goToCharge}
-						onOpenTickets={() => setOverlay("tickets")}
-						canCharge={selectedOrder !== null && saleLines.length > 0}
+						onReturn={handleReturn}
+						onCharge={startCharge}
+						canCharge={canCharge}
 						chargeHint={chargeHint}
 					/>
 				</div>
 
 				{/* 7 · Pantalla de funciones con sus botones alrededor */}
-				<div className="min-h-0 flex-[1] [@media(max-height:860px)]:flex-[1.05]">
+				<div className="min-h-0 flex-[1] [@media(max-height:860px)]:flex-[0.95]">
 					<FunctionScreen
 						title={`7 · ${FN_PAGE_TITLES[fnPage]}`}
 						subtitle="Súper+7 · Esc vuelve a Inicio"
-						left={leftKeys}
-						right={rightKeys}
-						bottom={bottomKeys}
+						groups={keyGroups}
 						focused={focusedTile === 7}
 						onFocusPanel={() => setFocusedTile(7)}
 					>
@@ -1315,6 +2075,64 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					}
 					lines={selectedOrder ? ticketLines : []}
 					containerLabels={CONTAINER_LABELS}
+					onClose={() => setOverlay(null)}
+				/>
+			) : null}
+			{overlay === "module" && isModulePage(fnPage) ? (
+				<ModuleOverlay
+					page={fnPage}
+					demo={demo}
+					onClose={() => setOverlay(null)}
+				/>
+			) : null}
+			{overlay === "voicenote" ? (
+				<VoiceNote
+					status={voice.status}
+					transcript={voice.transcript}
+					answer={voice.answer}
+					customer={(() => {
+						const c = catalogCustomers.find(
+							(entry) => entry.id === newOrderDraft?.customerId,
+						);
+						return c
+							? {
+									name: c.name,
+									contact: c.contact_name ?? null,
+									phone: c.phone ?? null,
+								}
+							: null;
+					})()}
+					customerQuery={newOrderDraft?.customerQuery ?? ""}
+					lines={newOrderDraft?.lines ?? []}
+					unmatched={newOrderDraft?.unmatched ?? []}
+					productName={(id) =>
+						catalog.find((p) => p.id === id)?.name ?? `#${id}`
+					}
+					busy={createOrderMutation.isPending}
+					onConfirm={() => {
+						if (newOrderDraft?.customerId) {
+							createOrder(newOrderDraft.customerId, newOrderDraft.lines);
+						}
+					}}
+					onEdit={() => setOverlay("neworder")}
+					onClose={() => {
+						if (voice.status === "listening") {
+							voiceCancelledRef.current = true;
+							stopVoice();
+						}
+						setOverlay(null);
+					}}
+				/>
+			) : null}
+			{overlay === "neworder" ? (
+				<NewOrderOverlay
+					// Un borrador nuevo (voz) reinicia el formulario.
+					key={newOrderDraft?.transcript ?? "manual"}
+					products={catalog}
+					customers={catalogCustomers}
+					initial={newOrderDraft}
+					busy={createOrderMutation.isPending}
+					onCreate={({ customerId, lines }) => createOrder(customerId, lines)}
 					onClose={() => setOverlay(null)}
 				/>
 			) : null}
@@ -1497,17 +2315,25 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 
 			{completedOrder ? (
 				<div className="fade-in slide-in-from-bottom-4 fixed right-6 bottom-6 z-50 animate-in">
-					<Link href={`/admin/checkout?order=${completedOrder.id}`}>
-						<Button
-							size="lg"
-							className="h-14 rounded-2xl bg-green-600 px-6 font-bold text-base shadow-xl hover:bg-green-700"
-							onClick={() => setCompletedOrder(null)}
-						>
-							<CheckCircleIcon className="mr-2 h-5 w-5" />
-							Cobrar pedido #{completedOrder.id} ({completedOrder.name})
-						</Button>
-					</Link>
+					<Button
+						size="lg"
+						className="h-14 rounded-2xl bg-green-600 px-6 font-bold text-base shadow-xl hover:bg-green-700"
+						onClick={() => {
+							setCompletedOrder(null);
+							setFocusedTile(5);
+						}}
+					>
+						<CheckCircleIcon className="mr-2 h-5 w-5" />
+						Pedido #{completedOrder.id} pesado · cobrar en 5
+					</Button>
 				</div>
+			) : null}
+			{ticketOrderId !== null ? (
+				<TicketModal
+					orderId={ticketOrderId}
+					open
+					onClose={() => setTicketOrderId(null)}
+				/>
 			) : null}
 		</div>
 	);

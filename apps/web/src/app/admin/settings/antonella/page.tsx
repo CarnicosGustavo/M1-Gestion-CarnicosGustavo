@@ -64,7 +64,7 @@ export default function AntonellaSettingsPage() {
 	const saveMutation = useMutation(
 		trpc.antonella.saveConfig.mutationOptions({
 			onSuccess: () => {
-				toast.success("Configuración de Antonella guardada");
+				toast.success("Configuración de Peggy guardada");
 				queryClient.invalidateQueries({
 					queryKey: trpc.antonella.getConfig.queryKey(),
 				});
@@ -121,7 +121,7 @@ export default function AntonellaSettingsPage() {
 				<div className="flex items-center gap-2">
 					<BotIcon className="h-6 w-6 text-primary" />
 					<div>
-						<h1 className="font-bold text-2xl">Configurar Antonella</h1>
+						<h1 className="font-bold text-2xl">Configurar Peggy</h1>
 						<p className="text-muted-foreground text-sm">
 							Define cómo piensa, qué herramientas puede usar y enséñale
 							habilidades nuevas.
@@ -143,10 +143,10 @@ export default function AntonellaSettingsPage() {
 				</div>
 			</div>
 
-			{/* ¿Qué es Antonella? */}
+			{/* ¿Qué es Peggy? */}
 			<Card className="border-primary/20 bg-primary/5">
 				<CardContent className="pt-6 text-sm">
-					<p className="font-semibold">¿Qué es Antonella?</p>
+					<p className="font-semibold">¿Qué es Peggy?</p>
 					<p className="mt-1 text-muted-foreground">
 						Es un asistente de IA (Claude de Anthropic) que vive dentro del
 						dashboard. Tiene acceso en tiempo real a tu inventario, recetas,
@@ -217,7 +217,7 @@ export default function AntonellaSettingsPage() {
 						onChange={(e) => setSystemPrompt(e.target.value)}
 						rows={14}
 						className="w-full rounded-lg border bg-background p-3 font-mono text-xs leading-relaxed"
-						placeholder="Eres Antonella, un asistente…"
+						placeholder="Eres Peggy, un asistente…"
 					/>
 					<p className="mt-1 text-[11px] text-muted-foreground">
 						{systemPrompt.length} caracteres
@@ -230,7 +230,7 @@ export default function AntonellaSettingsPage() {
 				<CardHeader>
 					<CardTitle className="text-base">Herramientas integradas</CardTitle>
 					<CardDescription>
-						Activa o desactiva lo que Antonella puede consultar o hacer.
+						Activa o desactiva lo que Peggy puede consultar o hacer.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
@@ -280,7 +280,7 @@ export default function AntonellaSettingsPage() {
 						Enseñar algo nuevo (habilidades personalizadas)
 					</CardTitle>
 					<CardDescription>
-						Declara una habilidad con un nombre y una descripción. Antonella la
+						Declara una habilidad con un nombre y una descripción. Peggy la
 						tendrá disponible y la usará cuando aplique. La ejecución automática
 						(conexión real) se conecta después.
 					</CardDescription>
@@ -336,7 +336,7 @@ export default function AntonellaSettingsPage() {
 									onChange={(e) =>
 										setNewTool((p) => ({ ...p, description: e.target.value }))
 									}
-									placeholder="Describe la habilidad para que Antonella sepa cuándo usarla"
+									placeholder="Describe la habilidad para que Peggy sepa cuándo usarla"
 									className="text-sm"
 								/>
 							</div>

@@ -1,7 +1,7 @@
-import Image from "next/image";
 import { cn } from "@finopenpos/ui/lib/utils";
+import Image from "next/image";
 
-// Avatar de iAntonella (la cerdita con monóculo en círculo rojo).
+// Avatar de Peggy (la cerdita con monóculo en círculo rojo).
 // Autocontenido: se ve bien en tema claro y oscuro.
 export function AntonellaAvatar({
 	size = 36,
@@ -20,7 +20,7 @@ export function AntonellaAvatar({
 		>
 			<Image
 				src="/brand/iantonella-rojo.png"
-				alt="iAntonella"
+				alt="Peggy"
 				width={size}
 				height={size}
 				className="h-full w-full object-cover"

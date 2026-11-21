@@ -7,7 +7,8 @@ export type PesajeCommand =
 	| "tare" // →T←: tomar el peso actual como tara
 	| "hold" // HOLD: congelar el display
 	| "undo" // deshacer la última captura
-	| "charge" // ir a cobro / ticket
+	| "charge" // cobrar de contado (panel 5 → pantalla 7)
+	| "charge-credit" // anotar a crédito (lo más común)
 	| "antonella"
 	| "classic";
 
@@ -17,10 +18,12 @@ export type PesajeAction =
 	| { type: "move-line"; direction: -1 | 1 }
 	| { type: "confirm" }
 	| { type: "capture" }
-	| { type: "overlay"; overlay: "tickets" | "orders" | "batch" }
+	| { type: "overlay"; overlay: "tickets" | "orders" | "batch" | "neworder" }
 	| { type: "page"; page: FnPage }
 	| { type: "command"; command: PesajeCommand }
 	| { type: "cycle-theme" }
+	| { type: "voice" }
+	| { type: "cycle-font" }
 	| { type: "close" };
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -53,6 +56,7 @@ function physicalKey(event: Pick<KeyboardEvent, "key" | "code">): string {
 	if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
 	if (/^Digit[0-9]$/.test(code)) return code.slice(5);
 	if (code === "Slash") return "/";
+	if (code === "Comma") return ",";
 	return event.key.length === 1 ? event.key.toLowerCase() : event.key;
 }
 
@@ -66,22 +70,26 @@ const MOD_KEYS: Record<string, PesajeAction> = {
 	"7": { type: "focus-tile", tile: 7 },
 	j: { type: "move", direction: 1 },
 	k: { type: "move", direction: -1 },
-	t: { type: "overlay", overlay: "tickets" },
-	o: { type: "overlay", overlay: "orders" },
-	p: { type: "overlay", overlay: "batch" },
+	t: { type: "page", page: "tickets" },
+	o: { type: "page", page: "pedidos" },
+	p: { type: "page", page: "produccion" },
 	h: { type: "page", page: "inicio" },
 	c: { type: "page", page: "recipiente" },
 	b: { type: "page", page: "conexion" },
 	x: { type: "page", page: "diagnostico" },
 	m: { type: "page", page: "tema" },
-	n: { type: "page", page: "teclado" },
+	n: { type: "overlay", overlay: "neworder" },
 	"/": { type: "page", page: "atajos" },
+	",": { type: "page", page: "config" },
+	e: { type: "page", page: "recetas" },
+	f: { type: "page", page: "frio" },
+	u: { type: "page", page: "clientes" },
 	"0": { type: "command", command: "zero" },
 	r: { type: "command", command: "tare" },
 	l: { type: "command", command: "hold" },
 	z: { type: "command", command: "undo" },
-	g: { type: "command", command: "charge" },
-	i: { type: "command", command: "antonella" },
+	g: { type: "command", command: "charge-credit" },
+	i: { type: "voice" },
 	v: { type: "command", command: "classic" },
 };
 
@@ -113,8 +121,14 @@ export function matchPesajeShortcut(
 	}
 
 	if (mod) {
+		// Alt+Espacio: empezar a dictarle a Peggy (Espacio solo termina).
+		if (key === " " || event.code === "Space") return { type: "voice" };
 		const physical = physicalKey(event);
 		if (physical === "t" && event.shiftKey) return { type: "cycle-theme" };
+		if (physical === "a" && event.shiftKey) return { type: "cycle-font" };
+		if (physical === "g" && event.shiftKey) {
+			return { type: "command", command: "charge" };
+		}
 		if (physical === "b" && event.shiftKey) {
 			return { type: "command", command: "power" };
 		}
@@ -192,14 +206,55 @@ export const SHORTCUT_ROWS: Array<{
 	{ keys: "Súper+B", fallback: "Alt+B", action: "7 · Conexión serial" },
 	{ keys: "Súper+X", fallback: "Alt+X", action: "7 · Diagnóstico de tramas" },
 	{ keys: "Súper+M", fallback: "Alt+M", action: "7 · Tema" },
-	{ keys: "Súper+N", fallback: "Alt+N", action: "7 · Teclado / peso manual" },
+	{ keys: "Súper+N", fallback: "Alt+N", action: "Nuevo pedido" },
 	{ keys: "Súper+/ o ?", fallback: "Alt+/", action: "7 · Atajos" },
-	{ keys: "Súper+T", fallback: "Alt+T", action: "Tickets (pantalla completa)" },
-	{ keys: "Súper+O", fallback: "Alt+O", action: "Cola de pedidos" },
-	{ keys: "Súper+P", fallback: "Alt+P", action: "Pesaje de producción" },
-	{ keys: "Súper+G", fallback: "Alt+G", action: "Cobro e impresión de ticket" },
-	{ keys: "Súper+I", fallback: "Alt+I", action: "iAntonella" },
+	{
+		keys: "Súper+,",
+		fallback: "Alt+,",
+		action: "7 · Config (serial, tramas, tema…)",
+	},
+	{ keys: "Súper+E", fallback: "Alt+E", action: "7 · Recetas" },
+	{ keys: "Súper+F", fallback: "Alt+F", action: "7 · Inventario frío" },
+	{
+		keys: "Súper+U",
+		fallback: "Alt+U",
+		action: "7 · Clientes (precios y cobranza)",
+	},
+	{ keys: "Súper+T", fallback: "Alt+T", action: "7 · Últimos tickets" },
+	{ keys: "Súper+O", fallback: "Alt+O", action: "7 · Cola de pedidos" },
+	{ keys: "Súper+P", fallback: "Alt+P", action: "7 · Pesaje de producción" },
+	{
+		keys: "Fn + tecla, o la tecla dos veces",
+		fallback: "Enter en la pantalla 7",
+		action: "Abrir la ventana grande del módulo",
+	},
+	{
+		keys: "Alt+Espacio",
+		fallback: "mantener 🎤",
+		action: "Hablar con Peggy",
+	},
+	{
+		keys: "Espacio (grabando)",
+		fallback: "soltar 🎤",
+		action: "Terminar de grabar",
+	},
+	{ keys: "Súper+G", fallback: "Alt+G", action: "Cobrar de contado" },
+	{
+		keys: "Súper+Shift+G",
+		fallback: "Alt+Shift+G",
+		action: "Cobrar a crédito",
+	},
+	{
+		keys: "Súper+I",
+		fallback: "Alt+I",
+		action: "Hablarle a Peggy (igual que Alt+Espacio)",
+	},
 	{ keys: "Súper+V", fallback: "Alt+V", action: "Versión clásica" },
 	{ keys: "Súper+Shift+T", fallback: "Alt+Shift+T", action: "Cambiar tema" },
+	{
+		keys: "Súper+Shift+A",
+		fallback: "Alt+Shift+A",
+		action: "Tamaño de letra: normal · mediano · grande",
+	},
 	{ keys: "Esc", fallback: "", action: "Cerrar / volver a Inicio" },
 ];

@@ -856,7 +856,7 @@ export const yieldsRouter = router({
 		return { canales, recipes, subRecipes, demandByProduct };
 	}),
 
-	// Plan de despiece sugerido por iAntonella: a partir de los pedidos abiertos,
+	// Plan de despiece sugerido por Peggy: a partir de los pedidos abiertos,
 	// calcula cuántos canales de cada tipo conviene despiezar para cubrir la
 	// demanda (descontando el stock ya despiezado) y qué piezas se generarían.
 	suggestDespiecePlan: protectedProcedure

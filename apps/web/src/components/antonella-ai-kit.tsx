@@ -87,7 +87,7 @@ export function AiField({
 						if (e.key === "Enter") (e.target as HTMLInputElement).blur();
 					}}
 					className={cn(
-						"w-full rounded-[9px] border-[1.5px] bg-secondary py-2.5 pr-7 pl-2.5 text-right font-mono font-bold text-[13.5px] text-foreground outline-none",
+						"w-full rounded-[9px] border-[1.5px] bg-secondary py-2.5 pr-7 pl-2.5 text-right font-bold font-mono text-[13.5px] text-foreground outline-none",
 						accepted
 							? "border-[var(--cg-green)]"
 							: hasSug
@@ -96,7 +96,7 @@ export function AiField({
 					)}
 				/>
 				{hasSug && (
-					<span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 font-mono font-bold text-[13.5px] text-primary/80">
+					<span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 font-bold font-mono text-[13.5px] text-primary/80">
 						{suggestion}
 					</span>
 				)}
@@ -242,7 +242,7 @@ export function AiConfirmCard({
 						<span className="font-medium text-[12.5px] text-foreground/80">
 							{k}
 						</span>
-						<span className="font-mono font-bold text-[12.5px] text-foreground">
+						<span className="font-bold font-mono text-[12.5px] text-foreground">
 							{v}
 						</span>
 					</div>
@@ -316,7 +316,7 @@ export function AiPresenceBar({
 			<AntonellaAvatar size={36} />
 			<div className="min-w-0 flex-1">
 				<div className="mb-2 font-extrabold text-[12.5px] text-[var(--cg-cream)]">
-					iAntonella vigilando {items.length} módulos
+					Peggy vigilando {items.length} módulos
 				</div>
 				<div className="flex flex-wrap gap-1.5">
 					{items.map((it) => (

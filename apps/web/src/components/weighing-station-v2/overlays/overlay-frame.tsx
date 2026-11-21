@@ -84,7 +84,7 @@ export function OverlayFrame({
 		<div className="fixed inset-0 z-50 flex items-center justify-center p-[4vh_4vw]">
 			<button
 				type="button"
-				className="absolute inset-0 bg-black/50"
+				className="absolute inset-0 bg-black/40"
 				aria-label="Cerrar"
 				onClick={onClose}
 			/>
@@ -97,7 +97,7 @@ export function OverlayFrame({
 				tabIndex={-1}
 				onKeyDown={handleKeyDown}
 				className={cn(
-					"relative z-10 flex h-[90vh] w-[92vw] max-w-[1400px] flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-2xl outline-none",
+					"relative z-10 flex h-[90vh] w-[94vw] flex-col overflow-hidden rounded-xl border-2 border-[#f39a1e]/70 bg-card/90 text-card-foreground shadow-2xl outline-none backdrop-blur-[3px]",
 					"focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-black/50",
 				)}
 			>

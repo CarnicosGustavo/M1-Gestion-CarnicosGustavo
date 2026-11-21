@@ -18,7 +18,7 @@ const SELF_MANAGED = new Set<string>([
 	"/admin/inventory/recipes",
 ]);
 
-// Slot por defecto, por ruta, para que iAntonella esté presente en TODOS los
+// Slot por defecto, por ruta, para que Peggy esté presente en TODOS los
 // módulos. Mensajes contextuales por módulo (sin datos en vivo).
 const ROUTE_SLOT: Record<string, AntonellaSlotData> = {
 	"/admin/orders": {

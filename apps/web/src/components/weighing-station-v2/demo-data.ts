@@ -202,3 +202,129 @@ export const DEMO_CUSTOMER_PRICES = [
 		pricePerKg: null,
 	},
 ];
+
+/** Catálogo de ejemplo para «Nuevo pedido» (piezas padre → derivados). */
+export const DEMO_CATALOG = [
+	{
+		id: 4,
+		name: "PIERNA",
+		parent_product_id: null,
+		category: "Jamones",
+		price: "0",
+	},
+	{
+		id: 23,
+		name: "JAMON C/G",
+		parent_product_id: 4,
+		category: "Jamones",
+		price: "0",
+	},
+	{
+		id: 22,
+		name: "JAMON",
+		parent_product_id: null,
+		category: "Jamones",
+		price: "0",
+	},
+	{
+		id: 35,
+		name: "PULPA DE JAMON",
+		parent_product_id: 22,
+		category: "Pulpas",
+		price: "0",
+	},
+	{
+		id: 24,
+		name: "JAMON PINTO",
+		parent_product_id: 22,
+		category: "Jamones",
+		price: "0",
+	},
+	{
+		id: 44,
+		name: "HUESO PELON",
+		parent_product_id: 22,
+		category: "Huesos",
+		price: "0",
+	},
+	{
+		id: 7,
+		name: "ESPALDILLA",
+		parent_product_id: null,
+		category: "Otros",
+		price: "0",
+	},
+	{
+		id: 32,
+		name: "PULPA",
+		parent_product_id: 7,
+		category: "Pulpas",
+		price: "0",
+	},
+	{
+		id: 33,
+		name: "PULPA C/G",
+		parent_product_id: 7,
+		category: "Pulpas",
+		price: "0",
+	},
+	{
+		id: 5,
+		name: "CABEZA",
+		parent_product_id: null,
+		category: "Otros",
+		price: "0",
+	},
+	{
+		id: 55,
+		name: "CACHETE",
+		parent_product_id: 5,
+		category: "Otros",
+		price: "0",
+	},
+	{
+		id: 65,
+		name: "PAPADA",
+		parent_product_id: 5,
+		category: "Otros",
+		price: "0",
+	},
+	{
+		id: 69,
+		name: "PECHO",
+		parent_product_id: null,
+		category: "Otros",
+		price: "0",
+	},
+	{
+		id: 48,
+		name: "MANOS",
+		parent_product_id: null,
+		category: "Huesos",
+		price: "0",
+	},
+	{
+		id: 67,
+		name: "OREJAS",
+		parent_product_id: null,
+		category: "Otros",
+		price: "0",
+	},
+];
+
+export const DEMO_CUSTOMERS: Array<{
+	id: number;
+	name: string;
+	contact_name?: string;
+	phone?: string;
+}> = [
+	{ id: 1, name: "Carnicería La Esperanza" },
+	{
+		id: 2,
+		name: "Mercado San Juan",
+		contact_name: "Don Ramiro",
+		phone: "55 1234 5678",
+	},
+	{ id: 3, name: "Taquería Los Primos" },
+	{ id: 4, name: "Carnicería El Toro" },
+];
