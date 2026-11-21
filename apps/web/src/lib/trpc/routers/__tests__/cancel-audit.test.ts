@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
 	appendCancelAuditNote,
 	cancelConfirmSummaryText,
@@ -53,5 +54,24 @@ describe("cancel-audit — confirmación y nota al cancelar", () => {
 		expect(text).toContain("Cobros que se quedan: 2 ($150.00)");
 		expect(text).toContain("Créditos vigentes que se quedan: 1 ($80.00)");
 		expect(text).toContain("El stock no se revierte.");
+	});
+});
+
+describe("P31-R2-2 — la ficha cancela con orders.update", () => {
+	it("el «Sí, cancelar» de la ficha llama a orders.update, no a replaceItems", () => {
+		const src = readFileSync(
+			new URL("../../../../app/admin/orders/[id]/page.tsx", import.meta.url),
+			"utf8",
+		);
+		expect(src).toContain("trpc.orders.update.mutationOptions");
+		expect(src).toMatch(/cancelOrderMutation\.mutate\(\s*\{\s*id: orderId,/);
+		expect(src).toMatch(/status:\s*"cancelled"/);
+		const confirm = src.slice(
+			src.indexOf("<CancelConfirmationDialog"),
+			src.indexOf("</CancelConfirmationDialog>"),
+		);
+		expect(confirm).toContain("cancelOrderMutation.mutate");
+		expect(confirm).not.toContain("replaceItemsMutation");
+		expect(confirm).not.toContain("buildFullEditPayload");
 	});
 });

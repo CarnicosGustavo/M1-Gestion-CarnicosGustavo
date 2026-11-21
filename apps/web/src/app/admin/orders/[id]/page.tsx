@@ -163,6 +163,20 @@ export default function OrderDetailPage({
 		}),
 	);
 
+	const cancelOrderMutation = useMutation(
+		trpc.orders.update.mutationOptions({
+			onSuccess: () => {
+				toast.success("Pedido cancelado");
+				setCancelOpen(false);
+				setEditOpen(false);
+				refetch();
+				queryClient.invalidateQueries({ queryKey: invalidateKey });
+			},
+			onError: (err: any) =>
+				toast.error(err.message ?? "No se pudo cancelar el pedido"),
+		}),
+	);
+
 	const cancelSummaryQuery = useQuery({
 		...trpc.orders.cancelSummary.queryOptions({ id: orderId }),
 		enabled: cancelOpen,
@@ -988,9 +1002,12 @@ export default function OrderDetailPage({
 					cancelSummaryQuery.data?.blockedByUnweighedReceivedWeight === true
 				}
 				blockedMessage={CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE}
-				isPending={replaceItemsMutation.isPending}
+				isPending={cancelOrderMutation.isPending}
 				onConfirm={() => {
-					replaceItemsMutation.mutate(buildFullEditPayload());
+					cancelOrderMutation.mutate({
+						id: orderId,
+						status: "cancelled",
+					});
 				}}
 			/>
 

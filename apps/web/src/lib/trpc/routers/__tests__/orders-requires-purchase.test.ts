@@ -2471,4 +2471,31 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 		expect(updated.notes).toContain("America/Mexico_City");
 		expect(updated.notes).toContain("El stock no se revierte.");
 	});
+
+	it("P31-R2-2: orders.update cancela una venta que sigue PENDIENTE_PESAJE", async () => {
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "5.000",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					quantityKg: 2000,
+				},
+			],
+		});
+		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
+		const updated = await caller.update({
+			id: order.id,
+			status: "cancelled",
+		});
+		expect(updated.status).toBe("cancelled");
+		expect((await getOrder(order.id))?.status).toBe("cancelled");
+		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
+	});
+
 });
