@@ -12,6 +12,7 @@ function event(
 		altKey: false,
 		ctrlKey: false,
 		shiftKey: false,
+		repeat: false,
 		target: null,
 		...init,
 	};
@@ -98,5 +99,60 @@ describe("matchPesajeShortcut", () => {
 		expect(SHORTCUT_ROWS.some((row) => row.fallback.includes("Alt"))).toBe(
 			true,
 		);
+	});
+
+	function fakeEl(tagName: string, closestHits = false) {
+		return {
+			tagName,
+			isContentEditable: false,
+			closest: (selector: string) => {
+				if (!closestHits) return null;
+				if (
+					selector.includes("button") ||
+					selector.includes("role='button'") ||
+					selector.includes("a,")
+				) {
+					return {};
+				}
+				return null;
+			},
+		} as unknown as EventTarget;
+	}
+
+	test("Enter o Espacio en un botón, enlace o role=button no registran ni capturan", () => {
+		const button = fakeEl("BUTTON");
+		const link = fakeEl("A");
+		const roleButton = fakeEl("DIV", true);
+		expect(matchPesajeShortcut(event("Enter", { target: button }))).toBeNull();
+		expect(matchPesajeShortcut(event(" ", { target: button }))).toBeNull();
+		expect(matchPesajeShortcut(event("Enter", { target: link }))).toBeNull();
+		expect(matchPesajeShortcut(event(" ", { target: link }))).toBeNull();
+		expect(
+			matchPesajeShortcut(event("Enter", { target: roleButton })),
+		).toBeNull();
+		expect(matchPesajeShortcut(event(" ", { target: roleButton }))).toBeNull();
+		// Sin foco interactivo siguen funcionando
+		expect(matchPesajeShortcut(event("Enter"))).toEqual({ type: "confirm" });
+		expect(matchPesajeShortcut(event(" "))).toEqual({ type: "capture" });
+		// Los atajos con Súper sí se pueden usar con foco en un botón
+		expect(
+			matchPesajeShortcut(event("t", { metaKey: true, target: button })),
+		).toEqual({ type: "overlay", overlay: "tickets" });
+	});
+
+	test("ignora event.repeat y deshabilita atajos mientras isPending", () => {
+		expect(matchPesajeShortcut(event("Enter", { repeat: true }))).toBeNull();
+		expect(matchPesajeShortcut(event(" ", { repeat: true }))).toBeNull();
+		expect(
+			matchPesajeShortcut(event("t", { metaKey: true, repeat: true })),
+		).toBeNull();
+		expect(matchPesajeShortcut(event("Enter"), { isPending: true })).toBeNull();
+		expect(matchPesajeShortcut(event(" "), { isPending: true })).toBeNull();
+		expect(
+			matchPesajeShortcut(event("t", { metaKey: true }), { isPending: true }),
+		).toBeNull();
+		expect(matchPesajeShortcut(event("Escape"), { isPending: true })).toEqual({
+			type: "close",
+		});
 	});
 });

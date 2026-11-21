@@ -368,6 +368,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 
 	const handleRegisterWeight = useCallback(() => {
 		if (!currentItem || !hasValidWeight) return;
+		if (updateWeightMutation.isPending) return;
 		if (demo) {
 			toast.success(`Demostración: se registraría ${netKg.toFixed(3)} kg`);
 			return;
@@ -676,6 +677,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		const onKeyDown = (event: KeyboardEvent) => {
 			const action = matchPesajeShortcut(event, {
 				overlayOpen: overlay !== null,
+				isPending: updateWeightMutation.isPending,
 			});
 			if (!action) return;
 			event.preventDefault();
@@ -727,6 +729,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		cycleTheme,
 		openPage,
 		runCommand,
+		updateWeightMutation.isPending,
 	]);
 
 	const ticketDetailQuery = useQuery({
