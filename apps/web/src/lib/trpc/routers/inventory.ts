@@ -766,7 +766,11 @@ export const inventoryRouter = router({
 
 	// Importa el JSON exportado por el Configurador Visual de Despiece.
 	// Las recetas del archivo se crean/actualizan (match por NOMBRE de producto,
-	// sin acentos); las que NO estén en el archivo quedan INACTIVAS (recuperables).
+	// sin acentos). Solo se tocan los padres incluidos en el archivo: sus recetas
+	// que NO vengan en el archivo quedan INACTIVAS (recuperables). Las recetas de
+	// padres que no aparecen en el archivo no se modifican.
+	// Si algún nombre de producto no existe en el catálogo se aborta todo
+	// (BAD_REQUEST) sin escribir nada.
 	recipesImport: adminProcedure
 		.input(
 			z.object({
@@ -833,6 +837,23 @@ export const inventoryRouter = router({
 					if (!id) missing.add(name);
 					return id;
 				};
+				// Validación previa: todos los nombres deben existir en el catálogo.
+				for (const c of input.canales) {
+					findId(c.parent);
+					for (const it of c.piezas) findId(it.child);
+				}
+				for (const b of input.ramificaciones) {
+					findId(b.parent);
+					for (const it of b.subpiezas) findId(it.child);
+				}
+				if (missing.size > 0) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: `Importación cancelada: productos no encontrados en el catálogo: ${[...missing].join(", ")}. No se modificó ninguna receta.`,
+					});
+				}
+				// Padres incluidos en el archivo (alcance de la desactivación)
+				const fileParentIds = new Set<number>();
 
 				type Row = {
 					parentId: number;
@@ -848,6 +869,7 @@ export const inventoryRouter = router({
 				for (const c of input.canales) {
 					const pid = findId(c.parent);
 					if (!pid) continue;
+					fileParentIds.add(pid);
 					if (c.peso_canal_kg && c.peso_canal_kg > 0)
 						refWeights.set(pid, c.peso_canal_kg);
 					for (const it of c.piezas) {
@@ -866,6 +888,7 @@ export const inventoryRouter = router({
 				for (const b of input.ramificaciones) {
 					const pid = findId(b.parent);
 					if (!pid) continue;
+					fileParentIds.add(pid);
 					if (b.peso_ref_kg && b.peso_ref_kg > 0)
 						refWeights.set(pid, b.peso_ref_kg);
 					for (const it of b.subpiezas) {
@@ -900,10 +923,27 @@ export const inventoryRouter = router({
 					]),
 				);
 
-				// Todo inactivo primero; lo del archivo se reactiva/actualiza
-				await tx
-					.update(productTransformations)
-					.set({ is_active: false, updated_at: new Date() });
+				// Desactivar SOLO las recetas activas de los padres incluidos en el
+				// archivo que no vienen en él; el resto del catálogo no se toca.
+				const toDeactivate = existing.filter(
+					(e) =>
+						e.is_active &&
+						fileParentIds.has(e.parent_product_id) &&
+						!desired.has(
+							`${e.parent_product_id}:${e.child_product_id}:${e.transformation_type}`,
+						),
+				);
+				if (toDeactivate.length > 0) {
+					await tx
+						.update(productTransformations)
+						.set({ is_active: false, updated_at: new Date() })
+						.where(
+							inArray(
+								productTransformations.id,
+								toDeactivate.map((e) => e.id),
+							),
+						);
+				}
 
 				let inserted = 0;
 				let updated = 0;
@@ -955,19 +995,11 @@ export const inventoryRouter = router({
 						.where(inArray(products.id, parentIds));
 				}
 
-				const deactivated = existing.filter(
-					(e) =>
-						e.is_active &&
-						!desired.has(
-							`${e.parent_product_id}:${e.child_product_id}:${e.transformation_type}`,
-						),
-				).length;
-
 				return {
 					total: desired.size,
 					inserted,
 					updated,
-					deactivated,
+					deactivated: toDeactivate.length,
 					missing: [...missing],
 				};
 			});

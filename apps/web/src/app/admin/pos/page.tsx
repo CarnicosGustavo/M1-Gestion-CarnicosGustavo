@@ -19,6 +19,7 @@ import {
 	PackageSearchIcon,
 	PlusIcon,
 	ScaleIcon,
+	RefreshCwIcon,
 	ScissorsIcon,
 	SearchIcon,
 	ShoppingCartIcon,
@@ -578,6 +579,11 @@ export default function POSPage() {
 			label: "Por despiece",
 			cls: "bg-cg-blue-wash text-[#1e4560] dark:text-cg-blue",
 			Icon: ScissorsIcon,
+		},
+		conversion: {
+			label: "Por conversión",
+			cls: "bg-cg-blue-wash text-[#1e4560] dark:text-cg-blue",
+			Icon: RefreshCwIcon,
 		},
 		pesaje: {
 			label: "Por pesar",
