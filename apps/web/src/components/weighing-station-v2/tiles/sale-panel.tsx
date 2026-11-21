@@ -194,20 +194,6 @@ export function SalePanel(props: SalePanelProps) {
 					<div className="grid grid-cols-2 gap-2">
 						<button
 							type="button"
-							onClick={() => onCharge("contado")}
-							disabled={!canCharge}
-							className="flex flex-col items-center justify-center rounded-md bg-gradient-to-b from-[#4cc35d] to-[#2f9a3f] px-2 py-2 font-bold text-[#06210b] shadow-[0_2px_0_rgba(0,0,0,0.45)] transition hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:from-[#2d4a33] disabled:to-[#24392a] disabled:text-[#5f7a64]"
-						>
-							<span className="flex items-center gap-1.5 text-sm uppercase tracking-wide">
-								<Banknote aria-hidden="true" size={15} strokeWidth={2.4} />
-								Contado
-							</span>
-							<kbd className="font-mono font-normal text-[9px] opacity-70">
-								Súper+G
-							</kbd>
-						</button>
-						<button
-							type="button"
 							onClick={() => onCharge("credito")}
 							disabled={!canCharge}
 							className="flex flex-col items-center justify-center rounded-md bg-gradient-to-b from-[#3aa9d1] to-[#23799b] px-2 py-2 font-bold text-[#04202b] shadow-[0_2px_0_rgba(0,0,0,0.45)] transition hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:from-[#264451] disabled:to-[#1d3540] disabled:text-[#58717c]"
@@ -215,6 +201,20 @@ export function SalePanel(props: SalePanelProps) {
 							<span className="flex items-center gap-1.5 text-sm uppercase tracking-wide">
 								<CreditCard aria-hidden="true" size={15} strokeWidth={2.4} />
 								Crédito
+							</span>
+							<kbd className="font-mono font-normal text-[9px] opacity-70">
+								Súper+G · Enter
+							</kbd>
+						</button>
+						<button
+							type="button"
+							onClick={() => onCharge("contado")}
+							disabled={!canCharge}
+							className="flex flex-col items-center justify-center rounded-md bg-gradient-to-b from-[#4cc35d] to-[#2f9a3f] px-2 py-2 font-bold text-[#06210b] shadow-[0_2px_0_rgba(0,0,0,0.45)] transition hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:from-[#2d4a33] disabled:to-[#24392a] disabled:text-[#5f7a64]"
+						>
+							<span className="flex items-center gap-1.5 text-sm uppercase tracking-wide">
+								<Banknote aria-hidden="true" size={15} strokeWidth={2.4} />
+								Contado
 							</span>
 							<kbd className="font-mono font-normal text-[9px] opacity-70">
 								Súper+⇧G

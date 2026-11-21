@@ -366,22 +366,22 @@ export default function YieldPage() {
 	}
 
 	return (
-		<div className="space-y-6 max-w-5xl">
-			<div className="flex items-center justify-between gap-4 flex-wrap">
+		<div className="max-w-5xl space-y-6">
+			<div className="flex flex-wrap items-center justify-between gap-4">
 				<div>
-					<h1 className="text-2xl font-bold">Rendimiento de Despiece</h1>
-					<p className="text-sm text-muted-foreground">
+					<h1 className="font-bold text-2xl">Rendimiento de Despiece</h1>
+					<p className="text-muted-foreground text-sm">
 						Compara el peso estimado vs el real para medir el rendimiento por
 						proveedor.
 					</p>
 				</div>
 				<Button onClick={save} disabled={createMutation.isPending}>
-					<SaveIcon className="w-4 h-4 mr-2" />
+					<SaveIcon className="mr-2 h-4 w-4" />
 					{createMutation.isPending ? "Guardando…" : "Guardar hoja"}
 				</Button>
 			</div>
 
-			{/* iAntonella: estimar pesos faltantes desde las recetas */}
+			{/* Peggy: estimar pesos faltantes desde las recetas */}
 			<AiSuggestBar
 				tone="sugerencia"
 				title="Estimar pesos del día"
@@ -392,7 +392,7 @@ export default function YieldPage() {
 						"Estima los pesos de las piezas del despiece de hoy desde las recetas y dime el rendimiento esperado.",
 					)
 				}
-				secondary="Abrir iAntonella"
+				secondary="Abrir Peggy"
 				onSecondary={() => antonella.open()}
 			/>
 
@@ -410,11 +410,11 @@ export default function YieldPage() {
 								<div key={p.supplier} className="rounded-lg border p-3">
 									<div className="flex items-center justify-between">
 										<span className="font-bold">{p.supplier}</span>
-										<span className="text-2xl font-bold text-blue-700">
+										<span className="font-bold text-2xl text-blue-700">
 											{Number(p.rendimiento).toFixed(1)}%
 										</span>
 									</div>
-									<div className="mt-1 text-xs text-muted-foreground">
+									<div className="mt-1 text-muted-foreground text-xs">
 										{p.canales} canales · comprado{" "}
 										{Number(p.kgComprado).toFixed(0)} kg · real{" "}
 										{Number(p.kgReal).toFixed(0)} kg · {p.hojas} hoja(s)
@@ -433,7 +433,7 @@ export default function YieldPage() {
 						<CardTitle className="text-base">
 							Pesajes de producción (acumulado)
 						</CardTitle>
-						<p className="text-xs text-muted-foreground">
+						<p className="text-muted-foreground text-xs">
 							Cada pesaje de producción de una pieza se va agregando como
 							columna. Útil para pesar lotes grandes en varios momentos (ej. 120
 							jamones por partes). El peso también se suma al inventario.
@@ -448,7 +448,7 @@ export default function YieldPage() {
 										{Array.from({ length: maxWeighings }).map((_, i) => (
 											<TableHead
 												key={i}
-												className="text-center whitespace-nowrap"
+												className="whitespace-nowrap text-center"
 											>
 												Pesaje {i + 1}
 											</TableHead>
@@ -514,7 +514,7 @@ export default function YieldPage() {
 							<SparklesIcon className="h-4 w-4 text-blue-600" />
 							Proyectar piezas desde el despiece
 						</CardTitle>
-						<p className="text-xs text-muted-foreground">
+						<p className="text-muted-foreground text-xs">
 							Indica cuántos canales de cada tipo se despiezaron. Se calculan
 							automáticamente las piezas resultantes y su peso estimado (incluye
 							el 2º nivel de despiece).
@@ -568,8 +568,8 @@ export default function YieldPage() {
 							onChange={(e) => setYieldDate(e.target.value)}
 						/>
 					</div>
-					<div className="sm:col-span-2 flex items-end justify-between gap-3">
-						<p className="text-xs text-muted-foreground">
+					<div className="flex items-end justify-between gap-3 sm:col-span-2">
+						<p className="text-muted-foreground text-xs">
 							{dayBuy.canales > 0
 								? `${dayBuy.usaVerif ? "Recibido en CEDIS" : "Compra del día"}: ${dayBuy.canales} canales · ${dayBuy.kg.toLocaleString("es-MX", { maximumFractionDigits: 0 })} kg${dayBuy.prov ? ` · ${dayBuy.prov}` : ""}`
 								: "No hay compra registrada para este día. Captúrala en “Compra del día”."}
@@ -593,7 +593,7 @@ export default function YieldPage() {
 
 			{/* Cabecera */}
 			<Card>
-				<CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-6">
+				<CardContent className="grid gap-4 pt-6 sm:grid-cols-2 lg:grid-cols-4">
 					<div className="space-y-1">
 						<Label>No. de medias canal</Label>
 						<Input
@@ -631,7 +631,7 @@ export default function YieldPage() {
 									type="button"
 									onClick={() => setSupplier(prov)}
 									className={cn(
-										"flex-1 rounded-lg border px-2 py-2 text-xs font-bold",
+										"flex-1 rounded-lg border px-2 py-2 font-bold text-xs",
 										supplier === prov
 											? "border-primary bg-primary/10 text-primary"
 											: "border-border hover:bg-muted",
@@ -658,7 +658,7 @@ export default function YieldPage() {
 				<CardHeader className="flex flex-row items-center justify-between">
 					<CardTitle>Piezas</CardTitle>
 					<Button variant="outline" size="sm" onClick={addRow}>
-						<PlusIcon className="w-4 h-4 mr-2" />
+						<PlusIcon className="mr-2 h-4 w-4" />
 						Agregar pieza
 					</Button>
 				</CardHeader>
@@ -706,7 +706,7 @@ export default function YieldPage() {
 													placeholder="0"
 												/>
 											</TableCell>
-											<TableCell className="text-center text-sm text-blue-600 font-medium">
+											<TableCell className="text-center font-medium text-blue-600 text-sm">
 												{est > 0 ? est.toFixed(2) : "—"}
 											</TableCell>
 											<TableCell>
@@ -722,7 +722,7 @@ export default function YieldPage() {
 											</TableCell>
 											<TableCell
 												className={cn(
-													"text-center text-sm font-medium",
+													"text-center font-medium text-sm",
 													real > 0
 														? dif >= 0
 															? "text-green-600"
@@ -740,7 +740,7 @@ export default function YieldPage() {
 													onClick={() => removeRow(idx)}
 													className="text-muted-foreground hover:text-red-500"
 												>
-													<TrashIcon className="w-4 h-4" />
+													<TrashIcon className="h-4 w-4" />
 												</button>
 											</TableCell>
 										</TableRow>
@@ -753,24 +753,24 @@ export default function YieldPage() {
 					{/* Totales */}
 					<div className="mt-4 grid grid-cols-2 gap-3 border-t pt-4 sm:grid-cols-5">
 						<div className="rounded-lg bg-slate-50 p-3">
-							<p className="text-xs text-muted-foreground">Total piezas</p>
-							<p className="text-lg font-bold">{totals.piezas}</p>
+							<p className="text-muted-foreground text-xs">Total piezas</p>
+							<p className="font-bold text-lg">{totals.piezas}</p>
 						</div>
 						<div className="rounded-lg bg-blue-50 p-3">
-							<p className="text-xs text-muted-foreground">Estimado</p>
-							<p className="text-lg font-bold text-blue-700">
+							<p className="text-muted-foreground text-xs">Estimado</p>
+							<p className="font-bold text-blue-700 text-lg">
 								{fmt(totals.estimado)}
 							</p>
 						</div>
 						<div className="rounded-lg bg-slate-50 p-3">
-							<p className="text-xs text-muted-foreground">Real</p>
-							<p className="text-lg font-bold">{fmt(totals.real)}</p>
+							<p className="text-muted-foreground text-xs">Real</p>
+							<p className="font-bold text-lg">{fmt(totals.real)}</p>
 						</div>
 						<div className="rounded-lg bg-slate-50 p-3">
-							<p className="text-xs text-muted-foreground">Diferencia</p>
+							<p className="text-muted-foreground text-xs">Diferencia</p>
 							<p
 								className={cn(
-									"text-lg font-bold",
+									"font-bold text-lg",
 									totals.diferencia >= 0 ? "text-green-600" : "text-red-600",
 								)}
 							>
@@ -779,8 +779,8 @@ export default function YieldPage() {
 							</p>
 						</div>
 						<div className="rounded-lg bg-green-50 p-3">
-							<p className="text-xs text-muted-foreground">Rendimiento</p>
-							<p className="text-lg font-bold text-green-700">
+							<p className="text-muted-foreground text-xs">Rendimiento</p>
+							<p className="font-bold text-green-700 text-lg">
 								{totals.rendimiento.toFixed(1)}%
 							</p>
 						</div>

@@ -30,7 +30,7 @@ describe("matchPesajeShortcut", () => {
 		).toEqual({ type: "page", page: "config" });
 	});
 
-	test("Alt+Espacio habla con Antonella; Súper+Shift+G cobra a crédito", () => {
+	test("Alt+Espacio habla con Peggy; Súper+G crédito y Súper+Shift+G contado", () => {
 		expect(
 			matchPesajeShortcut(event(" ", { altKey: true, code: "Space" })),
 		).toEqual({ type: "voice" });
@@ -38,6 +38,9 @@ describe("matchPesajeShortcut", () => {
 			matchPesajeShortcut(
 				event("G", { metaKey: true, shiftKey: true, code: "KeyG" }),
 			),
+		).toEqual({ type: "command", command: "charge" });
+		expect(
+			matchPesajeShortcut(event("g", { metaKey: true, code: "KeyG" })),
 		).toEqual({ type: "command", command: "charge-credit" });
 	});
 

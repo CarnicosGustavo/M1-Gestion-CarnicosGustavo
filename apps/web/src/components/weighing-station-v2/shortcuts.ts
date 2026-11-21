@@ -8,7 +8,7 @@ export type PesajeCommand =
 	| "hold" // HOLD: congelar el display
 	| "undo" // deshacer la última captura
 	| "charge" // cobrar de contado (panel 5 → pantalla 7)
-	| "charge-credit" // cobrar a crédito
+	| "charge-credit" // anotar a crédito (lo más común)
 	| "antonella"
 	| "classic";
 
@@ -18,7 +18,7 @@ export type PesajeAction =
 	| { type: "move-line"; direction: -1 | 1 }
 	| { type: "confirm" }
 	| { type: "capture" }
-	| { type: "overlay"; overlay: "tickets" | "orders" | "batch" }
+	| { type: "overlay"; overlay: "tickets" | "orders" | "batch" | "neworder" }
 	| { type: "page"; page: FnPage }
 	| { type: "command"; command: PesajeCommand }
 	| { type: "cycle-theme" }
@@ -78,7 +78,7 @@ const MOD_KEYS: Record<string, PesajeAction> = {
 	b: { type: "page", page: "conexion" },
 	x: { type: "page", page: "diagnostico" },
 	m: { type: "page", page: "tema" },
-	n: { type: "page", page: "teclado" },
+	n: { type: "overlay", overlay: "neworder" },
 	"/": { type: "page", page: "atajos" },
 	",": { type: "page", page: "config" },
 	e: { type: "page", page: "recetas" },
@@ -88,8 +88,8 @@ const MOD_KEYS: Record<string, PesajeAction> = {
 	r: { type: "command", command: "tare" },
 	l: { type: "command", command: "hold" },
 	z: { type: "command", command: "undo" },
-	g: { type: "command", command: "charge" },
-	i: { type: "command", command: "antonella" },
+	g: { type: "command", command: "charge-credit" },
+	i: { type: "voice" },
 	v: { type: "command", command: "classic" },
 };
 
@@ -121,13 +121,13 @@ export function matchPesajeShortcut(
 	}
 
 	if (mod) {
-		// Alt+Espacio: empezar a dictarle a Antonella (Espacio solo termina).
+		// Alt+Espacio: empezar a dictarle a Peggy (Espacio solo termina).
 		if (key === " " || event.code === "Space") return { type: "voice" };
 		const physical = physicalKey(event);
 		if (physical === "t" && event.shiftKey) return { type: "cycle-theme" };
 		if (physical === "a" && event.shiftKey) return { type: "cycle-font" };
 		if (physical === "g" && event.shiftKey) {
-			return { type: "command", command: "charge-credit" };
+			return { type: "command", command: "charge" };
 		}
 		if (physical === "b" && event.shiftKey) {
 			return { type: "command", command: "power" };
@@ -206,7 +206,7 @@ export const SHORTCUT_ROWS: Array<{
 	{ keys: "Súper+B", fallback: "Alt+B", action: "7 · Conexión serial" },
 	{ keys: "Súper+X", fallback: "Alt+X", action: "7 · Diagnóstico de tramas" },
 	{ keys: "Súper+M", fallback: "Alt+M", action: "7 · Tema" },
-	{ keys: "Súper+N", fallback: "Alt+N", action: "7 · Teclado / peso manual" },
+	{ keys: "Súper+N", fallback: "Alt+N", action: "Nuevo pedido" },
 	{ keys: "Súper+/ o ?", fallback: "Alt+/", action: "7 · Atajos" },
 	{
 		keys: "Súper+,",
@@ -231,7 +231,7 @@ export const SHORTCUT_ROWS: Array<{
 	{
 		keys: "Alt+Espacio",
 		fallback: "mantener 🎤",
-		action: "Hablar con Antonella",
+		action: "Hablar con Peggy",
 	},
 	{
 		keys: "Espacio (grabando)",
@@ -244,7 +244,11 @@ export const SHORTCUT_ROWS: Array<{
 		fallback: "Alt+Shift+G",
 		action: "Cobrar a crédito",
 	},
-	{ keys: "Súper+I", fallback: "Alt+I", action: "Chat de Antonella (panel)" },
+	{
+		keys: "Súper+I",
+		fallback: "Alt+I",
+		action: "Hablarle a Peggy (igual que Alt+Espacio)",
+	},
 	{ keys: "Súper+V", fallback: "Alt+V", action: "Versión clásica" },
 	{ keys: "Súper+Shift+T", fallback: "Alt+Shift+T", action: "Cambiar tema" },
 	{

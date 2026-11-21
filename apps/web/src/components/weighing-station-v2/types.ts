@@ -20,7 +20,13 @@ export const TILES = [
 export type TileId = (typeof TILES)[number]["id"];
 export type TileKey = (typeof TILES)[number]["key"];
 
-export type PesajeOverlay = "tickets" | "orders" | "batch" | "module" | null;
+export type PesajeOverlay =
+	| "tickets"
+	| "orders"
+	| "batch"
+	| "module"
+	| "neworder"
+	| null;
 
 /** Páginas de la pantalla de funciones (7). */
 export type FnPage =

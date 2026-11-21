@@ -47,7 +47,9 @@ import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
 import {
 	DEMO_CAPTURES,
+	DEMO_CATALOG,
 	DEMO_CUSTOMER_PRICES,
+	DEMO_CUSTOMERS,
 	DEMO_LIVE,
 	DEMO_ORDERS,
 	DEMO_TICKET_LINES,
@@ -59,6 +61,11 @@ import {
 } from "./instrument/function-screen";
 import { IqyDisplay, type IqyIndicator } from "./instrument/iqy-display";
 import { ModuleOverlay } from "./overlays/module-overlay";
+import {
+	type CatalogProduct,
+	NewOrderOverlay,
+	type OrderDraft,
+} from "./overlays/new-order-overlay";
 import { OrdersOverlay } from "./overlays/orders-overlay";
 import { TicketsOverlay } from "./overlays/tickets-overlay";
 import { usePesajeTheme } from "./pesaje-themes";
@@ -225,7 +232,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	/** Fn armada: la siguiente tecla de módulo abre su ventana grande. */
 	const [fnArmed, setFnArmed] = useState(false);
 	const [chargeType, setChargeType] = useState<"contado" | "credito">(
-		"contado",
+		"credito",
 	);
 	const [methodId, setMethodId] = useState<number | null>(null);
 	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
@@ -237,6 +244,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const [speechSupported, setSpeechSupported] = useState(true);
 	useEffect(() => setSpeechSupported(speechRecognitionCtor() !== null), []);
 	const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+	const [newOrderDraft, setNewOrderDraft] = useState<OrderDraft | null>(null);
 	const transcriptRef = useRef("");
 
 	const [selectedOrderId, setSelectedOrderId] = useState<number | null>(
@@ -318,6 +326,29 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		...trpc.products.list.queryOptions(),
 		enabled: !demo,
 	});
+	const customersQuery = useQuery({
+		...trpc.customers.list.queryOptions(),
+		enabled: !demo && overlay === "neworder",
+	});
+	const catalog: CatalogProduct[] = useMemo(
+		() =>
+			demo
+				? DEMO_CATALOG
+				: products.map((p) => ({
+						id: p.id,
+						name: p.name,
+						parent_product_id: p.parent_product_id ?? null,
+						category: p.category ?? null,
+						price: p.price_per_kg ?? 0,
+					})),
+		[demo, products],
+	);
+	const catalogCustomers = demo
+		? DEMO_CUSTOMERS
+		: (customersQuery.data ?? []).map((c) => ({
+				id: c.id,
+				name: c.name ?? `Cliente ${c.id}`,
+			}));
 
 	const orders: PesajeOrder[] = demo
 		? demoOrders.filter((order) =>
@@ -479,6 +510,21 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				}
 				void refetchOrders();
 				void orderDetailQuery.refetch();
+			},
+			onError: (error) => toast.error(error.message),
+		}),
+	);
+
+	const createOrderMutation = useMutation(
+		trpc.orders.create.mutationOptions({
+			onSuccess: (order) => {
+				toast.success(`Pedido #${order.id} creado: ya está en la cola`);
+				setOverlay(null);
+				setNewOrderDraft(null);
+				void refetchOrders();
+				setSelectedOrderId(order.id);
+				setCurrentItemIndex(0);
+				setFocusedTile(3);
 			},
 			onError: (error) => toast.error(error.message),
 		}),
@@ -755,7 +801,14 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				return;
 			}
 			setChargeType(type);
-			setMethodId((current) => current ?? paymentMethods[0]?.id ?? null);
+			// Contado arranca en Efectivo: solo Enter.
+			setMethodId(
+				(current) =>
+					current ??
+					paymentMethods.find((method) => /efectivo/i.test(method.name))?.id ??
+					paymentMethods[0]?.id ??
+					null,
+			);
 			setFnPage("cobro");
 			setFocusedTile(7);
 			setOverlay(null);
@@ -902,7 +955,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			return;
 		}
 		if (focusedTile === 5) {
-			startCharge("contado");
+			startCharge("credito");
 			return;
 		}
 		if (focusedTile === 7 && fnPage === "cobro") {
@@ -1010,7 +1063,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		[fnArmed, fnPage, overlay, openDetail, openPage],
 	);
 
-	// ── Voz: mantener 🎤 (o Alt+Espacio) → dictado → Antonella responde en 7
+	// ── Voz: mantener 🎤 (o Alt+Espacio) → dictado → Peggy responde en 7
 	const voiceChatMutation = useMutation(
 		trpc.antonella.chat.mutationOptions({
 			onSuccess: (data) => {
@@ -1024,7 +1077,15 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			},
 			onError: (error) => {
 				setVoice((current) => ({ ...current, status: "error" }));
-				toast.error(error.message ?? "Antonella no respondió");
+				toast.error(error.message ?? "Peggy no respondió");
+			},
+		}),
+	);
+	const voiceOrderMutation = useMutation(
+		trpc.antonella.parseVoiceOrder.mutationOptions({
+			onError: (error) => {
+				setVoice((current) => ({ ...current, status: "error" }));
+				toast.error(error.message ?? "Peggy no respondió");
 			},
 		}),
 	);
@@ -1032,6 +1093,27 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		(text: string) => {
 			setFnPage("voz");
 			setVoice({ status: "thinking", transcript: text, answer: "" });
+			if (demo && /pedido/i.test(text)) {
+				setTimeout(() => {
+					setNewOrderDraft({
+						customerId: 2,
+						lines: [
+							{ productId: 4, pieces: 8, kg: null },
+							{ productId: 69, pieces: 5, kg: null },
+							{ productId: 5, pieces: 3, kg: null },
+						],
+						unmatched: [],
+						transcript: text,
+					});
+					setVoice({
+						status: "answered",
+						transcript: text,
+						answer: "Pedido listo: revísalo y confirma con Ctrl+Enter.",
+					});
+					setOverlay("neworder");
+				}, 700);
+				return;
+			}
 			if (demo) {
 				setTimeout(
 					() =>
@@ -1039,15 +1121,42 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 							status: "answered",
 							transcript: text,
 							answer:
-								"Demostración: aquí llega la respuesta de Antonella (p. ej. «Pierna: 48 kg en existencia, 3 pedidos la esperan»).",
+								"Demostración: aquí llega la respuesta de Peggy (p. ej. «Pierna: 48 kg en existencia, 3 pedidos la esperan»).",
 						}),
 					900,
 				);
 				return;
 			}
-			voiceChatMutation.mutate({ message: text });
+			// 1) ¿Es un pedido? Peggy lo arma y se abre para confirmar.
+			// 2) Si no, responde como siempre en la pantalla 7.
+			voiceOrderMutation.mutate(
+				{ text },
+				{
+					onSuccess: (result) => {
+						if (result.kind === "order") {
+							setNewOrderDraft({
+								customerId: result.customerId,
+								customerQuery: result.customerQuery,
+								lines: result.lines,
+								unmatched: result.unmatched,
+								transcript: text,
+							});
+							setVoice({
+								status: "answered",
+								transcript: text,
+								answer: result.customerId
+									? "Pedido listo: revísalo y confirma con Ctrl+Enter."
+									: `No encontré al cliente «${result.customerQuery}»: elígelo y confirma.`,
+							});
+							setOverlay("neworder");
+							return;
+						}
+						voiceChatMutation.mutate({ message: text });
+					},
+				},
+			);
 		},
-		[demo, voiceChatMutation],
+		[demo, voiceChatMutation, voiceOrderMutation],
 	);
 	const startVoice = useCallback(() => {
 		setFnPage("voz");
@@ -1132,6 +1241,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					handleCaptureStable();
 					break;
 				case "overlay":
+					if (action.overlay === "neworder") setNewOrderDraft(null);
 					setOverlay((current) =>
 						current === action.overlay ? null : action.overlay,
 					);
@@ -1441,6 +1551,17 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			id: "modulos",
 			label: "Módulos · pulsar = vista rápida · Fn + tecla = ventana",
 			keys: [
+				{
+					id: "nuevo",
+					label: "＋ Nuevo",
+					shortcut: shortcutLabel("N"),
+					tone: "orange",
+					active: overlay === "neworder",
+					onPress: () => {
+						setNewOrderDraft(null);
+						setOverlay("neworder");
+					},
+				},
 				detailKey("pedidos", "Pedidos", "O"),
 				detailKey("tickets", "Tickets", "T"),
 				detailKey("recetas", "Recetas", "E"),
@@ -1461,8 +1582,8 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				},
 				{
 					id: "voz",
-					label: voice.status === "listening" ? "Escucho" : "Antonella",
-					shortcut: "Mantener · Alt+Espacio",
+					label: voice.status === "listening" ? "Escucho" : "Peggy",
+					shortcut: "Mantén · Alt+Espacio",
 					icon: <MicIcon aria-hidden="true" className="size-3.5" />,
 					tone: voice.status === "listening" ? "red" : "neutral",
 					active: fnPage === "voz" && voice.status !== "listening",
@@ -1572,8 +1693,6 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 						transcript={voice.transcript}
 						answer={voice.answer}
 						supported={speechSupported}
-						onAsk={askAntonella}
-						onOpenChat={() => antonella.open()}
 					/>
 				);
 			case "config":
@@ -1912,6 +2031,36 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				<ModuleOverlay
 					page={fnPage}
 					demo={demo}
+					onClose={() => setOverlay(null)}
+				/>
+			) : null}
+			{overlay === "neworder" ? (
+				<NewOrderOverlay
+					// Un borrador nuevo (voz) reinicia el formulario.
+					key={newOrderDraft?.transcript ?? "manual"}
+					products={catalog}
+					customers={catalogCustomers}
+					initial={newOrderDraft}
+					busy={createOrderMutation.isPending}
+					onCreate={({ customerId, lines }) => {
+						if (demo) {
+							toast.success("Demostración: pedido creado");
+							setOverlay(null);
+							return;
+						}
+						createOrderMutation.mutate({
+							customerId,
+							items: lines.map((line) => {
+								const product = catalog.find((p) => p.id === line.productId);
+								return {
+									productId: line.productId,
+									quantityPieces: line.pieces || undefined,
+									quantityKg: line.kg ? Math.round(line.kg * 1000) : undefined,
+									unitPrice: Math.round(Number(product?.price ?? 0) * 100),
+								};
+							}),
+						});
+					}}
 					onClose={() => setOverlay(null)}
 				/>
 			) : null}

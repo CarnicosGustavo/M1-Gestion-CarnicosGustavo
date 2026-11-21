@@ -31,7 +31,7 @@ export const FN_PAGE_TITLES: Record<FnPage, string> = {
 	frio: "Inventario frío",
 	clientes: "Clientes · precios · cobranza",
 	cobro: "Cobro",
-	voz: "Antonella · voz",
+	voz: "Peggy · voz",
 };
 
 /** Pie común de las vistas rápidas: cómo abrir la ventana grande. */
@@ -176,7 +176,7 @@ export function ConfigPage({
 		{
 			label: "Teclado · peso manual",
 			hint: "si la báscula no responde",
-			shortcut: "Súper+N",
+			shortcut: "—",
 			run: () => onOpen("teclado"),
 		},
 		{
@@ -625,21 +625,17 @@ export function CobroPage({
 	);
 }
 
-/** Voz: onda animada mientras escucha; luego la respuesta de Antonella. */
+/** Voz (solo micrófono): onda mientras escucha; luego Peggy actúa o responde. */
 export function VozPage({
 	status,
 	transcript,
 	answer,
 	supported,
-	onAsk,
-	onOpenChat,
 }: {
 	status: "idle" | "listening" | "thinking" | "answered" | "error";
 	transcript: string;
 	answer: string;
 	supported: boolean;
-	onAsk: (text: string) => void;
-	onOpenChat: () => void;
 }) {
 	const bars = Array.from({ length: 32 }, (_, index) => index);
 	return (
@@ -671,37 +667,13 @@ export function VozPage({
 				</div>
 				<p className="text-center text-[11px] uppercase tracking-[0.18em] opacity-70">
 					{!supported
-						? "Este navegador no tiene dictado: escribe la pregunta"
+						? "Este navegador no tiene dictado: usa Google Chrome"
 						: status === "listening"
 							? "Escuchando… suelta 🎤 o pulsa Espacio"
 							: status === "thinking"
-								? "Antonella está pensando…"
+								? "Peggy está pensando…"
 								: "Mantén 🎤 o Alt+Espacio para hablar"}
 				</p>
-				<form
-					className="flex gap-2"
-					onSubmit={(event) => {
-						event.preventDefault();
-						const data = new FormData(event.currentTarget);
-						const text = String(data.get("q") ?? "").trim();
-						if (text) onAsk(text);
-						event.currentTarget.reset();
-					}}
-				>
-					<input
-						name="q"
-						aria-label="Pregunta para Antonella"
-						placeholder="o escribe aquí y Enter"
-						className="min-w-0 flex-1 rounded border border-[#4d7652] bg-[#0b1710] px-2 py-1 text-[#d5ffd1] text-xs outline-none focus:border-[#f39a1e]"
-					/>
-					<button
-						type="button"
-						onClick={onOpenChat}
-						className="rounded border border-[#4d7652] px-2 py-1 text-[10px] uppercase hover:bg-[#193625]"
-					>
-						Chat completo
-					</button>
-				</form>
 			</div>
 			<div className="min-h-0 space-y-2 overflow-y-auto border-[#355440] lg:border-l lg:pl-4">
 				{transcript ? (
@@ -713,13 +685,14 @@ export function VozPage({
 					</p>
 				) : (
 					<p className="text-xs opacity-50">
-						Pregunta por existencias, pedidos, precios o clientes.
+						Ej.: «Nuevo pedido para Mercado San Juan: 8 piernas, 5 pechos y 3
+						cabezas». Peggy arma el pedido y tú lo confirmas con Enter.
 					</p>
 				)}
 				{answer ? (
 					<div className="pz-zoom whitespace-pre-wrap rounded border border-[#355440] bg-[#0b1710]/70 p-3 text-[#d5ffd1] text-xs leading-relaxed">
 						<span className="mb-1 block font-bold text-[#72b777] text-[10px] uppercase tracking-[0.14em]">
-							Antonella
+							Peggy
 						</span>
 						{answer}
 					</div>
