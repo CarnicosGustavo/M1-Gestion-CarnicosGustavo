@@ -198,7 +198,7 @@ export default function Page() {
 					</p>
 				</div>
 
-				{/* iAntonella — presencia inline */}
+				{/* Peggy — presencia inline */}
 				<AntonellaSlot
 					data={{
 						tone: "sugerencia",

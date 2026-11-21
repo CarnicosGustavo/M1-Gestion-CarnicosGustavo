@@ -243,3 +243,67 @@ describe("pesaje de producción", () => {
 		expect(movs[0].transaction_type).toBe("PRODUCCION");
 	});
 });
+
+describe("orders.returnItemToWeighing", () => {
+	it("regresa un renglón pesado a pendiente y el pedido vuelve a la cola", async () => {
+		const { order, item } = await createWeightOrder();
+		await caller.updateOrderItemWeight({
+			orderItemId: item.id,
+			actualWeightGrams: 2500,
+		});
+		await caller.returnItemToWeighing({ orderItemId: item.id });
+		const [back] = await db
+			.select()
+			.from(orderItems)
+			.where(eq(orderItems.id, item.id));
+		expect(back.status).toBe("PENDIENTE_PESAJE");
+		const [o] = await db.select().from(orders).where(eq(orders.id, order.id));
+		expect(o.status).toBe("PENDIENTE_PESAJE");
+		expect(o.requires_weighing).toBe(true);
+		const pending = await caller.getPendingWeighingOrders();
+		expect(pending.some((p) => p.id === order.id)).toBe(true);
+		// Se puede volver a pesar
+		await caller.updateOrderItemWeight({
+			orderItemId: item.id,
+			actualWeightGrams: 2400,
+		});
+		const [again] = await db
+			.select()
+			.from(orderItems)
+			.where(eq(orderItems.id, item.id));
+		expect(again.status).toBe("PESADO");
+	});
+
+	it("rechaza un renglón que no está pesado (CONFLICT)", async () => {
+		const { item } = await createWeightOrder();
+		await expect(
+			caller.returnItemToWeighing({ orderItemId: item.id }),
+		).rejects.toMatchObject({ code: "CONFLICT" });
+	});
+
+	it("rechaza si el pedido ya está en cobro (CONFLICT)", async () => {
+		const { order, item } = await createWeightOrder();
+		await caller.updateOrderItemWeight({
+			orderItemId: item.id,
+			actualWeightGrams: 2000,
+		});
+		await db
+			.update(orders)
+			.set({ status: "PROCESANDO_PAGO" })
+			.where(eq(orders.id, order.id));
+		await expect(
+			caller.returnItemToWeighing({ orderItemId: item.id }),
+		).rejects.toMatchObject({ code: "CONFLICT" });
+	});
+
+	it("no permite tocar renglones de otro usuario (NOT_FOUND)", async () => {
+		const { item } = await createWeightOrder();
+		await caller.updateOrderItemWeight({
+			orderItemId: item.id,
+			actualWeightGrams: 2000,
+		});
+		await expect(
+			callerAs("otro-usuario").returnItemToWeighing({ orderItemId: item.id }),
+		).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+});

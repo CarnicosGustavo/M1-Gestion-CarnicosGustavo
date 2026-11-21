@@ -134,7 +134,7 @@ export default function SettingsPage() {
 					},
 					{
 						href: "/admin/settings/antonella",
-						label: "Antonella (IA)",
+						label: "Peggy (IA)",
 						desc: "Configura el asistente de inteligencia artificial.",
 						icon: BotIcon,
 					},

@@ -15,7 +15,7 @@ const TONE: Record<string, { dot: string; bg: string }> = {
 	ok: { dot: "var(--cg-green)", bg: "var(--cg-green-wash)" },
 };
 
-// Centro de notificaciones de iAntonella: vigila el negocio y avisa en el
+// Centro de notificaciones de Peggy: vigila el negocio y avisa en el
 // dashboard (cobranza vencida, pedidos por pesar, despiece, merma alta).
 export function NotificationBell() {
 	const trpc = useTRPC();
@@ -33,7 +33,7 @@ export function NotificationBell() {
 			<button
 				type="button"
 				onClick={() => setOpen((o) => !o)}
-				title="Avisos de iAntonella"
+				title="Avisos de Peggy"
 				className="relative flex h-9 w-9 items-center justify-center rounded-full border bg-secondary text-muted-foreground transition-colors hover:text-foreground"
 			>
 				<BellIcon className="h-4 w-4" />
@@ -57,12 +57,12 @@ export function NotificationBell() {
 						className="fixed inset-0 z-40 cursor-default"
 						onClick={() => setOpen(false)}
 					/>
-					<div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(360px,90vw)] overflow-hidden rounded-2xl border bg-popover shadow-xl">
+					<div className="absolute top-[calc(100%+10px)] right-0 z-50 w-[min(360px,90vw)] overflow-hidden rounded-2xl border bg-popover shadow-xl">
 						<div className="flex items-center gap-2 border-b bg-[var(--cg-chrome)] px-4 py-3 text-[var(--cg-chrome-fg)]">
 							<AntonellaAvatar size={28} />
 							<div className="min-w-0">
-								<div className="font-bold text-sm">Avisos de iAntonella</div>
-								<div className="text-[var(--cg-chrome-fg)]/70 text-[11px]">
+								<div className="font-bold text-sm">Avisos de Peggy</div>
+								<div className="text-[11px] text-[var(--cg-chrome-fg)]/70">
 									{count > 0 ? `${count} cosa(s) que revisar` : "Todo en orden"}
 								</div>
 							</div>

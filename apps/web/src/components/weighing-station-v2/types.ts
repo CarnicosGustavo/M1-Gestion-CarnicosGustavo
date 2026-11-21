@@ -20,7 +20,14 @@ export const TILES = [
 export type TileId = (typeof TILES)[number]["id"];
 export type TileKey = (typeof TILES)[number]["key"];
 
-export type PesajeOverlay = "tickets" | "orders" | "batch" | null;
+export type PesajeOverlay =
+	| "tickets"
+	| "orders"
+	| "batch"
+	| "module"
+	| "neworder"
+	| "voicenote"
+	| null;
 
 /** Páginas de la pantalla de funciones (7). */
 export type FnPage =
@@ -30,7 +37,43 @@ export type FnPage =
 	| "diagnostico"
 	| "tema"
 	| "teclado"
-	| "atajos";
+	| "atajos"
+	| "config"
+	| "pedidos"
+	| "tickets"
+	| "produccion"
+	| "recetas"
+	| "frio"
+	| "clientes"
+	| "cobro"
+	| "voz";
+
+/** Módulos del negocio que viven en la fila inferior (pantalla 7 + ventana). */
+export function isModulePage(page: FnPage): page is ModulePage {
+	return (MODULE_PAGES as readonly FnPage[]).includes(page);
+}
+
+export const MODULE_PAGES = [
+	"recetas",
+	"frio",
+	"clientes",
+] as const satisfies readonly FnPage[];
+
+/**
+ * Teclas con dos niveles: pulsar = vista rápida en la pantalla 7;
+ * Fn + tecla (o pulsarla otra vez, o Enter) = ventana grande encima.
+ */
+export const DETAIL_PAGES = [
+	"pedidos",
+	"tickets",
+	"produccion",
+	...MODULE_PAGES,
+] as const satisfies readonly FnPage[];
+export type DetailPage = (typeof DETAIL_PAGES)[number];
+export function isDetailPage(page: FnPage): page is DetailPage {
+	return (DETAIL_PAGES as readonly FnPage[]).includes(page);
+}
+export type ModulePage = (typeof MODULE_PAGES)[number];
 
 export type PesajeThemeId = "m1" | "tokyo-night" | "gruvbox";
 

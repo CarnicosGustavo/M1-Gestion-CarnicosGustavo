@@ -19,6 +19,32 @@ function event(
 }
 
 describe("matchPesajeShortcut", () => {
+	test("módulos de la fila inferior abren su página en la pantalla 7", () => {
+		expect(
+			matchPesajeShortcut(event("e", { metaKey: true, code: "KeyE" })),
+		).toEqual({ type: "page", page: "recetas" });
+		expect(
+			matchPesajeShortcut(event("f", { altKey: true, code: "KeyF" })),
+		).toEqual({ type: "page", page: "frio" });
+		expect(
+			matchPesajeShortcut(event(",", { metaKey: true, code: "Comma" })),
+		).toEqual({ type: "page", page: "config" });
+	});
+
+	test("Alt+Espacio habla con Peggy; Súper+G crédito y Súper+Shift+G contado", () => {
+		expect(
+			matchPesajeShortcut(event(" ", { altKey: true, code: "Space" })),
+		).toEqual({ type: "voice" });
+		expect(
+			matchPesajeShortcut(
+				event("G", { metaKey: true, shiftKey: true, code: "KeyG" }),
+			),
+		).toEqual({ type: "command", command: "charge" });
+		expect(
+			matchPesajeShortcut(event("g", { metaKey: true, code: "KeyG" })),
+		).toEqual({ type: "command", command: "charge-credit" });
+	});
+
 	test("Súper y Alt enfocan teselas", () => {
 		expect(matchPesajeShortcut(event("1", { metaKey: true }))).toEqual({
 			type: "focus-tile",
@@ -32,15 +58,15 @@ describe("matchPesajeShortcut", () => {
 
 	test("Súper+T abre tickets y Súper+Shift+T cicla el tema", () => {
 		expect(matchPesajeShortcut(event("t", { metaKey: true }))).toEqual({
-			type: "overlay",
-			overlay: "tickets",
+			type: "page",
+			page: "tickets",
 		});
 		expect(
 			matchPesajeShortcut(event("T", { metaKey: true, shiftKey: true })),
 		).toEqual({ type: "cycle-theme" });
 		expect(matchPesajeShortcut(event("o", { altKey: true }))).toEqual({
-			type: "overlay",
-			overlay: "orders",
+			type: "page",
+			page: "pedidos",
 		});
 		expect(matchPesajeShortcut(event("b", { altKey: true }))).toEqual({
 			type: "page",
@@ -85,7 +111,7 @@ describe("matchPesajeShortcut", () => {
 		expect(matchPesajeShortcut(event("j", { target: real }))).toBeNull();
 		expect(
 			matchPesajeShortcut(event("t", { metaKey: true, target: real })),
-		).toEqual({ type: "overlay", overlay: "tickets" });
+		).toEqual({ type: "page", page: "tickets" });
 	});
 
 	test("no usa Ctrl (evita choques con el navegador)", () => {
@@ -135,9 +161,10 @@ describe("matchPesajeShortcut", () => {
 		expect(matchPesajeShortcut(event("Enter"))).toEqual({ type: "confirm" });
 		expect(matchPesajeShortcut(event(" "))).toEqual({ type: "capture" });
 		// Los atajos con Súper sí se pueden usar con foco en un botón
+		// (#33: Súper+T abre la página de tickets, no el overlay).
 		expect(
 			matchPesajeShortcut(event("t", { metaKey: true, target: button })),
-		).toEqual({ type: "overlay", overlay: "tickets" });
+		).toEqual({ type: "page", page: "tickets" });
 	});
 
 	test("ignora event.repeat y deshabilita atajos mientras isPending", () => {

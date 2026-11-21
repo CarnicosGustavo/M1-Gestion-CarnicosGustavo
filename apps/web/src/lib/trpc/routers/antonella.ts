@@ -33,7 +33,7 @@ import { protectedProcedure, router } from "../init";
 
 // System prompt por defecto (precargado). El usuario lo puede editar en
 // /admin/settings/antonella; si lo deja vacío, se usa éste.
-export const DEFAULT_SYSTEM_PROMPT = `Eres Antonella, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
+export const DEFAULT_SYSTEM_PROMPT = `Eres Peggy, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
 
 Tu rol: Ayudar a optimizar inventario, producción y órdenes.
 
@@ -158,7 +158,7 @@ function getClient(): Anthropic {
 			throw new TRPCError({
 				code: "INTERNAL_SERVER_ERROR",
 				message:
-					"Antonella no está configurada: falta ANTHROPIC_API_KEY en el servidor.",
+					"Peggy no está configurada: falta ANTHROPIC_API_KEY en el servidor.",
 			});
 		}
 		_client = new Anthropic({ apiKey });
@@ -415,7 +415,7 @@ const tools = [
 			required: ["title"],
 		},
 	},
-	// ── DATASETS (bases de datos que Antonella crea) ──
+	// ── DATASETS (bases de datos que Peggy crea) ──
 	{
 		name: "create_dataset",
 		description:
@@ -473,7 +473,7 @@ const tools = [
 	{
 		name: "list_datasets",
 		description:
-			"Lista todas las tablas que Antonella ha creado, con su descripción y columnas.",
+			"Lista todas las tablas que Peggy ha creado, con su descripción y columnas.",
 		input_schema: { type: "object", properties: {}, required: [] },
 	},
 ];
@@ -1492,7 +1492,7 @@ export const antonicellaRouter = router({
 					? cfg.system_prompt
 					: DEFAULT_SYSTEM_PROMPT;
 
-			// Cargar las memorias recientes/importantes para que Antonella sea
+			// Cargar las memorias recientes/importantes para que Peggy sea
 			// "consciente" de lo que ya sabe (puede usar recall para el detalle).
 			const memories = await db
 				.select({
@@ -1644,6 +1644,151 @@ export const antonicellaRouter = router({
 			};
 		}),
 
+	/**
+	 * Nota de voz → borrador de pedido. Peggy reconoce cliente y productos
+	 * contra el catálogo real; NO crea nada: la báscula muestra el borrador y
+	 * el usuario lo confirma con Enter (orders.create).
+	 */
+	parseVoiceOrder: protectedProcedure
+		.input(z.object({ text: z.string().min(1).max(2000) }))
+		.output(
+			z.discriminatedUnion("kind", [
+				z.object({
+					kind: z.literal("order"),
+					customerId: z.number().nullable(),
+					customerQuery: z.string(),
+					lines: z.array(
+						z.object({
+							productId: z.number(),
+							pieces: z.number().int().nonnegative(),
+							kg: z.number().nonnegative().nullable(),
+						}),
+					),
+					unmatched: z.array(z.string()),
+				}),
+				z.object({ kind: z.literal("question") }),
+			]),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const uid = ctx.user.id;
+			const customerRows = await db
+				.select({ id: customers.id, name: customers.name })
+				.from(customers)
+				.where(inArray(customers.user_uid, [uid, "system"]));
+			const productRows = await db
+				.select({
+					id: products.id,
+					name: products.name,
+					category: products.category,
+				})
+				.from(products)
+				.where(eq(products.user_uid, uid));
+			const catalog = productRows.filter((p) => p.category !== "Duplicado");
+
+			const tools = [
+				{
+					name: "propose_order",
+					description:
+						"El usuario pide crear/levantar/anotar un pedido. Devuelve el cliente y los productos usando SOLO ids de las listas.",
+					input_schema: {
+						type: "object",
+						properties: {
+							customer_id: {
+								type: ["number", "null"],
+								description:
+									"id del cliente de la lista; null si no se dijo o no existe",
+							},
+							customer_said: {
+								type: "string",
+								description: "Nombre del cliente tal como se dijo",
+							},
+							lines: {
+								type: "array",
+								items: {
+									type: "object",
+									properties: {
+										product_id: { type: "number" },
+										pieces: {
+											type: "number",
+											description: "Piezas pedidas (0 si solo dijo kilos)",
+										},
+										kg: {
+											type: ["number", "null"],
+											description: "Kilos si los dijo, si no null",
+										},
+									},
+									required: ["product_id", "pieces", "kg"],
+								},
+							},
+							unmatched: {
+								type: "array",
+								items: { type: "string" },
+								description:
+									"Productos que se dijeron pero no están en la lista",
+							},
+						},
+						required: ["customer_id", "customer_said", "lines", "unmatched"],
+					},
+				},
+				{
+					name: "not_an_order",
+					description:
+						"El mensaje NO pide crear un pedido (es una pregunta u otra cosa).",
+					input_schema: { type: "object", properties: {} },
+				},
+			];
+			const system = `Eres Peggy, asistente de Cárnicos Gustavo (CEDIS de carne de cerdo, México). Recibes la transcripción de una nota de voz. Si pide un pedido, llama propose_order eligiendo el cliente y los productos más parecidos de estas listas (ignora acentos, plurales y errores de dictado: «pechos» → PECHO, «cabezas» → CABEZA). Nunca inventes ids.
+
+CLIENTES (id|nombre):
+${customerRows.map((c) => `${c.id}|${c.name}`).join("\n")}
+
+PRODUCTOS (id|nombre):
+${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
+
+			const response = await getClient().messages.create({
+				model: "claude-sonnet-5-5",
+				max_tokens: 1500,
+				system,
+				tools: tools as any,
+				tool_choice: { type: "any" },
+				messages: [{ role: "user", content: input.text }],
+			});
+			const call = response.content.find((b: any) => b.type === "tool_use") as
+				| { name: string; input: any }
+				| undefined;
+			if (!call || call.name !== "propose_order") return { kind: "question" };
+
+			// Validar contra el catálogo: lo que no exista se descarta.
+			const customerIds = new Set(customerRows.map((c) => c.id));
+			const productIds = new Set(catalog.map((p) => p.id));
+			const raw = call.input ?? {};
+			const merged = new Map<number, { pieces: number; kg: number | null }>();
+			for (const line of Array.isArray(raw.lines) ? raw.lines : []) {
+				const id = Number(line?.product_id);
+				if (!productIds.has(id)) continue;
+				const pieces = Math.max(0, Math.round(Number(line?.pieces) || 0));
+				const kg = line?.kg == null ? null : Math.max(0, Number(line.kg) || 0);
+				if (pieces === 0 && !kg) continue;
+				const prev = merged.get(id);
+				merged.set(id, {
+					pieces: (prev?.pieces ?? 0) + pieces,
+					kg: kg === null ? (prev?.kg ?? null) : (prev?.kg ?? 0) + kg,
+				});
+			}
+			const customerId = customerIds.has(Number(raw.customer_id))
+				? Number(raw.customer_id)
+				: null;
+			return {
+				kind: "order",
+				customerId,
+				customerQuery: String(raw.customer_said ?? ""),
+				lines: [...merged].map(([productId, v]) => ({ productId, ...v })),
+				unmatched: Array.isArray(raw.unmatched)
+					? raw.unmatched.map(String).slice(0, 20)
+					: [],
+			};
+		}),
+
 	executeAction: protectedProcedure
 		.input(
 			z.object({
@@ -1699,7 +1844,7 @@ export const antonicellaRouter = router({
 					quantity_change_kg: null,
 					transaction_type: "DESPIECE_SOLICITADO",
 					reference_id: null,
-					notes: `Despiece solicitado por Antonella: ${quantity} ${canal_type}`,
+					notes: `Despiece solicitado por Peggy: ${quantity} ${canal_type}`,
 				});
 
 				return {
@@ -1755,7 +1900,7 @@ export const antonicellaRouter = router({
 					quantity_change_kg: null,
 					transaction_type: "VARIANTE_SOLICITADA",
 					reference_id: null,
-					notes: `Conversión solicitada por Antonella: ${quantity} ${base_product_name} → ${variant_product_name}`,
+					notes: `Conversión solicitada por Peggy: ${quantity} ${base_product_name} → ${variant_product_name}`,
 				});
 
 				return {
@@ -1770,7 +1915,7 @@ export const antonicellaRouter = router({
 			};
 		}),
 
-	// ── Notificaciones internas (iAntonella vigilando el negocio) ──
+	// ── Notificaciones internas (Peggy vigilando el negocio) ──
 	// Detecta condiciones reales y devuelve avisos para mostrar en el dashboard.
 	notifications: protectedProcedure
 		.input(z.void())
@@ -1892,7 +2037,7 @@ export const antonicellaRouter = router({
 			return { items };
 		}),
 
-	// ── Configuración de Antonella ──
+	// ── Configuración de Peggy ──
 
 	// Lista las herramientas integradas con su metadata (para la UI)
 	listTools: protectedProcedure

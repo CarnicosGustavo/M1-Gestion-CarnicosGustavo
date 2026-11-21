@@ -57,19 +57,23 @@ export function PanelRow({
 	label,
 	value,
 	accent = false,
+	wrap = false,
 }: {
 	label: string;
 	value: ReactNode;
 	accent?: boolean;
+	/** Texto largo (cliente): se parte en renglones en vez de cortarse. */
+	wrap?: boolean;
 }) {
 	return (
-		<div className="flex items-center justify-between gap-3 border-[var(--pz-panel-border,#2d333b)]/75 border-b px-3 py-2 last:border-b-0">
-			<span className="shrink-0 font-medium text-[#9aa4ae] text-[10px] uppercase tracking-wide">
+		<div className="flex items-center justify-between gap-3 border-[var(--pz-panel-border,#2d333b)]/75 border-b px-3 py-2.5 last:border-b-0">
+			<span className="shrink-0 font-medium text-[#9aa4ae] text-[11px] uppercase tracking-wide">
 				{label}
 			</span>
 			<span
 				className={cn(
-					"min-w-0 truncate text-right font-semibold text-[#f4f6f8] text-xs",
+					"min-w-0 text-right font-semibold text-[#f4f6f8] text-sm",
+					wrap ? "line-clamp-2 break-words leading-tight" : "truncate",
 					accent && "text-[#f39a1e]",
 				)}
 			>
@@ -98,18 +102,20 @@ export function PanelListItem({
 			aria-pressed={selected}
 			onClick={onSelect}
 			className={cn(
-				"flex w-full items-center gap-3 border-[var(--pz-panel-border,#2d333b)]/75 border-b px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f39a1e] focus-visible:ring-inset",
+				"flex w-full items-center gap-3 border-[var(--pz-panel-border,#2d333b)]/75 border-b px-3.5 py-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f39a1e] focus-visible:ring-inset [@media(max-height:860px)]:py-2.5",
 				selected
 					? "bg-[#1f5fa3] text-white"
 					: "bg-transparent text-[#edf1f5] hover:bg-[#252b31]",
 			)}
 		>
 			<span className="min-w-0 flex-1">
-				<span className="block truncate font-bold text-xs">{title}</span>
+				<span className="line-clamp-2 block break-words font-bold text-[15px] leading-tight">
+					{title}
+				</span>
 				{subtitle ? (
 					<span
 						className={cn(
-							"mt-0.5 block truncate text-[10px]",
+							"mt-1 block truncate text-xs",
 							selected ? "text-white/70" : "text-[#8e99a4]",
 						)}
 					>

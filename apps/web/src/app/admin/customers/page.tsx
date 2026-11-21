@@ -118,7 +118,7 @@ export default function CustomersPage() {
 			render: (row) => (
 				<Link
 					href={`/admin/customers/${row.id}`}
-					className="text-primary hover:underline font-medium"
+					className="font-medium text-primary hover:underline"
 				>
 					{row.name ?? `Cliente #${row.id}`}
 				</Link>
@@ -319,7 +319,7 @@ export default function CustomersPage() {
 			<TableActions>
 				<TableActionButton
 					onClick={() => openEdit(row)}
-					icon={<FilePenIcon className="w-4 h-4" />}
+					icon={<FilePenIcon className="h-4 w-4" />}
 					label={tc("edit")}
 				/>
 				<TableActionButton
@@ -328,7 +328,7 @@ export default function CustomersPage() {
 						setDeleteId(row.id);
 						setIsDeleteOpen(true);
 					}}
-					icon={<TrashIcon className="w-4 h-4" />}
+					icon={<TrashIcon className="h-4 w-4" />}
 					label={tc("delete")}
 				/>
 			</TableActions>
@@ -344,7 +344,7 @@ export default function CustomersPage() {
 						<Skeleton className="h-9 w-32" />
 					</div>
 				</CardHeader>
-				<CardContent className="p-0 space-y-3">
+				<CardContent className="space-y-3 p-0">
 					{Array.from({ length: 5 }).map((_, i) => (
 						<div key={i} className="flex items-center gap-4">
 							<Skeleton className="h-4 w-32" />
@@ -385,7 +385,7 @@ export default function CustomersPage() {
 					]}
 				>
 					<Button size="sm" onClick={openCreate}>
-						<PlusCircle className="w-4 h-4 mr-2" />
+						<PlusCircle className="mr-2 h-4 w-4" />
 						{t("addCustomer")}
 					</Button>
 				</SearchFilter>
@@ -397,7 +397,7 @@ export default function CustomersPage() {
 					exportColumns={exportColumns}
 					exportFilename="customers"
 					emptyMessage={t("noCustomers")}
-					emptyIcon={<UsersIcon className="w-8 h-8" />}
+					emptyIcon={<UsersIcon className="h-8 w-8" />}
 					defaultSort={[{ id: "name", desc: false }]}
 				/>
 			</CardContent>
@@ -424,7 +424,7 @@ export default function CustomersPage() {
 						<div className="grid gap-4 py-4">
 							<form.Field name="name">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="name">Nombre del negocio</Label>
 										<div className="col-span-3">
 											<Input
@@ -451,7 +451,7 @@ export default function CustomersPage() {
 							</form.Field>
 							<form.Field name="contact_name">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="contact_name">Responsable</Label>
 										<Input
 											id="contact_name"
@@ -465,7 +465,7 @@ export default function CustomersPage() {
 							</form.Field>
 							<form.Field name="whatsapp_phone">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="whatsapp_phone">WhatsApp</Label>
 										<div className="col-span-3">
 											<Input
@@ -480,7 +480,7 @@ export default function CustomersPage() {
 							</form.Field>
 							<form.Field name="email">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="email">Correo</Label>
 										<div className="col-span-3">
 											<Input
@@ -506,7 +506,7 @@ export default function CustomersPage() {
 							</form.Field>
 							<form.Field name="address">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="address">Dirección</Label>
 										<Input
 											id="address"
@@ -520,7 +520,7 @@ export default function CustomersPage() {
 							</form.Field>
 							<form.Field name="notes">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="notes">Notas</Label>
 										<Input
 											id="notes"
@@ -534,7 +534,7 @@ export default function CustomersPage() {
 							</form.Field>
 							<form.Field name="status">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="status">{tc("status")}</Label>
 										<Select
 											value={field.state.value}
@@ -559,7 +559,7 @@ export default function CustomersPage() {
 							{/* Lista de precios — del diseño (NuevoClienteModal) */}
 							<form.Field name="price_list_id">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label htmlFor="price_list_id">Lista de precios</Label>
 										<Select
 											value={field.state.value}
@@ -586,7 +586,7 @@ export default function CustomersPage() {
 							{/* Tipo de venta + límite de crédito — del diseño (NuevoClienteModal) */}
 							<form.Field name="sale_type">
 								{(field) => (
-									<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+									<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 										<Label>Tipo de venta</Label>
 										<div className="col-span-3 flex gap-2">
 											{(
@@ -602,7 +602,7 @@ export default function CustomersPage() {
 														type="button"
 														onClick={() => field.handleChange(id)}
 														className={cn(
-															"flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-bold transition-colors",
+															"flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 font-bold text-sm transition-colors",
 															on
 																? "border-primary bg-[var(--cg-red-wash)] text-primary"
 																: "border-border text-foreground hover:bg-muted",
@@ -622,7 +622,7 @@ export default function CustomersPage() {
 									saleType === "credito" ? (
 										<form.Field name="credit_limit">
 											{(field) => (
-												<div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+												<div className="flex flex-col gap-2 sm:grid sm:grid-cols-4 sm:items-center sm:gap-4">
 													<Label htmlFor="credit_limit">
 														Límite de crédito
 													</Label>
@@ -639,12 +639,12 @@ export default function CustomersPage() {
 																placeholder="0"
 																className="pr-12"
 															/>
-															<span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">
+															<span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-semibold text-muted-foreground text-xs">
 																MXN
 															</span>
 														</div>
-														<p className="mt-1.5 text-xs text-muted-foreground">
-															iAntonella te avisará al acercarse al límite o al
+														<p className="mt-1.5 text-muted-foreground text-xs">
+															Peggy te avisará al acercarse al límite o al
 															vencer un saldo.
 														</p>
 													</div>

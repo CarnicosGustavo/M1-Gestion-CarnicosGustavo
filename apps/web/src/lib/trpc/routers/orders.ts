@@ -1793,6 +1793,118 @@ export const ordersRouter = router({
 			});
 		}),
 
+	/**
+	 * Regresa un renglón PESADO a «por pesar» (la báscula v2 lo devuelve de
+	 * Venta a Pendientes). Solo pedidos de venta que aún no se cobran: no se
+	 * permite en pesajes de producción ni en renglones cuya compra ya sumó kg
+	 * al inventario, porque ahí habría que revertir existencias.
+	 */
+	returnItemToWeighing: protectedProcedure
+		.input(z.object({ orderItemId: z.number() }))
+		.output(z.object({ success: z.boolean() }))
+		.mutation(async ({ ctx, input }) => {
+			return db.transaction(async (tx) => {
+				const [item] = await tx
+					.select({
+						id: orderItems.id,
+						order_id: orderItems.order_id,
+						product_id: orderItems.product_id,
+						status: orderItems.status,
+					})
+					.from(orderItems)
+					.innerJoin(orders, eq(orders.id, orderItems.order_id))
+					.where(
+						and(
+							eq(orderItems.id, input.orderItemId),
+							inArray(orders.user_uid, [ctx.user.id, "system"]),
+						),
+					)
+					.limit(1);
+				if (!item?.order_id)
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Renglón no encontrado",
+					});
+				if (item.status !== "PESADO")
+					throw new TRPCError({
+						code: "CONFLICT",
+						message: "Solo se puede regresar un renglón pesado",
+					});
+
+				const [order] = await tx
+					.select({ status: orders.status, notes: orders.notes })
+					.from(orders)
+					.where(eq(orders.id, item.order_id))
+					.for("update")
+					.limit(1);
+				const editable = [
+					"PENDIENTE_PESAJE",
+					"LISTA_PARA_COBRO",
+					"PARCIAL_DISPONIBLE",
+				];
+				if (!order || !editable.includes(order.status ?? ""))
+					throw new TRPCError({
+						code: "CONFLICT",
+						message: "El pedido ya está en cobro o cerrado",
+					});
+				if (order.notes === "Pesaje de producción")
+					throw new TRPCError({
+						code: "CONFLICT",
+						message:
+							"Un pesaje de producción ya sumó al inventario; corrígelo desde inventario",
+					});
+				if (item.product_id) {
+					const [purchaseMove] = await tx
+						.select({ kg: inventoryTransactions.quantity_change_kg })
+						.from(inventoryTransactions)
+						.where(
+							and(
+								eq(inventoryTransactions.reference_id, item.order_id),
+								eq(inventoryTransactions.product_id, item.product_id),
+								eq(inventoryTransactions.transaction_type, "COMPRA"),
+								eq(
+									inventoryTransactions.notes,
+									`Compra recibida pedido #${item.order_id}, línea #${item.id}`,
+								),
+							),
+						)
+						.limit(1);
+					if (Number(purchaseMove?.kg ?? 0) > 0)
+						throw new TRPCError({
+							code: "CONFLICT",
+							message:
+								"La compra de este renglón ya sumó kg al inventario; no se puede regresar",
+						});
+				}
+
+				await tx
+					.update(orderItems)
+					// kg y subtotal se quedan como referencia; el nuevo pesaje los reemplaza.
+					.set({ status: "PENDIENTE_PESAJE" })
+					.where(
+						and(eq(orderItems.id, item.id), eq(orderItems.status, "PESADO")),
+					);
+				// La lectura de báscula usada queda libre otra vez.
+				await tx
+					.update(scaleReadings)
+					.set({
+						consumed_at: null,
+						consumed_by: null,
+						consumed_order_item_id: null,
+					})
+					.where(eq(scaleReadings.consumed_order_item_id, item.id));
+
+				await tx
+					.update(orders)
+					.set({
+						status: "PENDIENTE_PESAJE",
+						requires_weighing: true,
+					})
+					.where(eq(orders.id, item.order_id));
+				return { success: true };
+			});
+		}),
+
 	receivePurchase: protectedProcedure
 		.input(
 			z.object({
