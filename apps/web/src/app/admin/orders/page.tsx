@@ -60,6 +60,7 @@ import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialo
 import { TicketModal } from "@/components/ticket-modal";
 import { useCrudMutation } from "@/hooks/use-crud-mutation";
 import {
+	CANCEL_SUMMARY_ERROR_MESSAGE,
 	CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
 	cancelConfirmSummaryText,
 } from "@/lib/orders/cancel-audit";
@@ -820,9 +821,14 @@ export default function OrdersPage() {
 				}
 				isLoading={cancelSummaryQuery.isLoading}
 				blocked={
-					cancelSummaryQuery.data?.blockedByUnweighedReceivedWeight === true
+					cancelSummaryQuery.data?.blockedByUnweighedReceivedWeight === true ||
+					cancelSummaryQuery.isError
 				}
-				blockedMessage={CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE}
+				blockedMessage={
+					cancelSummaryQuery.isError
+						? CANCEL_SUMMARY_ERROR_MESSAGE
+						: CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE
+				}
 				isPending={updateMutation.isPending}
 				onConfirm={() => {
 					if (!pendingUpdate) return;

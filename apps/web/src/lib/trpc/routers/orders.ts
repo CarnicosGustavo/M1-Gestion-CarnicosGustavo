@@ -322,7 +322,6 @@ async function orderHasUnweighedReceivedWeight(
 	return false;
 }
 
-
 async function loadCancelImpact(dbOrTx: OrdersTx | typeof db, orderId: number) {
 	const incomeTxs = await dbOrTx
 		.select({ amount: transactions.amount })
@@ -2722,6 +2721,7 @@ export const ordersRouter = router({
 					const impact = await loadCancelImpact(tx, id);
 					updateData.notes = appendCancelAuditNote(order.notes, {
 						userId: ctx.user.id,
+						userName: ctx.user.name,
 						previousStatus: order.status ?? null,
 						...impact,
 					});
@@ -3062,6 +3062,7 @@ export const ordersRouter = router({
 						input.notes !== undefined ? input.notes : (ord.notes ?? null);
 					upd.notes = appendCancelAuditNote(baseNotes, {
 						userId: ctx.user.id,
+						userName: ctx.user.name,
 						previousStatus: ord.status ?? null,
 						...impact,
 					});

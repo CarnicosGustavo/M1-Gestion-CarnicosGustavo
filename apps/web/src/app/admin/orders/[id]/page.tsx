@@ -52,6 +52,7 @@ import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialo
 import { OrderDisassemblyManager } from "@/components/order-disassembly-manager";
 import { TicketModal } from "@/components/ticket-modal";
 import {
+	CANCEL_SUMMARY_ERROR_MESSAGE,
 	CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
 	cancelConfirmSummaryText,
 } from "@/lib/orders/cancel-audit";
@@ -999,9 +1000,14 @@ export default function OrderDetailPage({
 				}
 				isLoading={cancelSummaryQuery.isLoading}
 				blocked={
-					cancelSummaryQuery.data?.blockedByUnweighedReceivedWeight === true
+					cancelSummaryQuery.data?.blockedByUnweighedReceivedWeight === true ||
+					cancelSummaryQuery.isError
 				}
-				blockedMessage={CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE}
+				blockedMessage={
+					cancelSummaryQuery.isError
+						? CANCEL_SUMMARY_ERROR_MESSAGE
+						: CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE
+				}
 				isPending={cancelOrderMutation.isPending}
 				onConfirm={() => {
 					cancelOrderMutation.mutate({

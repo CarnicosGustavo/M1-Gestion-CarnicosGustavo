@@ -2464,7 +2464,7 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 		expect(updated.status).toBe("cancelled");
 		expect(updated.notes).toContain("Pedido del martes");
 		expect(updated.notes).toContain("[AUDITORIA-CANCELACION] Cancelado ");
-		expect(updated.notes).toContain("por user-rp");
+		expect(updated.notes).toContain("por Test (user-rp)");
 		expect(updated.notes).toContain("estado previo: LISTA_PARA_COBRO");
 		expect(updated.notes).toContain("cobros: 1 ($100.00)");
 		expect(updated.notes).toContain("créditos: 0 ($0.00)");
@@ -2502,7 +2502,6 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 		expect((await getOrder(order.id))?.status).toBe("cancelled");
 		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
 	});
-
 
 	it("P31-R2-1: se puede cancelar una compra por pieza recibida aunque haya una venta por peso pendiente", async () => {
 		await updateProductStock(pieceProductId, {
