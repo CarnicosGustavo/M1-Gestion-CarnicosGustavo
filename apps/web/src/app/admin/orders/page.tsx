@@ -360,10 +360,15 @@ export default function OrdersPage() {
 		},
 		onSubmit: ({ value }) => {
 			if (editingId !== null) {
+				const locked = isStatusChangeLocked(editStatusRaw);
 				updateMutation.mutate({
 					id: editingId,
-					total_amount: Math.round(Number.parseFloat(value.total) * 100),
-					...(value.status ? { status: value.status } : {}),
+					...(locked
+						? {}
+						: {
+								total_amount: Math.round(Number.parseFloat(value.total) * 100),
+							}),
+					...(!locked && value.status ? { status: value.status } : {}),
 				});
 			}
 		},
@@ -702,6 +707,7 @@ export default function OrdersPage() {
 												id="total"
 												type="number"
 												value={field.state.value}
+												disabled={isStatusChangeLocked(editStatusRaw)}
 												onChange={(e) => field.handleChange(e.target.value)}
 												onBlur={field.handleBlur}
 												error={

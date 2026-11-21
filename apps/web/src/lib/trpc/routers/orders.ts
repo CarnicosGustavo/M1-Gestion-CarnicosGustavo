@@ -2568,14 +2568,31 @@ export const ordersRouter = router({
 					});
 				}
 
+				if (
+					total_amount !== undefined &&
+					closedStatuses.includes(order.status ?? "")
+				) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede editar el total de un pedido cerrado o en cobro",
+					});
+				}
+
 				const updateData: any = {
 					...data,
-					user_uid: ctx.user.id,
 					updated_at: new Date(),
 				};
 				if (status !== undefined) updateData.status = status;
 				if (total_amount !== undefined)
 					updateData.total_amount = total_amount.toFixed(2);
+				// Cancelar no revierte el stock de las líneas PESADO:
+				// el pesaje de venta no mueve inventario (el descuento es en el
+				// cobro); el de una compra recibida sí suma el peso real y esa
+				// mercancía ya entró a la tienda; el de producción deja el
+				// pedido en COMPLETADA, que esta vía ya no cancela. No hay
+				// otra mutación en el repo que revierta ese stock al cancelar.
+				// Des-cancelar queda fuera (los cerrados no cambian de estado).
 
 				const [updated] = await tx
 					.update(orders)
