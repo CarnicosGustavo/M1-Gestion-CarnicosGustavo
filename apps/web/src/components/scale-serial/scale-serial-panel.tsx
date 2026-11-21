@@ -34,7 +34,14 @@ import {
 	Unplug,
 	Weight,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type MutableRefObject,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import {
 	captureNetG,
@@ -47,9 +54,29 @@ import { useTRPC } from "@/lib/trpc/client";
 import { type CapturePayload, useCaptureQueue } from "./use-capture-queue";
 import {
 	type CapturedReading,
+	type DiagnosticFrame,
 	type LiveReading,
 	useScaleSerial,
 } from "./use-scale-serial";
+
+export type ScaleSerialControls = {
+	connect: () => void;
+	disconnect: () => void;
+	captureManual: () => void;
+	undoLast: () => Promise<void>;
+	settings: ScaleSettings;
+	setSettings: (partial: Partial<ScaleSettings>) => void;
+	frames: DiagnosticFrame[];
+	clearFrames: () => void;
+	copyDiagnostics: () => Promise<void>;
+	copied: boolean;
+	pending: number;
+	supported: boolean | null;
+	status: string;
+	statusDetail: string | null;
+	statusLabel: string;
+	armed: boolean;
+};
 
 interface ScaleSerialPanelProps {
 	line: {
@@ -65,6 +92,19 @@ interface ScaleSerialPanelProps {
 	};
 	containerLabels?: Record<string, string>;
 	onCapturesTotal?: (totals: LineTotals) => void;
+	hidden?: boolean;
+	onLiveChange?: (live: LiveReading | null) => void;
+	onCapturesChange?: (captures: MergedCapture[]) => void;
+	onStatusChange?: (info: {
+		status: string;
+		statusLabel: string;
+		statusDetail: string | null;
+		supported: boolean | null;
+		armed: boolean;
+		pending: number;
+		connected: boolean;
+	}) => void;
+	controlsRef?: MutableRefObject<ScaleSerialControls | null>;
 }
 
 interface LocalCapture {
@@ -78,7 +118,7 @@ interface LocalCapture {
 	at: number;
 }
 
-interface MergedCapture {
+export interface MergedCapture {
 	eventId: string;
 	weightG: number;
 	pieceCount: number | null;
@@ -94,6 +134,11 @@ export function ScaleSerialPanel({
 	container,
 	containerLabels,
 	onCapturesTotal,
+	hidden = false,
+	onLiveChange,
+	onCapturesChange,
+	onStatusChange,
+	controlsRef,
 }: ScaleSerialPanelProps) {
 	const trpc = useTRPC();
 	const {
@@ -374,6 +419,61 @@ export function ScaleSerialPanel({
 			toast.error("No se pudo copiar el diagnóstico");
 		}
 	};
+
+	useEffect(() => {
+		onLiveChange?.(live);
+	}, [live, onLiveChange]);
+
+	useEffect(() => {
+		onCapturesChange?.(mergedCaptures);
+	}, [mergedCaptures, onCapturesChange]);
+
+	const statusInfo = {
+		status,
+		statusLabel,
+		statusDetail,
+		supported,
+		armed,
+		pending,
+		connected: status === "connected",
+	};
+
+	useEffect(() => {
+		onStatusChange?.(statusInfo);
+	}, [
+		status,
+		statusLabel,
+		statusDetail,
+		supported,
+		armed,
+		pending,
+		onStatusChange,
+	]);
+
+	if (controlsRef) {
+		controlsRef.current = {
+			connect,
+			disconnect,
+			captureManual: handleManualCapture,
+			undoLast: handleUndo,
+			settings,
+			setSettings,
+			frames,
+			clearFrames,
+			copyDiagnostics,
+			copied,
+			pending,
+			supported,
+			status,
+			statusDetail,
+			statusLabel,
+			armed,
+		};
+	}
+
+	if (hidden) {
+		return null;
+	}
 
 	return (
 		<Card className="border-muted/60 shadow-sm">
@@ -719,7 +819,7 @@ function createEventId(): string {
 	)}-${hex.slice(20)}`;
 }
 
-function ScaleSettingsForm({
+export function ScaleSettingsForm({
 	settings,
 	setSettings,
 }: {
@@ -922,7 +1022,7 @@ function SettingSelect({
 	);
 }
 
-function DiagnosticsPanel({
+export function DiagnosticsPanel({
 	frames,
 	onCopy,
 	onClear,
@@ -996,7 +1096,7 @@ function DiagnosticsPanel({
 	);
 }
 
-function ReadingStatus({ live }: { live: LiveReading | null }) {
+export function ReadingStatus({ live }: { live: LiveReading | null }) {
 	if (live?.overload) {
 		return (
 			<Badge variant="destructive" className="gap-1">
@@ -1026,7 +1126,7 @@ function ReadingStatus({ live }: { live: LiveReading | null }) {
 	);
 }
 
-function getStatusLabel(
+export function getStatusLabel(
 	status: string,
 	supported: boolean | null,
 	simulator: boolean,

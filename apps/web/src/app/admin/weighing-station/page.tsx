@@ -566,7 +566,13 @@ export default function WeighingStationPage() {
 							}
 				}
 			/>
-			<div className="flex items-center justify-end">
+			<div className="flex items-center justify-end gap-2">
+				<Link
+					href="/admin/weighing-station/v2"
+					className="text-muted-foreground text-sm underline-offset-2 hover:text-foreground hover:underline"
+				>
+					Vista de una pantalla (beta)
+				</Link>
 				<Button onClick={() => setBatchOpen(true)} variant="outline">
 					<ScaleIcon className="mr-2 h-4 w-4" />
 					Agregar pesaje a producto

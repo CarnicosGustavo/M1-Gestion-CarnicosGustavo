@@ -98,7 +98,11 @@ const ROUTE_SLOT: Record<string, AntonellaSlotData> = {
 
 export function RouteAntonellaSlot() {
 	const pathname = usePathname();
-	if (SELF_MANAGED.has(pathname)) return null;
+	if (
+		SELF_MANAGED.has(pathname) ||
+		pathname.startsWith("/admin/weighing-station/")
+	)
+		return null;
 	const data = ROUTE_SLOT[pathname];
 	if (!data) return null;
 	return <AntonellaSlot data={data} />;

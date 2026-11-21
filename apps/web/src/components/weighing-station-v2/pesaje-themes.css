@@ -1,0 +1,79 @@
+/* Temas de la estación v2. El predeterminado (m1) hereda las variables de M1. */
+
+[data-pesaje-theme="tokyo-night"] {
+	--background: #1a1b26;
+	--foreground: #c0caf5;
+	--card: #1f2335;
+	--card-foreground: #c0caf5;
+	--popover: #1f2335;
+	--popover-foreground: #c0caf5;
+	--primary: #f7768e;
+	--primary-foreground: #1a1b26;
+	--secondary: #24283b;
+	--secondary-foreground: #c0caf5;
+	--muted: #24283b;
+	--muted-foreground: #a9b1d6;
+	--accent: #24283b;
+	--accent-foreground: #c0caf5;
+	--destructive: #f7768e;
+	--destructive-foreground: #1a1b26;
+	--border: rgba(192, 202, 245, 0.14);
+	--input: rgba(192, 202, 245, 0.14);
+	--ring: #7aa2f7;
+	--cg-green: #9ece6a;
+	--cg-green-wash: #1e2a28;
+	--cg-amber: #e0af68;
+	--cg-amber-wash: #2a261c;
+	--cg-blue: #7aa2f7;
+	--cg-blue-wash: #1c2438;
+	--cg-red-wash: #2a1c24;
+	--cg-tan: #c0caf5;
+	--cg-cream: #c0caf5;
+	--cg-ink-soft: #a9b1d6;
+	--cg-ink-faint: #565f89;
+	--cg-chrome: #16161e;
+	--cg-chrome-fg: #c0caf5;
+	--cg-chrome2: #1a1b26;
+	--cg-rail-dim: rgba(192, 202, 245, 0.52);
+	color: var(--foreground);
+	background-color: var(--background);
+}
+
+[data-pesaje-theme="gruvbox"] {
+	--background: #282828;
+	--foreground: #ebdbb2;
+	--card: #32302f;
+	--card-foreground: #ebdbb2;
+	--popover: #32302f;
+	--popover-foreground: #ebdbb2;
+	--primary: #fe8019;
+	--primary-foreground: #1d2021;
+	--secondary: #3c3836;
+	--secondary-foreground: #ebdbb2;
+	--muted: #3c3836;
+	--muted-foreground: #a89984;
+	--accent: #3c3836;
+	--accent-foreground: #ebdbb2;
+	--destructive: #fb4934;
+	--destructive-foreground: #1d2021;
+	--border: rgba(235, 219, 178, 0.16);
+	--input: rgba(235, 219, 178, 0.16);
+	--ring: #fe8019;
+	--cg-green: #b8bb26;
+	--cg-green-wash: #32320f;
+	--cg-amber: #fabd2f;
+	--cg-amber-wash: #3a2f10;
+	--cg-blue: #83a598;
+	--cg-blue-wash: #1e2a28;
+	--cg-red-wash: #3a1c16;
+	--cg-tan: #d5c4a1;
+	--cg-cream: #ebdbb2;
+	--cg-ink-soft: #a89984;
+	--cg-ink-faint: #7c6f64;
+	--cg-chrome: #1d2021;
+	--cg-chrome-fg: #ebdbb2;
+	--cg-chrome2: #282828;
+	--cg-rail-dim: rgba(235, 219, 178, 0.52);
+	color: var(--foreground);
+	background-color: var(--background);
+}

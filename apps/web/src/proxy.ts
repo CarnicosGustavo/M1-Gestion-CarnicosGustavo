@@ -1,5 +1,5 @@
 import { getSessionCookie } from "better-auth/cookies";
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 export async function proxy(request: NextRequest) {
 	const sessionCookie = getSessionCookie(request);
@@ -33,6 +33,14 @@ export async function proxy(request: NextRequest) {
 		const url = request.nextUrl.clone();
 		url.pathname = "/login";
 		return applyNoStore(NextResponse.redirect(url));
+	}
+
+	// Vista previa de la estación v2: solo en desarrollo local, sin sesión.
+	if (
+		process.env.NODE_ENV === "development" &&
+		pathname.startsWith("/dev/pesaje-preview")
+	) {
+		return applyNoStore(NextResponse.next());
 	}
 
 	if (
