@@ -45,11 +45,23 @@ export const DEMO_ORDERS: PesajeOrder[] = [
 				product_name: "Espaldilla",
 				quantity: 2,
 				quantity_pieces: 2,
-				quantity_kg: "8.200",
+				quantity_kg: "8.150",
 				unit_price: "78.00",
-				subtotal: "639.60",
-				status: "PENDIENTE_PESAJE",
+				subtotal: "635.70",
+				status: "PESADO",
 				product: { name: "Espaldilla", category: "Cortes" },
+			},
+			{
+				id: 504,
+				product_id: 4,
+				product_name: "Costilla",
+				quantity: 1,
+				quantity_pieces: null,
+				quantity_kg: "4.320",
+				unit_price: "95.00",
+				subtotal: "410.40",
+				status: "PESADO",
+				product: { name: "Costilla", category: "Cortes" },
 			},
 		],
 	},
@@ -166,5 +178,27 @@ export const DEMO_TICKET_LINES = [
 				netG: captureNetG(4200, 900),
 			},
 		],
+	},
+];
+
+/** Precios del cliente 12 tal como los devuelve customerPrices.getByCustomer. */
+export const DEMO_CUSTOMER_PRICES = [
+	{
+		productId: 1,
+		customerPricePerKg: null,
+		listPricePerKg: 88,
+		pricePerKg: "88",
+	},
+	{
+		productId: 3,
+		customerPricePerKg: 82,
+		listPricePerKg: 80,
+		pricePerKg: "82",
+	},
+	{
+		productId: 4,
+		customerPricePerKg: null,
+		listPricePerKg: null,
+		pricePerKg: null,
 	},
 ];

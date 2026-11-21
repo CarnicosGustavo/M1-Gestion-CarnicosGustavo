@@ -42,8 +42,26 @@ describe("matchPesajeShortcut", () => {
 			overlay: "orders",
 		});
 		expect(matchPesajeShortcut(event("b", { altKey: true }))).toEqual({
-			type: "overlay",
-			overlay: "scale",
+			type: "page",
+			page: "conexion",
+		});
+		expect(
+			matchPesajeShortcut(event("B", { altKey: true, shiftKey: true })),
+		).toEqual({ type: "command", command: "power" });
+	});
+
+	test("Súper+7 enfoca la pantalla de funciones y usa la tecla física", () => {
+		expect(matchPesajeShortcut(event("7", { metaKey: true }))).toEqual({
+			type: "focus-tile",
+			tile: 7,
+		});
+		// macOS: Alt+C produce «ç» en key, pero code sigue siendo KeyC
+		expect(
+			matchPesajeShortcut(event("ç", { altKey: true, code: "KeyC" })),
+		).toEqual({ type: "page", page: "recipiente" });
+		expect(matchPesajeShortcut(event("?"))).toEqual({
+			type: "page",
+			page: "atajos",
 		});
 	});
 

@@ -1,13 +1,25 @@
+import type { FnPage, TileId } from "./types";
+
+/** Teclas físicas de la báscula y de la pantalla de funciones (7). */
+export type PesajeCommand =
+	| "power" // ON/OFF: conectar / desconectar la báscula
+	| "zero" // →0←: limpiar el peso manual
+	| "tare" // →T←: tomar el peso actual como tara
+	| "hold" // HOLD: congelar el display
+	| "undo" // deshacer la última captura
+	| "charge" // ir a cobro / ticket
+	| "antonella"
+	| "classic";
+
 export type PesajeAction =
-	| { type: "focus-tile"; tile: 1 | 2 | 3 | 4 | 5 }
+	| { type: "focus-tile"; tile: TileId }
 	| { type: "move"; direction: -1 | 1 }
 	| { type: "move-line"; direction: -1 | 1 }
 	| { type: "confirm" }
 	| { type: "capture" }
-	| {
-			type: "overlay";
-			overlay: "tickets" | "orders" | "scale" | "cheatsheet" | "batch";
-	  }
+	| { type: "overlay"; overlay: "tickets" | "orders" | "batch" }
+	| { type: "page"; page: FnPage }
+	| { type: "command"; command: PesajeCommand }
 	| { type: "cycle-theme" }
 	| { type: "close" };
 
@@ -33,10 +45,51 @@ function modifierKey(
 }
 
 /**
+ * Letra o dígito físico de la tecla. Se prefiere `code` porque en macOS
+ * Alt+letra produce otro carácter en `key` (Alt+C → «ç»).
+ */
+function physicalKey(event: Pick<KeyboardEvent, "key" | "code">): string {
+	const code = event.code ?? "";
+	if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+	if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+	if (code === "Slash") return "/";
+	return event.key.length === 1 ? event.key.toLowerCase() : event.key;
+}
+
+/** Atajos con Súper (o Alt) → acción. Una sola tabla para el código y la ayuda. */
+const MOD_KEYS: Record<string, PesajeAction> = {
+	"1": { type: "focus-tile", tile: 1 },
+	"2": { type: "focus-tile", tile: 2 },
+	"3": { type: "focus-tile", tile: 3 },
+	"4": { type: "focus-tile", tile: 4 },
+	"5": { type: "focus-tile", tile: 5 },
+	"7": { type: "focus-tile", tile: 7 },
+	j: { type: "move", direction: 1 },
+	k: { type: "move", direction: -1 },
+	t: { type: "overlay", overlay: "tickets" },
+	o: { type: "overlay", overlay: "orders" },
+	p: { type: "overlay", overlay: "batch" },
+	h: { type: "page", page: "inicio" },
+	c: { type: "page", page: "recipiente" },
+	b: { type: "page", page: "conexion" },
+	x: { type: "page", page: "diagnostico" },
+	m: { type: "page", page: "tema" },
+	n: { type: "page", page: "teclado" },
+	"/": { type: "page", page: "atajos" },
+	"0": { type: "command", command: "zero" },
+	r: { type: "command", command: "tare" },
+	l: { type: "command", command: "hold" },
+	z: { type: "command", command: "undo" },
+	g: { type: "command", command: "charge" },
+	i: { type: "command", command: "antonella" },
+	v: { type: "command", command: "classic" },
+};
+
+/**
  * Interpreta un atajo de la estación v2.
  * Súper (Meta) es el modificador principal; Alt es el respaldo porque el
- * navegador o el sistema suelen tragarse Meta. Devuelve null si el evento
- * no corresponde a un atajo (o no debe interceptarse).
+ * navegador o el sistema suelen tragarse Meta. Ctrl nunca se usa.
+ * Devuelve null si el evento no corresponde a un atajo.
  */
 export function matchPesajeShortcut(
 	event: Pick<
@@ -53,52 +106,27 @@ export function matchPesajeShortcut(
 	if (key === "Escape") {
 		return { type: "close" };
 	}
+	if (event.ctrlKey) return null;
 
-	if (key === "?" && !event.ctrlKey && !typing) {
-		return { type: "overlay", overlay: "cheatsheet" };
+	if (key === "?" && !typing && !mod) {
+		return { type: "page", page: "atajos" };
 	}
 
-	if (mod && !event.ctrlKey) {
-		const digit =
-			key === "1" || key === "2" || key === "3" || key === "4" || key === "5"
-				? Number(key)
-				: null;
-		if (digit) {
-			return { type: "focus-tile", tile: digit as 1 | 2 | 3 | 4 | 5 };
+	if (mod) {
+		const physical = physicalKey(event);
+		if (physical === "t" && event.shiftKey) return { type: "cycle-theme" };
+		if (physical === "b" && event.shiftKey) {
+			return { type: "command", command: "power" };
 		}
-
-		const letter = key.length === 1 ? key.toLowerCase() : key;
-		if (letter === "j" || key === "ArrowDown") {
-			return { type: "move", direction: 1 };
-		}
-		if (letter === "k" || key === "ArrowUp") {
-			return { type: "move", direction: -1 };
-		}
-		if (letter === "t" && event.shiftKey) {
-			return { type: "cycle-theme" };
-		}
-		if (letter === "t") {
-			return { type: "overlay", overlay: "tickets" };
-		}
-		if (letter === "o") {
-			return { type: "overlay", overlay: "orders" };
-		}
-		if (letter === "b") {
-			return { type: "overlay", overlay: "scale" };
-		}
-		if (letter === "p") {
-			return { type: "overlay", overlay: "batch" };
-		}
-		if (letter === "/" || key === "?") {
-			return { type: "overlay", overlay: "cheatsheet" };
-		}
-	}
-
-	if (overlayOpen) {
+		if (key === "ArrowDown") return { type: "move", direction: 1 };
+		if (key === "ArrowUp") return { type: "move", direction: -1 };
+		if (key === "?") return { type: "page", page: "atajos" };
+		const action = MOD_KEYS[physical];
+		if (action) return action;
 		return null;
 	}
 
-	if (typing && !mod) {
+	if (overlayOpen || typing) {
 		return null;
 	}
 
@@ -124,25 +152,54 @@ export function matchPesajeShortcut(
 	return null;
 }
 
+/** Etiqueta corta para los kbd de los botones («Súper+H»). */
+export function shortcutLabel(physical: string): string {
+	if (physical === "Espacio" || physical === "Enter" || physical === "Esc") {
+		return physical;
+	}
+	return `Súper+${physical.toUpperCase()}`;
+}
+
 export const SHORTCUT_ROWS: Array<{
 	keys: string;
 	fallback: string;
 	action: string;
 }> = [
-	{ keys: "Súper+1…5", fallback: "Alt+1…5", action: "Enfocar tesela 1 a 5" },
+	{
+		keys: "Súper+1…5, Súper+7",
+		fallback: "Alt+1…5, Alt+7",
+		action: "Enfocar módulo 1 a 5 o la pantalla 7",
+	},
 	{
 		keys: "Súper+J / K",
 		fallback: "Alt+J / K o flechas",
-		action: "Mover la selección",
+		action: "Mover la selección del módulo enfocado",
 	},
-	{ keys: "← / →", fallback: "", action: "Cambiar de renglón" },
-	{ keys: "Enter", fallback: "", action: "Seleccionar o confirmar" },
-	{ keys: "Espacio", fallback: "", action: "Capturar peso estable" },
-	{ keys: "Súper+T", fallback: "Alt+T", action: "Tickets del pedido" },
+	{ keys: "← / →", fallback: "", action: "Cambiar de producto pendiente" },
+	{ keys: "Enter (f ↵)", fallback: "", action: "Seleccionar o registrar peso" },
+	{ keys: "Espacio (M+)", fallback: "", action: "Capturar peso estable" },
+	{ keys: "Súper+0 (→0←)", fallback: "Alt+0", action: "Cero: limpiar peso" },
+	{ keys: "Súper+R (→T←)", fallback: "Alt+R", action: "Tomar tara del peso" },
+	{ keys: "Súper+L (HOLD)", fallback: "Alt+L", action: "Congelar display" },
+	{
+		keys: "Súper+Shift+B (ON/OFF)",
+		fallback: "Alt+Shift+B",
+		action: "Conectar / desconectar báscula",
+	},
+	{ keys: "Súper+Z", fallback: "Alt+Z", action: "Deshacer última captura" },
+	{ keys: "Súper+H", fallback: "Alt+H", action: "7 · Inicio" },
+	{ keys: "Súper+C", fallback: "Alt+C", action: "7 · Recipiente y tara" },
+	{ keys: "Súper+B", fallback: "Alt+B", action: "7 · Conexión serial" },
+	{ keys: "Súper+X", fallback: "Alt+X", action: "7 · Diagnóstico de tramas" },
+	{ keys: "Súper+M", fallback: "Alt+M", action: "7 · Tema" },
+	{ keys: "Súper+N", fallback: "Alt+N", action: "7 · Teclado / peso manual" },
+	{ keys: "Súper+/ o ?", fallback: "Alt+/", action: "7 · Atajos" },
+	{ keys: "Súper+T", fallback: "Alt+T", action: "Tickets (pantalla completa)" },
 	{ keys: "Súper+O", fallback: "Alt+O", action: "Cola de pedidos" },
-	{ keys: "Súper+B", fallback: "Alt+B", action: "Ajustes de la báscula" },
 	{ keys: "Súper+P", fallback: "Alt+P", action: "Pesaje de producción" },
+	{ keys: "Súper+G", fallback: "Alt+G", action: "Cobro e impresión de ticket" },
+	{ keys: "Súper+I", fallback: "Alt+I", action: "iAntonella" },
+	{ keys: "Súper+V", fallback: "Alt+V", action: "Versión clásica" },
 	{ keys: "Súper+Shift+T", fallback: "Alt+Shift+T", action: "Cambiar tema" },
-	{ keys: "Esc", fallback: "", action: "Cerrar superposición" },
-	{ keys: "Súper+/ o ?", fallback: "Alt+/", action: "Hoja de atajos" },
+	{ keys: "Esc", fallback: "", action: "Cerrar / volver a Inicio" },
 ];

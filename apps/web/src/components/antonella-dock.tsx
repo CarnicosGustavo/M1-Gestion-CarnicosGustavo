@@ -158,6 +158,7 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 				type="button"
 				onClick={() => setOpen((o) => !o)}
 				aria-label="Abrir iAntonella"
+				data-antonella-launcher=""
 				className={cn(
 					"fixed right-5 bottom-5 z-[80] flex h-[58px] items-center gap-3 rounded-full border border-[var(--cg-chrome)] bg-[var(--cg-chrome)] shadow-2xl transition-all",
 					open ? "p-0" : "py-2 pr-4 pl-2",

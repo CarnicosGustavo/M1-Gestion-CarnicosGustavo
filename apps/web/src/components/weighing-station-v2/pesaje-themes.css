@@ -77,3 +77,44 @@
 	color: var(--foreground);
 	background-color: var(--background);
 }
+
+/* Carcasa del equipo (v4): marco oscuro alrededor de toda la estación. */
+[data-pesaje-station] {
+	--pz-housing: #101214;
+	--pz-housing-border: #2b2f33;
+	--pz-panel: #1b1f24;
+	--pz-panel-head: #20252b;
+	--pz-panel-border: #2d333b;
+	--pz-accent: #f39a1e;
+}
+[data-pesaje-theme="tokyo-night"][data-pesaje-station] {
+	--pz-housing: #13141c;
+	--pz-housing-border: #292e42;
+	--pz-panel: #1f2335;
+	--pz-panel-head: #24283b;
+	--pz-panel-border: #3b4261;
+	--pz-accent: #ff9e64;
+}
+[data-pesaje-theme="gruvbox"][data-pesaje-station] {
+	--pz-housing: #1d2021;
+	--pz-housing-border: #3c3836;
+	--pz-panel: #282828;
+	--pz-panel-head: #32302f;
+	--pz-panel-border: #504945;
+	--pz-accent: #fe8019;
+}
+[data-pesaje-station] .pesaje-housing {
+	background: var(--pz-housing);
+	border-color: var(--pz-housing-border);
+	box-shadow:
+		inset 0 2px 3px rgb(255 255 255 / 0.06),
+		inset 0 -10px 24px rgb(0 0 0 / 0.6),
+		0 10px 30px rgb(0 0 0 / 0.35);
+}
+
+/* El lanzador flotante de iAntonella tapaba la esquina inferior derecha
+   (botones de la pantalla 7). En la estación se abre con Súper+I o con la
+   tecla «iAntonella» de la pantalla 7. */
+body:has([data-pesaje-station]) [data-antonella-launcher] {
+	display: none;
+}

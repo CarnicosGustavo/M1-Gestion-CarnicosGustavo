@@ -13,81 +13,98 @@ Los paneles se desplazan por dentro si hace falta.
 En desarrollo local existe además `/dev/pesaje-preview` (solo `NODE_ENV=development`)
 para revisar el diseño con datos de ejemplo, sin sesión ni base de datos.
 
-## Diseño
+## Diseño (v4: instrumento I-QY, según el dibujo de Alberto)
 
-Se conserva el sistema de diseño de M1: paleta crema/rojo, tipografía
-(Archivo, Anton, JetBrains Mono), componentes de `@finopenpos/ui`, barra
-lateral y cabecera. La inspiración de **Omarchy / Hyprland** se aplica al
-contenido: teselas con bordes finos, huecos constantes, acento en la tesela
-enfocada y atajos de teclado con la tecla Súper.
-
-### Teselas (layout fijo a la altura del área de contenido)
-
-1. **Pedidos pendientes** — lista de la cola (`getPendingWeighingOrders`,
-   refresco cada 8 s). Los pedidos nuevos parpadean en verde 3 s.
-2. **Pedido seleccionado y renglones** — cliente, total, enlace a editar,
-   líneas con la activa resaltada, piezas y neto acumulado.
-3. **Display de peso en vivo** — grande, estilo indicador I-QY: STABLE /
-   moviendo, bruto / tara / neto, selector de recipiente. El neto de una
-   pesada es **bruto − tara del recipiente** (tara por pesada, no global).
-4. **Capturas del renglón activo** — lista de capturas (bruto, tara,
-   recipiente, neto, hora), con deshacer la última.
-5. **Franja compacta de iAntonella / estado** — aviso de pendientes,
-   estado de la báscula por cable y pista de atajos. No usa el slot alto
-   de la versión actual.
-
-Disposición de referencia (escritorio):
+Toda la estación vive dentro de una **carcasa de equipo** oscura. No debe
+parecer una página web sino un instrumento de medición. Las proporciones son
+orientativas («nada es fijo») y se compactan en pantallas bajas (≤ 860 px de
+alto, p. ej. 1366×768).
 
 ```
-[======= 5. Franja de estado (alto fijo) =======]
-[ 1. Pedidos ] [ 2. Pedido y renglones ] [ 4. Capturas ]
-[ 3. Display de peso I-QY (ancho completo)             ]
+┌───────────────────────── carcasa ─────────────────────────┐
+│ 1 Pedidos │ 2 Pedido        │ 3 Pendientes   │ 5 Venta /   │
+│ (≈20 %)   ├─────────────────┴────────────────┤   ticket    │
+│           │ 4 Báscula I-QY (LCD + botones)   │  (≈16 %)    │
+├───────────┴──────────────────────────────────┴─────────────┤
+│ [5 botones] │ 7 Pantalla de funciones (menús) │ [5 botones] │
+│ [fila inferior de teclas de función, anchas y cuadradas]   │
+└────────────────────────────────────────────────────────────┘
 ```
 
-Hueco entre teselas: 8 px. Radio heredado de M1. La tesela enfocada lleva
-borde de color `primary` (2 px). El área de contenido no hace scroll;
-si una lista no cabe, solo ella tiene `overflow-y: auto`.
+| # | Módulo | Qué hace |
+|---|---|---|
+| 1 | Pedidos | Se selecciona el pedido (J/K + Enter). |
+| 2 | Pedido | Detalles: pedido, cliente, producto en báscula, piezas, neto acumulado (suma de capturas), total. |
+| 3 | Pendientes de pesar | Renglones `PENDIENTE_PESAJE`; el seleccionado va a la báscula. |
+| 4 | Báscula I-QY | Bisel oscuro, título «Cárnicos Gustavo» naranja, LCD de 7 segmentos (SVG) con «8» fantasma, indicadores CERO/TARA/ESTABLE/HOLD/PICO/M+/HML/BATERÍA, unidades pcs/lb/kg y botones físicos ON/OFF, →0←/▲, →T←/▼ (rojos), M+/◀, HOLD/▶ (naranjas), f/↵ (cian). |
+| 5 | Venta / ticket | Lo ya pesado pasa aquí con el **precio del cliente** (editable), subtotal y total. «Cobrar e imprimir» abre el cobro existente (`/admin/checkout?order=N`), que imprime el ticket. |
+| 7 | Pantalla de funciones | LCD verde con menús: Inicio (capturas, deshacer), Tara (recipientes), Serial (conexión Web Serial y ajustes), Tramas (diagnóstico), Tema, Teclado (peso manual y lecturas de báscula), Atajos. |
+
+### Tara (corrección v4)
+
+El display 4 muestra **la lectura en vivo**: bruto en vivo, tara del
+recipiente elegido y neto = bruto − tara (si la báscula envía neto, la tara
+es 0). Lo **acumulado** (suma de capturas) va en 2 y en 7 · Inicio. Antes el
+display mezclaba la tara acumulada de 2 capturas (2 × 2.500 = 5.000) con el
+bruto en vivo, por eso marcaba 5.000 con Tambo Azul (2.500).
+
+### Precios por cliente (módulo 5)
+
+Ya existe en M1 y se reutiliza sin migraciones:
+
+1. **Último** — `customer_prices` (cliente × producto). `orders.priceAndCharge`
+   lo sobrescribe al cobrar («guarda en lista del cliente»), así que es el
+   último precio cobrado a ese cliente.
+2. **Lista** — la lista de precios asignada al cliente
+   (`customers.price_list_id` → `price_list_items`).
+3. **Pedido** — `order_items.unit_price`.
+4. **Base** — `products.price_per_kg`.
+
+Se lee con `customerPrices.getByCustomer` (el mismo que usan POS y Precios) y
+se resuelve en `weighing-station-v2/pricing.ts` (con pruebas). Pendiente:
+
+- No hay **historial** de precios (solo el último por cliente/producto). Un
+  historial requeriría una tabla nueva (migración aditiva, no hecha).
+- Los precios editados en 5 **no viajan** todavía al cobro: el cobro vuelve
+  a proponer el precio guardado del cliente. Falta pasar los precios (o
+  llamar `priceAndCharge` desde aquí con método de pago).
+- **Envío al cliente**: el ticket ya se puede mandar por WhatsApp desde
+  `ticket-modal`; el botón «Envío» de 5 queda deshabilitado hasta definir el
+  flujo de reparto.
+
+### iAntonella
+
+El lanzador flotante tapaba la esquina inferior derecha (teclas de 7). En
+esta vista se oculta (`[data-antonella-launcher]` + `:has([data-pesaje-station])`)
+y se abre con **Súper+I** o la tecla «iAntonella» de la fila inferior.
 
 ## Teclado (prioridad teclado, también ratón)
 
-Los atajos usan la tecla **Súper (Meta)**. Los navegadores y el sistema
-suelen tragarse Meta, así que **Alt es el respaldo documentado y siempre
-activo**. No se usan combinaciones solo con teclas F (el navegador no las
-garantiza). Se evitan combos reservados del navegador (Ctrl/Cmd+T, W, R,
-N, etc.).
+Súper (Meta) es el modificador; **Alt** es el respaldo. Ctrl nunca se usa. Se
+lee la tecla física (`event.code`) para que Alt+letra funcione en macOS.
+Al escribir en un campo, las letras y el espacio no se interceptan.
 
-| Atajo | Respaldo | Acción |
-|---|---|---|
-| Súper+1…5 | Alt+1…5 | Enfocar tesela 1 a 5 |
-| Súper+J / K | Alt+J / K, o flechas ↑/↓ | Mover la selección en la tesela activa |
-| Flechas ←/→ | | En tesela 2, cambiar de renglón |
-| Enter | | Seleccionar / confirmar |
-| Espacio | | Capturar peso estable (si no se escribe en un input) |
-| Súper+T | Alt+T | Superposición de Tickets |
-| Súper+O | Alt+O | Superposición de Pedidos |
-| Súper+B | Alt+B | Superposición de ajustes / diagnóstico de báscula |
-| Súper+P | Alt+P | Abrir diálogo de pesaje de producción |
-| Súper+Shift+T | Alt+Shift+T | Ciclar tema |
-| Esc | | Cerrar superposición |
-| Súper+/ o `?` | Alt+/ | Hoja de atajos |
-
-Dentro de un campo de texto, las letras sueltas y Espacio no se interceptan;
-sí se interceptan las combinaciones con Súper o Alt y Esc.
-
-## Superposiciones
-
-Se abren casi a pantalla completa (**92 vw × 90 vh**) sobre el layout, con
-fondo atenuado, trampa de foco y cierre con Esc o clic en el fondo.
-
-- **Tickets (Súper+T):** detalle de pesadas del pedido seleccionado. Lista
-  de capturas por renglón (bruto, tara, recipiente, neto, hora) y totales
-  por línea. Si el pedido ya tiene renglones pesados, se consultan con
-  `orders.get` (no solo los pendientes de la cola).
-- **Pedidos (Súper+O):** cola completa con más contexto (notas, WhatsApp,
-  artículos pendientes).
-- **Báscula (Súper+B):** conexión Web Serial, ajustes y diagnóstico de
-  tramas (la misma lógica que el panel actual).
-- **Atajos (Súper+/):** esta tabla.
+| Tecla | Acción |
+|---|---|
+| Súper+1…5, Súper+7 | Enfocar módulo |
+| Súper+J / K, flechas ↑/↓ | Mover selección (1 pedido, 2/3 renglón, 5 línea de venta, 4 recipiente, 7·Tema tema) |
+| ← / → | Cambiar renglón |
+| Enter (f ↵) | 1→3, 2/3→4, 4/7 registrar peso, 5 cobrar |
+| Espacio (M+) | Capturar peso estable |
+| Súper+0 (→0←) | Cero: limpiar peso manual |
+| Súper+R (→T←) | Tomar el peso actual como tara («Otro») |
+| Súper+L (HOLD) | Congelar / soltar display |
+| Súper+Shift+B (ON/OFF) | Conectar / desconectar báscula |
+| Súper+Z | Deshacer última captura |
+| Súper+H / C / B / X / M / N / / | 7 · Inicio / Tara / Serial / Tramas / Tema / Teclado / Atajos |
+| Súper+T | Tickets (superposición casi a pantalla completa) |
+| Súper+O | Cola de pedidos |
+| Súper+P | Pesaje de producción |
+| Súper+G | Cobro e impresión de ticket |
+| Súper+I | iAntonella |
+| Súper+V | Versión clásica |
+| Súper+Shift+T | Ciclar tema |
+| Esc | Cerrar superposición / volver a 7 · Inicio |
 
 ## Temas
 

@@ -9,23 +9,28 @@ export const CONTAINERS = [
 export type ContainerId = (typeof CONTAINERS)[number]["id"];
 
 export const TILES = [
-	{ id: 1, key: "orders", label: "Pedidos pendientes" },
-	{ id: 2, key: "lines", label: "Pedido y renglones" },
-	{ id: 3, key: "weight", label: "Peso en vivo" },
-	{ id: 4, key: "captures", label: "Capturas del renglón" },
-	{ id: 5, key: "status", label: "Estado e iAntonella" },
+	{ id: 1, key: "orders", label: "Pedidos" },
+	{ id: 2, key: "order", label: "Pedido" },
+	{ id: 3, key: "pending", label: "Productos pendientes de pesar" },
+	{ id: 4, key: "scale", label: "Báscula I-QY" },
+	{ id: 5, key: "sale", label: "Venta / ticket" },
+	{ id: 7, key: "functions", label: "Pantalla de funciones" },
 ] as const;
 
 export type TileId = (typeof TILES)[number]["id"];
 export type TileKey = (typeof TILES)[number]["key"];
 
-export type PesajeOverlay =
-	| "tickets"
-	| "orders"
-	| "scale"
-	| "cheatsheet"
-	| "batch"
-	| null;
+export type PesajeOverlay = "tickets" | "orders" | "batch" | null;
+
+/** Páginas de la pantalla de funciones (7). */
+export type FnPage =
+	| "inicio"
+	| "recipiente"
+	| "conexion"
+	| "diagnostico"
+	| "tema"
+	| "teclado"
+	| "atajos";
 
 export type PesajeThemeId = "m1" | "tokyo-night" | "gruvbox";
 

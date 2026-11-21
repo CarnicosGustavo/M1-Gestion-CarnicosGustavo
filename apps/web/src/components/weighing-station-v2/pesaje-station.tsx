@@ -28,6 +28,7 @@ import {
 } from "@tanstack/react-query";
 import { CheckCircleIcon, PackageIcon, ScaleIcon } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -48,28 +49,42 @@ import type { LiveReading } from "@/components/scale-serial/use-scale-serial";
 import type { LineTotals } from "@/lib/scale/webserial/line-totals";
 import { DEFAULT_SCALE_SETTINGS } from "@/lib/scale/webserial/settings";
 import { useTRPC } from "@/lib/trpc/client";
+import { formatCurrency } from "@/lib/utils";
 import {
 	DEMO_CAPTURES,
+	DEMO_CUSTOMER_PRICES,
 	DEMO_LIVE,
 	DEMO_ORDERS,
 	DEMO_TICKET_LINES,
 } from "./demo-data";
-import { CheatsheetOverlay } from "./overlays/cheatsheet-overlay";
+import { type FnKey, FunctionScreen } from "./instrument/function-screen";
+import { IqyDisplay, type IqyIndicator } from "./instrument/iqy-display";
 import { OrdersOverlay } from "./overlays/orders-overlay";
-import { ScaleOverlay } from "./overlays/scale-overlay";
 import { TicketsOverlay } from "./overlays/tickets-overlay";
 import { usePesajeTheme } from "./pesaje-themes";
 import "./pesaje-themes.css";
-import { matchPesajeShortcut } from "./shortcuts";
-import { CapturesTile } from "./tiles/captures-tile";
-import { OrderLinesTile } from "./tiles/order-lines-tile";
-import { OrdersTile } from "./tiles/orders-tile";
-import { StatusStrip } from "./tiles/status-strip";
-import { WeightTile } from "./tiles/weight-tile";
+import { type CustomerPriceRow, resolveDefaultPrice } from "./pricing";
+import {
+	matchPesajeShortcut,
+	type PesajeCommand,
+	shortcutLabel,
+} from "./shortcuts";
+import {
+	AtajosPage,
+	FN_PAGE_TITLES,
+	FnFormCard,
+	InicioPage,
+	RecipientePage,
+	TecladoPage,
+	TemaPage,
+} from "./tiles/fn-pages";
+import { type SaleLine, SalePanel } from "./tiles/sale-panel";
+import { OrderPanel, OrdersPanel, PendingPanel } from "./tiles/top-panels";
 import {
 	CONTAINERS,
 	type ContainerId,
 	captureNetG,
+	type FnPage,
 	itemName,
 	orderTitle,
 	PESAJE_THEMES,
@@ -87,7 +102,8 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
 	const locale = useLocale();
-	const { theme, cycleTheme } = usePesajeTheme();
+	const { theme, setTheme, cycleTheme } = usePesajeTheme();
+	const router = useRouter();
 	const themeLabel =
 		PESAJE_THEMES.find((item) => item.id === theme)?.label ?? "M1";
 	const antonella = useAntonella();
@@ -101,7 +117,6 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		id: number;
 		value: string;
 	} | null>(null);
-	const [showKeypad, setShowKeypad] = useState(false);
 	const [containerId, setContainerId] = useState<ContainerId>("tambo_azul");
 	const [customTare, setCustomTare] = useState("0.000");
 	const [manualWeight, setManualWeight] = useState(false);
@@ -130,8 +145,12 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		pending: 0,
 		connected: demo,
 	});
-	const [focusedTile, setFocusedTile] = useState<TileId>(3);
+	const [focusedTile, setFocusedTile] = useState<TileId>(4);
 	const [overlay, setOverlay] = useState<PesajeOverlay>(null);
+	const [fnPage, setFnPage] = useState<FnPage>(demo ? "recipiente" : "inicio");
+	const [heldKg, setHeldKg] = useState<number | null>(null);
+	const [priceEdits, setPriceEdits] = useState<Record<number, string>>({});
+	const [saleIndex, setSaleIndex] = useState(0);
 	const [copied, setCopied] = useState(false);
 	const [scaleSettings, setScaleSettingsState] = useState(
 		DEFAULT_SCALE_SETTINGS,
@@ -243,8 +262,6 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const usingSerialNet =
 		!manualWeight && serialTotals !== null && serialTotals.count > 0;
 	const manualGrossKg = Number.parseFloat(actualWeight) || 0;
-	const grossKg = usingSerialNet ? serialTotals.grossG / 1000 : manualGrossKg;
-	const appliedTareKg = usingSerialNet ? serialTotals.tareG / 1000 : tareKg;
 	const netKg = usingSerialNet
 		? serialTotals.netG / 1000
 		: Math.max(0, manualGrossKg - tareKg);
@@ -408,13 +425,22 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	}, [demo]);
 
 	const handleCaptureTare = () => {
-		if (!actualWeight || Number.parseFloat(actualWeight) <= 0) return;
-		setCustomTare(Number.parseFloat(actualWeight).toFixed(3));
+		const gross =
+			live?.weightG != null && !manualWeight
+				? live.weightG / 1000
+				: Number.parseFloat(actualWeight) || 0;
+		if (gross <= 0) {
+			toast.info("No hay peso en la báscula para tomar como tara");
+			return;
+		}
+		setCustomTare(gross.toFixed(3));
 		setContainerId("otro");
-		setActualWeight("");
+		if (manualWeight) setActualWeight("");
+		toast.success(`Tara de ${gross.toFixed(3)} kg (recipiente «Otro»)`);
 	};
 
-	const handleTare = () => setActualWeight("");
+	const handleCaptureTareRef = useRef(handleCaptureTare);
+	handleCaptureTareRef.current = handleCaptureTare;
 
 	const handleUseScaleReading = (reading: ScaleReading) => {
 		const value = (reading.weight_g / 1000).toFixed(3);
@@ -460,6 +486,65 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		);
 	};
 
+	// --- 5 · Venta: renglones ya pesados con el precio del cliente ---------
+	const customerId = selectedOrder?.customer_id ?? null;
+	const orderDetailQuery = useQuery({
+		...trpc.orders.get.queryOptions({ id: selectedOrderId ?? 0 }),
+		enabled: !demo && selectedOrderId !== null,
+	});
+	const customerPricesQuery = useQuery({
+		...trpc.customerPrices.getByCustomer.queryOptions({
+			customerId: customerId ?? 0,
+		}),
+		enabled: !demo && customerId !== null,
+	});
+	const priceRows: CustomerPriceRow[] = demo
+		? DEMO_CUSTOMER_PRICES
+		: (customerPricesQuery.data ?? []);
+	const detailItems = demo
+		? (selectedOrder?.orderItems ?? [])
+		: (orderDetailQuery.data?.orderItems ?? []);
+	const saleLines: SaleLine[] = useMemo(
+		() =>
+			detailItems
+				.filter(
+					(item) =>
+						item.status !== "PENDIENTE_PESAJE" && Number(item.quantity_kg) > 0,
+				)
+				.map((item) => {
+					const row = priceRows.find(
+						(candidate) => candidate.productId === item.product_id,
+					);
+					const suggested = resolveDefaultPrice(row, item.unit_price);
+					const edited = priceEdits[item.id];
+					return {
+						itemId: item.id,
+						name: itemName(item),
+						kg: Number(item.quantity_kg) || 0,
+						pieces: item.quantity_pieces ?? null,
+						price: edited ?? (suggested ? suggested.pricePerKg.toFixed(2) : ""),
+						source:
+							edited !== undefined ? "manual" : (suggested?.source ?? "manual"),
+					};
+				}),
+		[detailItems, priceRows, priceEdits],
+	);
+	useEffect(() => {
+		setPriceEdits({});
+		setSaleIndex(0);
+	}, [selectedOrderId]);
+
+	const goToCharge = useCallback(() => {
+		if (!selectedOrder) return;
+		if (demo) {
+			toast.success(
+				`Demostración: se abriría el cobro e impresión del pedido #${selectedOrder.id}`,
+			);
+			return;
+		}
+		router.push(`/admin/checkout?order=${selectedOrder.id}`);
+	}, [demo, router, selectedOrder]);
+
 	const moveSelection = useCallback(
 		(direction: -1 | 1) => {
 			if (focusedTile === 1) {
@@ -474,27 +559,117 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				setCurrentItemIndex(0);
 				return;
 			}
-			if (focusedTile === 2) {
+			if (focusedTile === 2 || focusedTile === 3) {
 				if (direction < 0) handlePrevItem();
 				else handleNextItem();
 				return;
 			}
-			if (focusedTile === 3) {
-				cycleContainer(direction);
+			if (focusedTile === 5) {
+				setSaleIndex((index) =>
+					Math.min(Math.max(0, index + direction), saleLines.length - 1),
+				);
+				return;
 			}
+			if (focusedTile === 7 && fnPage === "tema") {
+				cycleTheme();
+				return;
+			}
+			cycleContainer(direction);
 		},
-		[focusedTile, orders, selectedOrderId, cycleContainer, pendingItems.length],
+		[
+			focusedTile,
+			orders,
+			selectedOrderId,
+			cycleContainer,
+			pendingItems.length,
+			saleLines.length,
+			fnPage,
+			cycleTheme,
+		],
 	);
 
 	const selectCurrent = useCallback(() => {
 		if (focusedTile === 1 && selectedOrderId) {
-			setFocusedTile(2);
+			setFocusedTile(3);
 			return;
 		}
-		if (focusedTile === 3) {
-			handleRegisterWeight();
+		if (focusedTile === 2 || focusedTile === 3) {
+			setFocusedTile(4);
+			return;
 		}
-	}, [focusedTile, selectedOrderId, handleRegisterWeight]);
+		if (focusedTile === 5) {
+			goToCharge();
+			return;
+		}
+		handleRegisterWeight();
+	}, [focusedTile, selectedOrderId, handleRegisterWeight, goToCharge]);
+
+	const toggleHold = useCallback(() => {
+		setHeldKg((current) => {
+			if (current !== null) return null;
+			const gross =
+				live?.weightG != null && !manualWeight
+					? live.weightG / 1000
+					: Number.parseFloat(actualWeight) || 0;
+			return gross;
+		});
+	}, [live, manualWeight, actualWeight]);
+
+	const runCommand = useCallback(
+		(command: PesajeCommand) => {
+			switch (command) {
+				case "power":
+					if (demo) {
+						toast.info("Demostración: no hay puerto serie");
+						return;
+					}
+					if (scaleStatus.connected) controlsRef.current?.disconnect();
+					else controlsRef.current?.connect();
+					return;
+				case "zero":
+					setManualWeight(true);
+					setActualWeight("");
+					setHeldKg(null);
+					return;
+				case "tare":
+					handleCaptureTareRef.current();
+					return;
+				case "hold":
+					toggleHold();
+					return;
+				case "undo":
+					handleUndo();
+					return;
+				case "charge":
+					goToCharge();
+					return;
+				case "antonella":
+					antonella.open();
+					return;
+				case "classic":
+					router.push("/admin/weighing-station");
+					return;
+			}
+		},
+		[
+			demo,
+			scaleStatus.connected,
+			toggleHold,
+			handleUndo,
+			goToCharge,
+			antonella,
+			router,
+		],
+	);
+
+	const openPage = useCallback((page: FnPage) => {
+		setFnPage(page);
+		setFocusedTile(7);
+		setOverlay(null);
+		if (page === "teclado") {
+			setTimeout(() => weightInputRef.current?.focus(), 0);
+		}
+	}, []);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
@@ -526,18 +701,32 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 						current === action.overlay ? null : action.overlay,
 					);
 					break;
+				case "page":
+					openPage(action.page);
+					break;
+				case "command":
+					runCommand(action.command);
+					break;
 				case "cycle-theme":
 					cycleTheme();
-					toast.success("Tema actualizado");
 					break;
 				case "close":
-					setOverlay(null);
+					if (overlay) setOverlay(null);
+					else setFnPage("inicio");
 					break;
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [overlay, moveSelection, selectCurrent, handleCaptureStable, cycleTheme]);
+	}, [
+		overlay,
+		moveSelection,
+		selectCurrent,
+		handleCaptureStable,
+		cycleTheme,
+		openPage,
+		runCommand,
+	]);
 
 	const ticketDetailQuery = useQuery({
 		...trpc.orders.get.queryOptions({ id: selectedOrderId ?? 0 }),
@@ -657,22 +846,328 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 
 	const liveWeightG = live?.weightG ?? (demo ? DEMO_LIVE.weightG : null);
 	const captures: PesajeCapture[] = demo ? DEMO_CAPTURES : serialCaptures;
-	const displayGross = usingSerialNet
-		? grossKg
-		: liveWeightG != null && !manualWeight
-			? liveWeightG / 1000
-			: grossKg;
-	const displayNet = usingSerialNet
-		? netKg
-		: liveWeightG != null && !manualWeight
-			? Math.max(0, liveWeightG / 1000 - tareKg)
-			: netKg;
-	const displayTare = appliedTareKg;
+
+	// Display 4 = la lectura EN VIVO: bruto en vivo, tara del recipiente
+	// elegido y neto = bruto − tara. Lo acumulado (suma de capturas) se muestra
+	// aparte en 2 y en la pantalla 7; antes se mezclaba la tara acumulada
+	// (2 × 2.500 = 5.000) con el bruto en vivo.
+	const liveIsNet = live?.net === true && !manualWeight;
+	const liveGrossKg =
+		heldKg ??
+		(liveWeightG != null && !manualWeight ? liveWeightG / 1000 : manualGrossKg);
+	const liveTareKg = liveIsNet ? 0 : tareKg;
+	const liveNetKg = Math.max(0, liveGrossKg - liveTareKg);
+	const accumulatedNetKg = usingSerialNet ? netKg : 0;
+	const captureCount = serialTotals?.count ?? captures.length;
+	const connected = scaleStatus.connected || demo;
+	const scaleLabel = demo
+		? "Demostración"
+		: getStatusLabel(
+				scaleStatus.status,
+				scaleStatus.supported,
+				controlsRef.current?.settings.simulator ?? false,
+			);
+
+	const indicators: IqyIndicator[] = [];
+	if (Math.abs(liveGrossKg) < 0.005) indicators.push("cero");
+	if (liveTareKg > 0) indicators.push("tara");
+	if ((live?.stable ?? false) || (manualWeight && manualGrossKg > 0)) {
+		indicators.push("estable");
+	}
+	if (heldKg !== null) indicators.push("hold");
+	if (captureCount > 0) indicators.push("mmas");
+	if (connected) indicators.push("bateria");
+
+	const iqyButtons = [
+		{
+			id: "power",
+			top: "ON",
+			bottom: "OFF",
+			color: "red" as const,
+			shortcut: "Súper+⇧B",
+			label: connected ? "Desconectar báscula" : "Conectar báscula",
+			onPress: () => runCommand("power"),
+		},
+		{
+			id: "zero",
+			top: "→0←",
+			bottom: "▲",
+			color: "red" as const,
+			shortcut: "Súper+0",
+			label: "Cero: limpiar peso",
+			onPress: () => runCommand("zero"),
+		},
+		{
+			id: "tare",
+			top: "→T←",
+			bottom: "▼",
+			color: "red" as const,
+			shortcut: "Súper+R",
+			label: "Tara: tomar el peso actual",
+			onPress: () => runCommand("tare"),
+		},
+		{
+			id: "mplus",
+			top: "M+",
+			bottom: "◀",
+			color: "orange" as const,
+			shortcut: "Espacio",
+			label: "Capturar peso estable",
+			onPress: handleCaptureStable,
+		},
+		{
+			id: "hold",
+			top: "HOLD",
+			bottom: "▶",
+			color: "orange" as const,
+			shortcut: "Súper+L",
+			label: heldKg !== null ? "Soltar HOLD" : "Congelar display",
+			onPress: () => runCommand("hold"),
+		},
+		{
+			id: "f",
+			top: "f",
+			bottom: "↵",
+			color: "cyan" as const,
+			shortcut: "Enter",
+			label: "Registrar peso del renglón",
+			onPress: handleRegisterWeight,
+			disabled: !hasValidWeight || currentItem === null,
+		},
+	];
+
+	const pageKey = (page: FnPage, label: string, key: string): FnKey => ({
+		id: page,
+		label,
+		shortcut: shortcutLabel(key),
+		active: fnPage === page,
+		onPress: () => openPage(page),
+	});
+	const leftKeys: FnKey[] = [
+		pageKey("inicio", "Inicio", "H"),
+		pageKey("recipiente", "Tara", "C"),
+		pageKey("conexion", "Serial", "B"),
+		pageKey("diagnostico", "Tramas", "X"),
+		pageKey("tema", "Tema", "M"),
+	];
+	const rightKeys: FnKey[] = [
+		{
+			id: "tickets",
+			label: "Tickets",
+			shortcut: shortcutLabel("T"),
+			onPress: () => setOverlay("tickets"),
+		},
+		{
+			id: "orders",
+			label: "Cola",
+			shortcut: shortcutLabel("O"),
+			onPress: () => setOverlay("orders"),
+		},
+		{
+			id: "batch",
+			label: "Producción",
+			shortcut: shortcutLabel("P"),
+			onPress: () => setOverlay("batch"),
+		},
+		pageKey("teclado", "Teclado", "N"),
+		pageKey("atajos", "Atajos", "/"),
+	];
+	const bottomKeys: FnKey[] = [
+		{
+			id: "capture",
+			label: "M+ Capturar",
+			shortcut: "Espacio",
+			tone: "orange",
+			wide: true,
+			onPress: handleCaptureStable,
+		},
+		{
+			id: "register",
+			label: "Registrar peso",
+			shortcut: "Enter",
+			tone: "green",
+			wide: true,
+			disabled: !hasValidWeight || currentItem === null,
+			onPress: handleRegisterWeight,
+		},
+		{
+			id: "undo",
+			label: "Deshacer",
+			shortcut: shortcutLabel("Z"),
+			onPress: () => runCommand("undo"),
+		},
+		{
+			id: "charge",
+			label: "Cobro",
+			shortcut: shortcutLabel("G"),
+			tone: "cyan",
+			disabled: !selectedOrder,
+			onPress: () => runCommand("charge"),
+		},
+		{
+			id: "antonella",
+			label: "iAntonella",
+			shortcut: shortcutLabel("I"),
+			onPress: () => runCommand("antonella"),
+		},
+		{
+			id: "classic",
+			label: "Clásica",
+			shortcut: shortcutLabel("V"),
+			onPress: () => runCommand("classic"),
+		},
+		{
+			id: "esc",
+			label: "Esc",
+			shortcut: "Esc",
+			tone: "red",
+			onPress: () => {
+				setOverlay(null);
+				setFnPage("inicio");
+			},
+		},
+	];
+
+	const containerLabel =
+		containerId === "otro"
+			? `Otro · ${tareKg.toFixed(3)} kg`
+			: `${containerDef.label} · ${tareKg.toFixed(3)} kg`;
+
+	const fnContent = (() => {
+		switch (fnPage) {
+			case "recipiente":
+				return (
+					<RecipientePage
+						containerId={containerId}
+						customTare={customTare}
+						onContainer={setContainerId}
+						onCustomTare={setCustomTare}
+						onTareFromWeight={handleCaptureTare}
+					/>
+				);
+			case "tema":
+				return <TemaPage theme={theme} onTheme={setTheme} />;
+			case "atajos":
+				return <AtajosPage />;
+			case "teclado":
+				return (
+					<TecladoPage
+						value={actualWeight}
+						onValue={(value) => {
+							setManualWeight(true);
+							setActualWeight(value);
+						}}
+						onKey={tapKey}
+						inputRef={weightInputRef}
+						extra={
+							demo ? null : (
+								<FnFormCard>
+									<ScaleReadingCard
+										onUse={handleUseScaleReading}
+										usedReadingId={
+											scaleUse && scaleUse.value === actualWeight
+												? scaleUse.id
+												: null
+										}
+									/>
+								</FnFormCard>
+							)
+						}
+					/>
+				);
+			case "conexion":
+				return (
+					<div>
+						<FnScreenRowsStatus
+							label={scaleLabel}
+							detail={scaleStatus.statusDetail}
+							connected={connected}
+						/>
+						{demo ? (
+							<p className="mt-3 text-[11px] opacity-80">
+								Modo demostración: no hay puerto serie. En la estación real aquí
+								se conecta la I-QY por USB-RS232 (Web Serial) y se ajustan
+								baudios, paridad y formato.
+							</p>
+						) : (
+							<FnFormCard>
+								<div className="mb-3 flex gap-2">
+									{scaleStatus.connected ? (
+										<Button
+											type="button"
+											variant="outline"
+											onClick={() => controlsRef.current?.disconnect()}
+										>
+											Desconectar
+										</Button>
+									) : (
+										<Button
+											type="button"
+											onClick={() => controlsRef.current?.connect()}
+										>
+											Conectar báscula
+										</Button>
+									)}
+								</div>
+								<ScaleSettingsForm
+									settings={controlsRef.current?.settings ?? scaleSettings}
+									setSettings={(partial) => {
+										controlsRef.current?.setSettings(partial);
+										setScaleSettingsState((current) => ({
+											...current,
+											...partial,
+										}));
+									}}
+								/>
+							</FnFormCard>
+						)}
+					</div>
+				);
+			case "diagnostico":
+				return demo ? (
+					<p className="text-[11px] opacity-80">
+						Modo demostración: sin tramas. Con la báscula conectada se ven las
+						tramas crudas (texto y hex) y se pueden copiar.
+					</p>
+				) : (
+					<FnFormCard>
+						<DiagnosticsPanel
+							frames={controlsRef.current?.frames ?? []}
+							onCopy={copyDiagnostics}
+							onClear={() => controlsRef.current?.clearFrames()}
+							copied={copied}
+						/>
+					</FnFormCard>
+				);
+			default:
+				return (
+					<InicioPage
+						productName={currentItem ? itemName(currentItem) : null}
+						captures={captures}
+						containerLabels={CONTAINER_LABELS}
+						accumulatedNetKg={accumulatedNetKg}
+						liveTareLabel={containerLabel}
+						scaleLabel={scaleLabel}
+						onUndo={handleUndo}
+					/>
+				);
+		}
+	})();
+
+	const chargeHint = !selectedOrder
+		? "Elige un pedido en 1."
+		: pendingItems.length > 0 &&
+				selectedOrder.orderItems.some(
+					(item) => item.status === "PENDIENTE_PESAJE",
+				)
+			? `Faltan ${pendingItems.length} por pesar; se cobra lo pesado.`
+			: "Todo pesado: listo para cobrar, imprimir y enviar.";
 
 	return (
 		<div
 			data-pesaje-theme={theme}
-			className="flex h-full min-h-0 flex-col gap-2 bg-background text-foreground"
+			data-pesaje-station=""
+			className="h-full min-h-0 bg-background text-foreground"
 		>
 			{!demo ? (
 				<ScaleSerialPanel
@@ -690,134 +1185,125 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				/>
 			) : null}
 
-			<div
-				className={cn(
-					"shrink-0",
-					focusedTile === 5 &&
-						"rounded-lg ring-2 ring-primary ring-offset-2 ring-offset-background",
-				)}
-			>
-				<StatusStrip
-					orderCount={orders.length}
-					scaleLabel={
-						demo
-							? "Demostración"
-							: getStatusLabel(
-									scaleStatus.status,
-									scaleStatus.supported,
-									controlsRef.current?.settings.simulator ?? false,
-								)
-					}
-					scaleConnected={scaleStatus.connected || demo}
-					statusDetail={scaleStatus.statusDetail}
-					themeLabel={themeLabel}
-					onOpenCheatsheet={() => setOverlay("cheatsheet")}
-					onAsk={(question) => antonella.ask(question)}
-				/>
-			</div>
-
-			<div className="grid min-h-0 flex-1 grid-cols-1 gap-2 lg:grid-cols-[minmax(16rem,22%)_minmax(0,1fr)_minmax(18rem,28%)]">
-				<OrdersTile
-					orders={orders}
-					selectedOrderId={selectedOrderId}
-					focused={focusedTile === 1}
-					newOrderIds={newOrderIds}
-					onSelect={(id) => {
-						setSelectedOrderId(id);
-						setCurrentItemIndex(0);
-						setFocusedTile(1);
-					}}
-					onFocusTile={() => setFocusedTile(1)}
-				/>
-				<OrderLinesTile
-					order={selectedOrder}
-					items={pendingItems}
-					activeItemId={currentItem?.id ?? null}
-					focused={focusedTile === 2}
-					lineTotals={serialTotals}
-					locale={locale}
-					onSelectItem={(id) => {
-						const index = pendingItems.findIndex((item) => item.id === id);
-						if (index >= 0) setCurrentItemIndex(index);
-						setFocusedTile(2);
-					}}
-					onFocusTile={() => setFocusedTile(2)}
-				/>
-				<CapturesTile
-					focused={focusedTile === 4}
-					productName={currentItem ? itemName(currentItem) : null}
-					captures={captures}
-					containerLabels={CONTAINER_LABELS}
-					onUndo={handleUndo}
-					onFocusTile={() => setFocusedTile(4)}
-				/>
-			</div>
-
-			<div className="min-h-0 shrink-0 basis-[42%] overflow-hidden">
-				<WeightTile
-					focused={focusedTile === 3}
-					liveWeightG={liveWeightG}
-					liveStable={live?.stable ?? false}
-					liveOverload={live?.overload ?? false}
-					connected={scaleStatus.connected || demo}
-					grossKg={displayGross}
-					tareKg={displayTare}
-					netKg={displayNet}
-					usingSerialNet={usingSerialNet}
-					captureCount={serialTotals?.count ?? captures.length}
-					containerId={containerId}
-					containers={CONTAINERS}
-					customTare={customTare}
-					actualWeight={actualWeight}
-					showKeypad={showKeypad}
-					canRegister={hasValidWeight && currentItem !== null}
-					productName={currentItem ? itemName(currentItem) : null}
-					onFocusTile={() => setFocusedTile(3)}
-					onContainerId={(id) => setContainerId(id as ContainerId)}
-					onCustomTare={setCustomTare}
-					onActualWeight={(value) => {
-						setManualWeight(true);
-						setActualWeight(value);
-					}}
-					onToggleKeypad={() => setShowKeypad((value) => !value)}
-					onCaptureTare={handleCaptureTare}
-					onTare={handleTare}
-					onRegister={handleRegisterWeight}
-					onCaptureStable={handleCaptureStable}
-					onKeypad={tapKey}
-					weightInputRef={weightInputRef}
-					extra={
-						demo ? null : (
-							<ScaleReadingCard
-								onUse={handleUseScaleReading}
-								usedReadingId={
-									scaleUse && scaleUse.value === actualWeight
-										? scaleUse.id
-										: null
-								}
+			{/* Carcasa del equipo: todo vive dentro del marco */}
+			<div className="pesaje-housing flex h-full min-h-0 flex-col gap-2 rounded-[1.75rem] border-[3px] p-2 sm:p-3">
+				<div className="flex shrink-0 items-center justify-between gap-3 px-2 font-mono text-[10px] uppercase tracking-[0.2em]">
+					<span className="font-black text-[#f39a1e] text-xs tracking-[0.12em]">
+						Cárnicos Gustavo · Estación de pesaje
+					</span>
+					<span className="flex items-center gap-3 text-[#9aa4ae]">
+						<span className="flex items-center gap-1.5">
+							<span
+								aria-hidden="true"
+								className={cn(
+									"size-2 rounded-full",
+									connected
+										? "bg-[#3fb950] shadow-[0_0_6px_#3fb950]"
+										: "bg-[#6e7681]",
+								)}
 							/>
-						)
-					}
-				/>
-			</div>
+							{scaleLabel}
+						</span>
+						<span>{orders.length} pedidos</span>
+						<span>{themeLabel}</span>
+					</span>
+				</div>
 
-			<div className="flex shrink-0 items-center justify-between gap-2 text-muted-foreground text-xs">
-				<Link
-					href="/admin/weighing-station"
-					className="rounded px-1 underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-				>
-					Versión clásica
-				</Link>
-				<span>Súper o Alt + T tickets · B báscula · / atajos</span>
-				<Button
-					type="button"
-					size="sm"
-					variant="outline"
-					onClick={() => setOverlay("batch")}
-				>
-					<ScaleIcon className="mr-1 h-3.5 w-3.5" />
-					Pesaje de producción
-				</Button>
+				{/* Fila superior: 1 | (2 · 3 / 4) | 5 */}
+				<div className="grid min-h-0 flex-[1.45] grid-cols-[minmax(11rem,20fr)_minmax(0,62fr)_minmax(13rem,16fr)] gap-2">
+					<OrdersPanel
+						orders={orders}
+						selectedOrderId={selectedOrderId}
+						newOrderIds={newOrderIds}
+						focused={focusedTile === 1}
+						onSelect={(id) => {
+							setSelectedOrderId(id);
+							setCurrentItemIndex(0);
+							setFocusedTile(1);
+						}}
+						onFocusPanel={() => setFocusedTile(1)}
+					/>
+					<div className="flex min-h-0 min-w-0 flex-col gap-2">
+						<div className="grid h-[36%] min-h-[7.5rem] shrink-0 grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-2 [@media(max-height:860px)]:h-[30%] [@media(max-height:860px)]:min-h-[5.5rem]">
+							<OrderPanel
+								order={selectedOrder}
+								currentItem={currentItem}
+								accumulatedNetKg={accumulatedNetKg}
+								captureCount={captureCount}
+								locale={locale}
+								focused={focusedTile === 2}
+								onFocusPanel={() => setFocusedTile(2)}
+							/>
+							<PendingPanel
+								items={pendingItems.filter(
+									(item) => item.status === "PENDIENTE_PESAJE",
+								)}
+								activeItemId={currentItem?.id ?? null}
+								focused={focusedTile === 3}
+								onSelect={(id) => {
+									const index = pendingItems.findIndex(
+										(item) => item.id === id,
+									);
+									if (index >= 0) setCurrentItemIndex(index);
+									setFocusedTile(3);
+								}}
+								onFocusPanel={() => setFocusedTile(3)}
+							/>
+						</div>
+						<div className="min-h-0 flex-1">
+							<IqyDisplay
+								valueText={
+									live?.overload && !manualWeight ? "" : liveNetKg.toFixed(3)
+								}
+								overload={(live?.overload ?? false) && !manualWeight}
+								digits={6}
+								unit="kg"
+								active={indicators}
+								focused={focusedTile === 4}
+								onFocusPanel={() => setFocusedTile(4)}
+								subline={{
+									gross: `${liveGrossKg.toFixed(3)} kg`,
+									tare: `${liveTareKg.toFixed(3)} kg ${liveIsNet ? "(neto de báscula)" : containerDef.label}`,
+									net: `${liveNetKg.toFixed(3)} kg`,
+								}}
+								buttons={iqyButtons}
+							/>
+						</div>
+					</div>
+					<SalePanel
+						customerName={selectedOrder ? orderTitle(selectedOrder) : null}
+						lines={saleLines}
+						focused={focusedTile === 5}
+						activeIndex={saleIndex}
+						loadingPrices={
+							!demo && customerPricesQuery.isLoading && customerId !== null
+						}
+						formatMoney={(cents) => formatCurrency(cents, locale)}
+						onPriceChange={(itemId, value) =>
+							setPriceEdits((current) => ({ ...current, [itemId]: value }))
+						}
+						onFocusPanel={() => setFocusedTile(5)}
+						onCharge={goToCharge}
+						onOpenTickets={() => setOverlay("tickets")}
+						canCharge={selectedOrder !== null && saleLines.length > 0}
+						chargeHint={chargeHint}
+					/>
+				</div>
+
+				{/* 7 · Pantalla de funciones con sus botones alrededor */}
+				<div className="min-h-0 flex-1">
+					<FunctionScreen
+						title={`7 · ${FN_PAGE_TITLES[fnPage]}`}
+						subtitle="Súper+7 · Esc vuelve a Inicio"
+						left={leftKeys}
+						right={rightKeys}
+						bottom={bottomKeys}
+						focused={focusedTile === 7}
+						onFocusPanel={() => setFocusedTile(7)}
+					>
+						{fnContent}
+					</FunctionScreen>
+				</div>
 			</div>
 
 			{overlay === "tickets" ? (
@@ -845,63 +1331,6 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					onClose={() => setOverlay(null)}
 				/>
 			) : null}
-			{overlay === "cheatsheet" ? (
-				<CheatsheetOverlay onClose={() => setOverlay(null)} />
-			) : null}
-			{overlay === "scale" ? (
-				<ScaleOverlay onClose={() => setOverlay(null)}>
-					{demo ? (
-						<p className="text-muted-foreground text-sm">
-							Modo demostración: no hay puerto serie. En la estación real, aquí
-							aparecen la conexión Web Serial, los ajustes y el diagnóstico de
-							tramas.
-						</p>
-					) : (
-						<div className="space-y-4">
-							<div className="flex flex-wrap gap-2">
-								{scaleStatus.connected ? (
-									<Button
-										type="button"
-										variant="outline"
-										onClick={() => controlsRef.current?.disconnect()}
-									>
-										Desconectar
-									</Button>
-								) : (
-									<Button
-										type="button"
-										onClick={() => controlsRef.current?.connect()}
-									>
-										Conectar báscula
-									</Button>
-								)}
-								{scaleStatus.statusDetail ? (
-									<p className="text-muted-foreground text-sm">
-										{scaleStatus.statusDetail}
-									</p>
-								) : null}
-							</div>
-							<ScaleSettingsForm
-								settings={controlsRef.current?.settings ?? scaleSettings}
-								setSettings={(partial) => {
-									controlsRef.current?.setSettings(partial);
-									setScaleSettingsState((current) => ({
-										...current,
-										...partial,
-									}));
-								}}
-							/>
-							<DiagnosticsPanel
-								frames={controlsRef.current?.frames ?? []}
-								onCopy={copyDiagnostics}
-								onClear={() => controlsRef.current?.clearFrames()}
-								copied={copied}
-							/>
-						</div>
-					)}
-				</ScaleOverlay>
-			) : null}
-
 			<Dialog
 				open={overlay === "batch"}
 				onOpenChange={(open) => setOverlay(open ? "batch" : null)}
@@ -1080,6 +1509,30 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					</Link>
 				</div>
 			) : null}
+		</div>
+	);
+}
+
+function FnScreenRowsStatus({
+	label,
+	detail,
+	connected,
+}: {
+	label: string;
+	detail: string | null;
+	connected: boolean;
+}) {
+	return (
+		<div className="flex items-center gap-2 text-xs">
+			<span
+				aria-hidden="true"
+				className={cn(
+					"size-2 rounded-full",
+					connected ? "bg-[#9be59b] shadow-[0_0_6px_#9be59b]" : "bg-[#4d7652]",
+				)}
+			/>
+			<span className="font-bold uppercase tracking-[0.12em]">{label}</span>
+			{detail ? <span className="opacity-70">· {detail}</span> : null}
 		</div>
 	);
 }
