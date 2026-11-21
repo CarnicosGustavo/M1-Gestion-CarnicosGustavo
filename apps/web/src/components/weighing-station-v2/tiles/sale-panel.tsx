@@ -117,10 +117,10 @@ export function SalePanel(props: SalePanelProps) {
 										isActive && "border-l-2 border-l-[#f39a1e]",
 									)}
 								>
-									<div className="truncate font-bold text-[#e6edf3] text-xs">
+									<div className="truncate font-bold text-[#e6edf3] text-sm">
 										{line.name}
 									</div>
-									<div className="mt-0.5 font-mono text-[#9da7b3] text-[10px] tabular-nums">
+									<div className="mt-0.5 font-mono text-[#9da7b3] text-[11px] tabular-nums">
 										{line.kg.toLocaleString("es-MX", {
 											minimumFractionDigits: 3,
 											maximumFractionDigits: 3,

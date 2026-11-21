@@ -18,6 +18,18 @@ function event(
 }
 
 describe("matchPesajeShortcut", () => {
+	test("módulos de la fila inferior abren su página en la pantalla 7", () => {
+		expect(
+			matchPesajeShortcut(event("e", { metaKey: true, code: "KeyE" })),
+		).toEqual({ type: "page", page: "recetas" });
+		expect(
+			matchPesajeShortcut(event("f", { altKey: true, code: "KeyF" })),
+		).toEqual({ type: "page", page: "frio" });
+		expect(
+			matchPesajeShortcut(event(",", { metaKey: true, code: "Comma" })),
+		).toEqual({ type: "page", page: "config" });
+	});
+
 	test("Súper y Alt enfocan teselas", () => {
 		expect(matchPesajeShortcut(event("1", { metaKey: true }))).toEqual({
 			type: "focus-tile",

@@ -57,8 +57,13 @@ import {
 	DEMO_ORDERS,
 	DEMO_TICKET_LINES,
 } from "./demo-data";
-import { type FnKey, FunctionScreen } from "./instrument/function-screen";
+import {
+	type FnKey,
+	type FnKeyGroup,
+	FunctionScreen,
+} from "./instrument/function-screen";
 import { IqyDisplay, type IqyIndicator } from "./instrument/iqy-display";
+import { ModuleOverlay } from "./overlays/module-overlay";
 import { OrdersOverlay } from "./overlays/orders-overlay";
 import { TicketsOverlay } from "./overlays/tickets-overlay";
 import { usePesajeTheme } from "./pesaje-themes";
@@ -71,9 +76,11 @@ import {
 } from "./shortcuts";
 import {
 	AtajosPage,
+	ConfigPage,
 	FN_PAGE_TITLES,
 	FnFormCard,
 	InicioPage,
+	ModuleQuickPage,
 	RecipientePage,
 	TecladoPage,
 	TemaPage,
@@ -85,6 +92,7 @@ import {
 	type ContainerId,
 	captureNetG,
 	type FnPage,
+	isModulePage,
 	itemName,
 	orderTitle,
 	PESAJE_THEMES,
@@ -93,6 +101,16 @@ import {
 	type PesajeOverlay,
 	type TileId,
 } from "./types";
+
+/** Páginas técnicas que viven dentro de Config (la tecla Config se ilumina). */
+const CONFIG_PAGES = new Set<FnPage>([
+	"config",
+	"conexion",
+	"diagnostico",
+	"tema",
+	"teclado",
+	"atajos",
+]);
 
 const CONTAINER_LABELS: Record<string, string> = Object.fromEntries(
 	CONTAINERS.map((container) => [container.id, container.label]),
@@ -601,8 +619,12 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			goToCharge();
 			return;
 		}
+		if (focusedTile === 7 && isModulePage(fnPage)) {
+			setOverlay("module");
+			return;
+		}
 		handleRegisterWeight();
-	}, [focusedTile, selectedOrderId, handleRegisterWeight, goToCharge]);
+	}, [focusedTile, selectedOrderId, handleRegisterWeight, goToCharge, fnPage]);
 
 	const toggleHold = useCallback(() => {
 		setHeldKg((current) => {
@@ -943,88 +965,78 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		active: fnPage === page,
 		onPress: () => openPage(page),
 	});
-	const leftKeys: FnKey[] = [
-		pageKey("inicio", "Inicio", "H"),
-		pageKey("recipiente", "Tara", "C"),
-		pageKey("conexion", "Serial", "B"),
-		pageKey("diagnostico", "Tramas", "X"),
-		pageKey("tema", "Tema", "M"),
-	];
-	const rightKeys: FnKey[] = [
+	const keyGroups: FnKeyGroup[] = [
 		{
-			id: "tickets",
-			label: "Tickets",
-			shortcut: shortcutLabel("T"),
-			onPress: () => setOverlay("tickets"),
+			id: "bascula",
+			label: "Báscula",
+			keys: [
+				pageKey("inicio", "Inicio", "H"),
+				pageKey("recipiente", "Tara", "C"),
+				{
+					id: "undo",
+					label: "Deshacer",
+					shortcut: shortcutLabel("Z"),
+					onPress: () => runCommand("undo"),
+				},
+				{
+					id: "batch",
+					label: "Producción",
+					shortcut: shortcutLabel("P"),
+					active: overlay === "batch",
+					onPress: () => setOverlay("batch"),
+				},
+			],
 		},
 		{
-			id: "orders",
-			label: "Cola",
-			shortcut: shortcutLabel("O"),
-			onPress: () => setOverlay("orders"),
+			id: "modulos",
+			label: "Módulos",
+			keys: [
+				{
+					id: "orders",
+					label: "Pedidos",
+					shortcut: shortcutLabel("O"),
+					active: overlay === "orders",
+					onPress: () => setOverlay("orders"),
+				},
+				{
+					id: "tickets",
+					label: "Tickets",
+					shortcut: shortcutLabel("T"),
+					active: overlay === "tickets",
+					onPress: () => setOverlay("tickets"),
+				},
+				pageKey("recetas", "Recetas", "E"),
+				pageKey("frio", "Inv. frío", "F"),
+				pageKey("precios", "Precios", "S"),
+				pageKey("clientes", "Clientes", "U"),
+				pageKey("cobranza", "Cobranza", "A"),
+			],
 		},
 		{
-			id: "batch",
-			label: "Producción",
-			shortcut: shortcutLabel("P"),
-			onPress: () => setOverlay("batch"),
-		},
-		pageKey("teclado", "Teclado", "N"),
-		pageKey("atajos", "Atajos", "/"),
-	];
-	const bottomKeys: FnKey[] = [
-		{
-			id: "capture",
-			label: "M+ Capturar",
-			shortcut: "Espacio",
-			tone: "orange",
-			wide: true,
-			onPress: handleCaptureStable,
-		},
-		{
-			id: "register",
-			label: "Registrar peso",
-			shortcut: "Enter",
-			tone: "green",
-			wide: true,
-			disabled: !hasValidWeight || currentItem === null,
-			onPress: handleRegisterWeight,
-		},
-		{
-			id: "undo",
-			label: "Deshacer",
-			shortcut: shortcutLabel("Z"),
-			onPress: () => runCommand("undo"),
-		},
-		{
-			id: "charge",
-			label: "Cobro",
-			shortcut: shortcutLabel("G"),
-			tone: "cyan",
-			disabled: !selectedOrder,
-			onPress: () => runCommand("charge"),
-		},
-		{
-			id: "antonella",
-			label: "iAntonella",
-			shortcut: shortcutLabel("I"),
-			onPress: () => runCommand("antonella"),
-		},
-		{
-			id: "classic",
-			label: "Clásica",
-			shortcut: shortcutLabel("V"),
-			onPress: () => runCommand("classic"),
-		},
-		{
-			id: "esc",
-			label: "Esc",
-			shortcut: "Esc",
-			tone: "red",
-			onPress: () => {
-				setOverlay(null);
-				setFnPage("inicio");
-			},
+			id: "sistema",
+			label: "Sistema",
+			keys: [
+				{
+					...pageKey("config", "Config", ","),
+					active: CONFIG_PAGES.has(fnPage),
+				},
+				{
+					id: "antonella",
+					label: "Antonella",
+					shortcut: shortcutLabel("I"),
+					onPress: () => runCommand("antonella"),
+				},
+				{
+					id: "esc",
+					label: "Esc",
+					shortcut: "Volver",
+					tone: "red",
+					onPress: () => {
+						setOverlay(null);
+						setFnPage("inicio");
+					},
+				},
+			],
 		},
 	];
 
@@ -1034,7 +1046,24 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			: `${containerDef.label} · ${tareKg.toFixed(3)} kg`;
 
 	const fnContent = (() => {
+		if (isModulePage(fnPage)) {
+			return (
+				<ModuleQuickPage
+					page={fnPage}
+					customerName={selectedOrder ? orderTitle(selectedOrder) : null}
+					onOpenDetail={() => setOverlay("module")}
+				/>
+			);
+		}
 		switch (fnPage) {
+			case "config":
+				return (
+					<ConfigPage
+						onOpen={openPage}
+						onClassic={() => runCommand("classic")}
+						onExit={() => router.push("/admin")}
+					/>
+				);
 			case "recipiente":
 				return (
 					<RecipientePage
@@ -1186,7 +1215,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			) : null}
 
 			{/* Carcasa del equipo: todo vive dentro del marco */}
-			<div className="pesaje-housing flex h-full min-h-0 flex-col gap-2 rounded-[1.75rem] border-[3px] p-2 sm:p-3">
+			<div className="pesaje-housing flex h-full min-h-0 flex-col gap-2 rounded-[1.5rem] border-[3px] p-2">
 				<div className="flex shrink-0 items-center justify-between gap-3 px-2 font-mono text-[10px] uppercase tracking-[0.2em]">
 					<span className="font-black text-[#f39a1e] text-xs tracking-[0.12em]">
 						Cárnicos Gustavo · Estación de pesaje
@@ -1210,7 +1239,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				</div>
 
 				{/* Fila superior: 1 | (2 · 3 / 4) | 5 */}
-				<div className="grid min-h-0 flex-[1.7] grid-cols-[minmax(10rem,16fr)_minmax(0,70fr)_minmax(12rem,14fr)] gap-2">
+				<div className="grid min-h-0 flex-[2.3] grid-cols-[minmax(13rem,17fr)_minmax(0,63fr)_minmax(15rem,20fr)] gap-2">
 					<OrdersPanel
 						orders={orders}
 						selectedOrderId={selectedOrderId}
@@ -1224,7 +1253,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 						onFocusPanel={() => setFocusedTile(1)}
 					/>
 					<div className="flex min-h-0 min-w-0 flex-col gap-2">
-						<div className="grid h-[24%] min-h-[6rem] shrink-0 grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-2 [@media(max-height:860px)]:h-[22%] [@media(max-height:860px)]:min-h-[5.25rem]">
+						<div className="grid h-[40%] min-h-[10rem] shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-2 [@media(max-height:860px)]:h-[38%]">
 							<OrderPanel
 								order={selectedOrder}
 								currentItem={currentItem}
@@ -1291,13 +1320,11 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				</div>
 
 				{/* 7 · Pantalla de funciones con sus botones alrededor */}
-				<div className="min-h-0 flex-[1] [@media(max-height:860px)]:flex-[1.05]">
+				<div className="min-h-0 flex-[1] [@media(max-height:860px)]:flex-[0.95]">
 					<FunctionScreen
 						title={`7 · ${FN_PAGE_TITLES[fnPage]}`}
 						subtitle="Súper+7 · Esc vuelve a Inicio"
-						left={leftKeys}
-						right={rightKeys}
-						bottom={bottomKeys}
+						groups={keyGroups}
 						focused={focusedTile === 7}
 						onFocusPanel={() => setFocusedTile(7)}
 					>
@@ -1315,6 +1342,13 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					}
 					lines={selectedOrder ? ticketLines : []}
 					containerLabels={CONTAINER_LABELS}
+					onClose={() => setOverlay(null)}
+				/>
+			) : null}
+			{overlay === "module" && isModulePage(fnPage) ? (
+				<ModuleOverlay
+					page={fnPage}
+					demo={demo}
 					onClose={() => setOverlay(null)}
 				/>
 			) : null}

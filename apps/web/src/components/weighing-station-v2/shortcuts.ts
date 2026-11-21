@@ -53,6 +53,7 @@ function physicalKey(event: Pick<KeyboardEvent, "key" | "code">): string {
 	if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
 	if (/^Digit[0-9]$/.test(code)) return code.slice(5);
 	if (code === "Slash") return "/";
+	if (code === "Comma") return ",";
 	return event.key.length === 1 ? event.key.toLowerCase() : event.key;
 }
 
@@ -76,6 +77,12 @@ const MOD_KEYS: Record<string, PesajeAction> = {
 	m: { type: "page", page: "tema" },
 	n: { type: "page", page: "teclado" },
 	"/": { type: "page", page: "atajos" },
+	",": { type: "page", page: "config" },
+	e: { type: "page", page: "recetas" },
+	f: { type: "page", page: "frio" },
+	s: { type: "page", page: "precios" },
+	u: { type: "page", page: "clientes" },
+	a: { type: "page", page: "cobranza" },
 	"0": { type: "command", command: "zero" },
 	r: { type: "command", command: "tare" },
 	l: { type: "command", command: "hold" },
@@ -194,6 +201,16 @@ export const SHORTCUT_ROWS: Array<{
 	{ keys: "Súper+M", fallback: "Alt+M", action: "7 · Tema" },
 	{ keys: "Súper+N", fallback: "Alt+N", action: "7 · Teclado / peso manual" },
 	{ keys: "Súper+/ o ?", fallback: "Alt+/", action: "7 · Atajos" },
+	{
+		keys: "Súper+,",
+		fallback: "Alt+,",
+		action: "7 · Config (serial, tramas, tema…)",
+	},
+	{ keys: "Súper+E", fallback: "Alt+E", action: "7 · Recetas" },
+	{ keys: "Súper+F", fallback: "Alt+F", action: "7 · Inventario frío" },
+	{ keys: "Súper+S", fallback: "Alt+S", action: "7 · Precios" },
+	{ keys: "Súper+U", fallback: "Alt+U", action: "7 · Clientes" },
+	{ keys: "Súper+A", fallback: "Alt+A", action: "7 · Cobranza" },
 	{ keys: "Súper+T", fallback: "Alt+T", action: "Tickets (pantalla completa)" },
 	{ keys: "Súper+O", fallback: "Alt+O", action: "Cola de pedidos" },
 	{ keys: "Súper+P", fallback: "Alt+P", action: "Pesaje de producción" },

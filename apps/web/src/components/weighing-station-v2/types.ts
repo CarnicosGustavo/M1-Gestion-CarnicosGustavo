@@ -20,7 +20,7 @@ export const TILES = [
 export type TileId = (typeof TILES)[number]["id"];
 export type TileKey = (typeof TILES)[number]["key"];
 
-export type PesajeOverlay = "tickets" | "orders" | "batch" | null;
+export type PesajeOverlay = "tickets" | "orders" | "batch" | "module" | null;
 
 /** Páginas de la pantalla de funciones (7). */
 export type FnPage =
@@ -30,7 +30,27 @@ export type FnPage =
 	| "diagnostico"
 	| "tema"
 	| "teclado"
-	| "atajos";
+	| "atajos"
+	| "config"
+	| "recetas"
+	| "frio"
+	| "precios"
+	| "clientes"
+	| "cobranza";
+
+/** Módulos del negocio que viven en la fila inferior (pantalla 7 + ventana). */
+export function isModulePage(page: FnPage): page is ModulePage {
+	return (MODULE_PAGES as readonly FnPage[]).includes(page);
+}
+
+export const MODULE_PAGES = [
+	"recetas",
+	"frio",
+	"precios",
+	"clientes",
+	"cobranza",
+] as const satisfies readonly FnPage[];
+export type ModulePage = (typeof MODULE_PAGES)[number];
 
 export type PesajeThemeId = "m1" | "tokyo-night" | "gruvbox";
 

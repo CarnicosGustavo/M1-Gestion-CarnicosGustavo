@@ -9,6 +9,7 @@ import {
 	captureNetG,
 	type FnPage,
 	formatKg,
+	type ModulePage,
 	PESAJE_THEMES,
 	type PesajeCapture,
 	type PesajeThemeId,
@@ -22,7 +23,181 @@ export const FN_PAGE_TITLES: Record<FnPage, string> = {
 	tema: "Tema de la estación",
 	teclado: "Teclado · peso manual",
 	atajos: "Atajos de teclado",
+	config: "Configuración de la estación",
+	recetas: "Recetas de despiece",
+	frio: "Inventario frío",
+	precios: "Precios por cliente",
+	clientes: "Clientes y crédito",
+	cobranza: "Cobranza",
 };
+
+/** Qué ofrece cada módulo en la pantalla 7 y en la ventana sobrepuesta. */
+export const MODULE_INFO: Record<
+	ModulePage,
+	{ detail: string; quick: string[] }
+> = {
+	recetas: {
+		detail: "Configurador canal → piezas → variantes",
+		quick: [
+			"Receta activa por tipo de canal",
+			"% de peso por pieza (debe sumar 100 %)",
+			"Activar / desactivar piezas",
+		],
+	},
+	frio: {
+		detail: "Transferencias fresco ↔ congelado e historial",
+		quick: ["Pasar a congelado", "Descongelar", "Existencia por producto"],
+	},
+	precios: {
+		detail: "Lista de precios por cliente",
+		quick: [
+			"Precio especial del cliente del pedido",
+			"Último precio cobrado",
+			"Precio general",
+		],
+	},
+	clientes: {
+		detail: "Ficha del cliente: saldo, crédito e historial",
+		quick: ["Saldo pendiente", "Crédito disponible", "Datos de contacto"],
+	},
+	cobranza: {
+		detail: "Cuentas por cobrar y abonos",
+		quick: ["Por cobrar hoy", "Registrar abono", "Vencidos"],
+	},
+};
+
+/** Pantalla 7 de un módulo: opciones rápidas + abrir la ventana de detalle. */
+export function ModuleQuickPage({
+	page,
+	customerName,
+	onOpenDetail,
+}: {
+	page: ModulePage;
+	customerName: string | null;
+	onOpenDetail: () => void;
+}) {
+	const info = MODULE_INFO[page];
+	return (
+		<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+			<div>
+				{customerName ? (
+					<FnScreenRow
+						label="Cliente del pedido"
+						value={customerName}
+						highlight
+					/>
+				) : null}
+				<p className="mt-2 mb-1 text-[10px] uppercase tracking-[0.14em] opacity-60">
+					Opciones rápidas (se conectan a datos en la siguiente fase)
+				</p>
+				<ul className="space-y-1 text-xs">
+					{info.quick.map((line) => (
+						<li key={line} className="flex gap-2">
+							<span aria-hidden="true" className="opacity-50">
+								·
+							</span>
+							{line}
+						</li>
+					))}
+				</ul>
+			</div>
+			<button
+				type="button"
+				onClick={onOpenDetail}
+				className="flex flex-col items-start justify-center gap-1 rounded-md border border-[#4d7652] bg-[#13281b] px-4 py-3 text-left transition hover:bg-[#1b3a27] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f39a1e]"
+			>
+				<span className="font-bold text-[#c9ff99] text-sm uppercase tracking-wider">
+					Abrir detalle ▸
+				</span>
+				<span className="text-[11px] opacity-80">{info.detail}</span>
+				<kbd className="mt-1 rounded border border-[#4d7652] bg-[#0b1710] px-1.5 py-0.5 font-bold text-[9px]">
+					Enter · Esc regresa
+				</kbd>
+			</button>
+		</div>
+	);
+}
+
+/** Config: agrupa las páginas técnicas de la estación en un solo menú. */
+export function ConfigPage({
+	onOpen,
+	onClassic,
+	onExit,
+}: {
+	onOpen: (page: FnPage) => void;
+	onClassic: () => void;
+	onExit: () => void;
+}) {
+	const items: Array<{
+		label: string;
+		hint: string;
+		shortcut: string;
+		run: () => void;
+	}> = [
+		{
+			label: "Recipiente y tara",
+			hint: "tambos, cubetas, tara manual",
+			shortcut: "Súper+C",
+			run: () => onOpen("recipiente"),
+		},
+		{
+			label: "Conexión serial",
+			hint: "puerto RS-232 de la I-QY",
+			shortcut: "Súper+B",
+			run: () => onOpen("conexion"),
+		},
+		{
+			label: "Diagnóstico de tramas",
+			hint: "lo que manda la báscula",
+			shortcut: "Súper+X",
+			run: () => onOpen("diagnostico"),
+		},
+		{
+			label: "Teclado · peso manual",
+			hint: "si la báscula no responde",
+			shortcut: "Súper+N",
+			run: () => onOpen("teclado"),
+		},
+		{
+			label: "Tema",
+			hint: "colores de la estación",
+			shortcut: "Súper+M",
+			run: () => onOpen("tema"),
+		},
+		{
+			label: "Atajos de teclado",
+			hint: "lista completa",
+			shortcut: "Súper+/",
+			run: () => onOpen("atajos"),
+		},
+		{
+			label: "Báscula clásica",
+			hint: "pantalla anterior",
+			shortcut: "Súper+V",
+			run: onClassic,
+		},
+		{
+			label: "Salir al dashboard",
+			hint: "menú completo del sistema",
+			shortcut: "—",
+			run: onExit,
+		},
+	];
+	return (
+		<div className="grid gap-x-6 md:grid-cols-2">
+			{items.map((item) => (
+				<FnScreenOption
+					key={item.label}
+					selected={false}
+					label={item.label}
+					hint={item.hint}
+					shortcut={item.shortcut}
+					onSelect={item.run}
+				/>
+			))}
+		</div>
+	);
+}
 
 /** Contenedor claro para formularios existentes (shadcn) dentro del LCD. */
 export function FnFormCard({ children }: { children: ReactNode }) {
