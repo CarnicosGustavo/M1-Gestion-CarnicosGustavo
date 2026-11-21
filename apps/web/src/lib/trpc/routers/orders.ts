@@ -267,6 +267,28 @@ async function orderHasReceivedPurchase(
 	return Boolean(row);
 }
 
+const CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE =
+	"Pese primero o ajuste inventario: no se puede cancelar un pedido con una compra por peso recibida que todavía no se pesó";
+
+/** Compra recibida por peso todavía sin pesar (C5): hay COMPRA y línea PENDIENTE_PESAJE. */
+async function orderHasUnweighedReceivedWeight(
+	dbOrTx: OrdersTx | typeof db,
+	orderId: number,
+): Promise<boolean> {
+	if (!(await orderHasReceivedPurchase(dbOrTx, orderId))) return false;
+	const [row] = await dbOrTx
+		.select({ id: orderItems.id })
+		.from(orderItems)
+		.where(
+			and(
+				eq(orderItems.order_id, orderId),
+				eq(orderItems.status, "PENDIENTE_PESAJE"),
+			),
+		)
+		.limit(1);
+	return Boolean(row);
+}
+
 export const ordersRouter = router({
 	get: protectedProcedure
 		.meta({
@@ -2579,6 +2601,15 @@ export const ordersRouter = router({
 					});
 				}
 
+				const cancelling =
+					status === "cancelled" && order.status !== "cancelled";
+				if (cancelling && (await orderHasUnweighedReceivedWeight(tx, id))) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
+					});
+				}
+
 				const updateData: any = {
 					...data,
 					updated_at: new Date(),
@@ -2904,6 +2935,15 @@ export const ordersRouter = router({
 					upd.status = input.status;
 				} else {
 					upd.status = derivedStatus;
+				}
+
+				if (upd.status === "cancelled" && ord.status !== "cancelled") {
+					if (await orderHasUnweighedReceivedWeight(tx, input.orderId)) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
+						});
+					}
 				}
 
 				await tx.update(orders).set(upd).where(eq(orders.id, input.orderId));
