@@ -155,6 +155,7 @@ export function RecipientePage({
 						inputMode="decimal"
 						value={customTare}
 						onChange={(event) => onCustomTare(event.target.value)}
+						aria-invalid={customTareInvalid}
 						className="w-24 rounded border border-[#4d7652] bg-[#0b1710] px-2 py-1 text-right text-[#c9ff99] outline-none focus:border-[#f39a1e]"
 					/>
 				</label>
