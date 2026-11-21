@@ -2933,15 +2933,72 @@ export const ordersRouter = router({
 		.output(z.object({ success: z.boolean() }))
 		.mutation(async ({ ctx, input }) => {
 			await db.transaction(async (tx) => {
-				await tx.delete(orderItems).where(eq(orderItems.order_id, input.id));
-				await tx
-					.delete(orders)
+				const [order] = await tx
+					.select()
+					.from(orders)
 					.where(
 						and(
 							eq(orders.id, input.id),
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
 						),
+					)
+					.for("update")
+					.limit(1);
+				if (!order) return;
+
+				const closedStatuses = [
+					"COMPLETADA",
+					"paid",
+					"completed",
+					"delivered",
+					"cancelled",
+					"PROCESANDO_PAGO",
+				];
+				if (closedStatuses.includes(order.status ?? "")) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No se puede eliminar un pedido cerrado o en cobro",
+					});
+				}
+
+				const existing = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.id));
+				const incomeTxs = await tx
+					.select({ id: transactions.id })
+					.from(transactions)
+					.where(
+						and(
+							eq(transactions.order_id, input.id),
+							eq(transactions.type, "income"),
+						),
 					);
+				const credits = await tx
+					.select({ id: creditCharges.id })
+					.from(creditCharges)
+					.where(eq(creditCharges.order_id, input.id));
+				const chargeCount = incomeTxs.length + credits.length;
+				if (
+					existing.some((item) => item.status === "COBRADO") ||
+					chargeCount > 1
+				) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede eliminar un pedido con líneas ya cobradas o con más de un cobro",
+					});
+				}
+				if (await orderHasReceivedPurchase(tx, input.id)) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede eliminar un pedido con una compra recibida pendiente de pesaje o cobro",
+					});
+				}
+
+				await tx.delete(orderItems).where(eq(orderItems.order_id, input.id));
+				await tx.delete(orders).where(eq(orders.id, input.id));
 			});
 			return { success: true };
 		}),
