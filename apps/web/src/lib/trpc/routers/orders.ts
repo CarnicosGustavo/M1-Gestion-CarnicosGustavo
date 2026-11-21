@@ -203,14 +203,15 @@ async function deductStockAndMarkCharged(
 				.select()
 				.from(products)
 				.where(eq(products.id, item.product_id))
+				.for("update")
 				.limit(1);
 			if (product) {
 				const itemQuantityKg = item.quantity_kg ? Number(item.quantity_kg) : 0;
-				const newStockKg = Number(product.stock_kg) - itemQuantityKg;
-				const nextPieces =
+				const deductPieces =
 					product.is_sellable_by_weight || !item.quantity_pieces
-						? (product.stock_pieces ?? 0)
-						: (product.stock_pieces ?? 0) - item.quantity_pieces;
+						? 0
+						: item.quantity_pieces;
+				const nextPieces = (product.stock_pieces ?? 0) - deductPieces;
 				const nextWeighedPieces = Math.min(
 					product.weighed_pieces ?? 0,
 					nextPieces,
@@ -218,17 +219,20 @@ async function deductStockAndMarkCharged(
 				await tx
 					.update(products)
 					.set({
-						stock_pieces: nextPieces,
+						stock_pieces:
+							deductPieces > 0
+								? sql`${products.stock_pieces} - ${deductPieces}`
+								: products.stock_pieces,
 						weighed_pieces: Math.max(0, nextWeighedPieces),
-						stock_kg: newStockKg.toFixed(3),
+						stock_kg:
+							itemQuantityKg > 0
+								? sql`${products.stock_kg} - ${itemQuantityKg.toFixed(3)}::numeric`
+								: products.stock_kg,
 					})
 					.where(eq(products.id, item.product_id));
 				await tx.insert(inventoryTransactions).values({
 					product_id: item.product_id,
-					quantity_change_pieces:
-						product.is_sellable_by_weight || !item.quantity_pieces
-							? null
-							: -item.quantity_pieces,
+					quantity_change_pieces: deductPieces > 0 ? -deductPieces : null,
 					quantity_change_kg:
 						itemQuantityKg > 0 ? (-itemQuantityKg).toFixed(3) : null,
 					transaction_type: "VENTA",
@@ -243,6 +247,23 @@ async function deductStockAndMarkCharged(
 			.where(eq(orderItems.id, item.id));
 	}
 	return cents;
+}
+
+async function orderHasReceivedPurchase(
+	dbOrTx: OrdersTx | typeof db,
+	orderId: number,
+): Promise<boolean> {
+	const [row] = await dbOrTx
+		.select({ id: inventoryTransactions.id })
+		.from(inventoryTransactions)
+		.where(
+			and(
+				eq(inventoryTransactions.transaction_type, "COMPRA"),
+				eq(inventoryTransactions.reference_id, orderId),
+			),
+		)
+		.limit(1);
+	return Boolean(row);
 }
 
 export const ordersRouter = router({
@@ -305,7 +326,8 @@ export const ordersRouter = router({
 			const canEdit =
 				!result.orderItems.some((item) => item.status === "COBRADO") &&
 				chargeCount <= 1 &&
-				result.status !== "PROCESANDO_PAGO";
+				result.status !== "PROCESANDO_PAGO" &&
+				!(await orderHasReceivedPurchase(db, result.id));
 			return {
 				...result,
 				orderItems: result.orderItems.map((item) => ({
@@ -1565,6 +1587,44 @@ export const ordersRouter = router({
 						message: "Ítem no encontrado",
 					});
 
+				if (!item.order_id) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Pedido no encontrado",
+					});
+				}
+				// Si la línea ya no está pendiente, el UPDATE condicional más abajo
+				// devuelve CONFLICT («ya fue pesado»). El cierre/cancelación solo
+				// se rechaza cuando todavía habría que pesar.
+				if (item.status === "PENDIENTE_PESAJE") {
+					const [lockedOrder] = await tx
+						.select({ id: orders.id, status: orders.status })
+						.from(orders)
+						.where(eq(orders.id, item.order_id))
+						.for("update")
+						.limit(1);
+					if (!lockedOrder) {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "Pedido no encontrado",
+						});
+					}
+					if (
+						lockedOrder.status === "cancelled" ||
+						lockedOrder.status === "COMPLETADA" ||
+						lockedOrder.status === "paid" ||
+						lockedOrder.status === "completed" ||
+						lockedOrder.status === "delivered" ||
+						lockedOrder.status === "PROCESANDO_PAGO"
+					) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message:
+								"No se puede pesar un artículo de un pedido cancelado, completado o en cobro",
+						});
+					}
+				}
+
 				const subtotal = Math.round((grams * Number(item.unit_price)) / 1000);
 				const actualWeightKg = (grams / 1000).toFixed(3);
 
@@ -1664,6 +1724,46 @@ export const ordersRouter = router({
 						reference_id: item.order_id!,
 						notes: `Pesaje de producción pedido #${item.order_id}`,
 					});
+				} else if (item.product_id && item.order_id) {
+					const purchaseNote = `Compra recibida pedido #${item.order_id}, línea #${item.id}`;
+					const [purchaseMove] = await tx
+						.select()
+						.from(inventoryTransactions)
+						.where(
+							and(
+								eq(inventoryTransactions.reference_id, item.order_id),
+								eq(inventoryTransactions.product_id, item.product_id),
+								eq(inventoryTransactions.transaction_type, "COMPRA"),
+								eq(inventoryTransactions.notes, purchaseNote),
+							),
+						)
+						.limit(1);
+					const alreadyAdded =
+						Number(purchaseMove?.quantity_change_kg ?? 0) > 0;
+					if (purchaseMove && !alreadyAdded) {
+						await tx
+							.select({ id: products.id })
+							.from(products)
+							.where(eq(products.id, item.product_id))
+							.for("update")
+							.limit(1);
+						await tx
+							.update(products)
+							.set({
+								stock_kg: sql`${products.stock_kg} + ${actualWeightKg}::numeric`,
+								updated_at: new Date(),
+							})
+							.where(eq(products.id, item.product_id));
+						await tx
+							.update(inventoryTransactions)
+							.set({ quantity_change_kg: actualWeightKg })
+							.where(
+								and(
+									eq(inventoryTransactions.id, purchaseMove.id),
+									isNull(inventoryTransactions.quantity_change_kg),
+								),
+							);
+					}
 				}
 
 				await tx
@@ -1706,6 +1806,7 @@ export const ordersRouter = router({
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
 						),
 					)
+					.for("update")
 					.limit(1);
 				if (!order) {
 					throw new TRPCError({
@@ -1751,38 +1852,77 @@ export const ordersRouter = router({
 				}
 
 				for (const item of requested) {
-					if (!item.product_id) {
-						await tx
-							.update(orderItems)
-							.set({ status: "COMPLETADO", updated_at: new Date() })
-							.where(eq(orderItems.id, item.id));
-						continue;
+					let product: typeof products.$inferSelect | undefined;
+					if (item.product_id) {
+						const [row] = await tx
+							.select()
+							.from(products)
+							.where(eq(products.id, item.product_id))
+							.for("update")
+							.limit(1);
+						product = row;
 					}
-					const [product] = await tx
-						.select()
-						.from(products)
-						.where(eq(products.id, item.product_id))
-						.limit(1);
-					if (product?.is_sellable_by_weight) {
-						await tx
-							.update(orderItems)
-							.set({
-								status: "PENDIENTE_PESAJE",
+
+					const isWeight = Boolean(product?.is_sellable_by_weight);
+					const quantityPieces = isWeight ? 0 : (item.quantity_pieces ?? 0);
+					const itemUpdate = isWeight
+						? {
+								status: "PENDIENTE_PESAJE" as const,
 								updated_at: new Date(),
-							})
-							.where(eq(orderItems.id, item.id));
+							}
+						: {
+								status: "COMPLETADO" as const,
+								subtotal: String(
+									Math.round(quantityPieces * Number(item.unit_price ?? 0)),
+								),
+								updated_at: new Date(),
+							};
+
+					const [updatedItem] = await tx
+						.update(orderItems)
+						.set(itemUpdate)
+						.where(
+							and(
+								eq(orderItems.id, item.id),
+								eq(orderItems.status, "PENDIENTE_COMPRA"),
+							),
+						)
+						.returning({ id: orderItems.id });
+					if (!updatedItem || !product) {
 						continue;
 					}
-					const subtotal =
-						(item.quantity_pieces ?? 0) * Number(item.unit_price ?? 0);
+
+					if (isWeight) {
+						await tx.insert(inventoryTransactions).values({
+							product_id: product.id,
+							quantity_change_pieces: null,
+							quantity_change_kg: null,
+							transaction_type: "COMPRA",
+							reference_id: order.id,
+							notes: `Compra recibida pedido #${order.id}, línea #${item.id}`,
+						});
+						continue;
+					}
+
+					if (quantityPieces <= 0) {
+						continue;
+					}
+
 					await tx
-						.update(orderItems)
+						.update(products)
 						.set({
-							status: "COMPLETADO",
-							subtotal: String(Math.round(subtotal)),
+							stock_pieces: sql`${products.stock_pieces} + ${quantityPieces}`,
 							updated_at: new Date(),
 						})
-						.where(eq(orderItems.id, item.id));
+						.where(eq(products.id, product.id));
+					await tx.insert(inventoryTransactions).values({
+						product_id: product.id,
+						quantity_change_pieces: quantityPieces,
+						quantity_change_kg: null,
+						transaction_type: "COMPRA",
+						reference_id: order.id,
+						notes: `Compra recibida pedido #${order.id}, línea #${item.id}`,
+					});
 				}
 
 				const remaining = await tx
@@ -2582,6 +2722,13 @@ export const ordersRouter = router({
 						code: "BAD_REQUEST",
 						message:
 							"No se puede editar un pedido con líneas ya cobradas o con más de un cobro",
+					});
+				}
+				if (await orderHasReceivedPurchase(tx, input.orderId)) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede editar un pedido con una compra recibida pendiente de pesaje o cobro",
 					});
 				}
 				const preserved = existing.filter(
