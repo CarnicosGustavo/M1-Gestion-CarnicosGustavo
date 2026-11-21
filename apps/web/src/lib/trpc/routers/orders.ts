@@ -271,24 +271,57 @@ async function orderHasReceivedPurchase(
 	return Boolean(row);
 }
 
-/** Compra recibida por peso todavía sin pesar (C5): hay COMPRA y línea PENDIENTE_PESAJE. */
+/** Compra recibida por peso todavía sin pesar (C5).
+ * Bloquea solo si un COMPRA de este pedido es de un producto cuya línea
+ * sigue PENDIENTE_PESAJE, o si el movimiento es de peso (kg nulo y sin piezas).
+ * No bloquea una venta por peso pendiente junto a una compra por pieza ya recibida.
+ */
 async function orderHasUnweighedReceivedWeight(
 	dbOrTx: OrdersTx | typeof db,
 	orderId: number,
 ): Promise<boolean> {
-	if (!(await orderHasReceivedPurchase(dbOrTx, orderId))) return false;
-	const [row] = await dbOrTx
-		.select({ id: orderItems.id })
+	const moves = await dbOrTx
+		.select({
+			product_id: inventoryTransactions.product_id,
+			quantity_change_kg: inventoryTransactions.quantity_change_kg,
+			quantity_change_pieces: inventoryTransactions.quantity_change_pieces,
+		})
+		.from(inventoryTransactions)
+		.where(
+			and(
+				eq(inventoryTransactions.transaction_type, "COMPRA"),
+				eq(inventoryTransactions.reference_id, orderId),
+			),
+		);
+	if (moves.length === 0) return false;
+
+	const pending = await dbOrTx
+		.select({ product_id: orderItems.product_id })
 		.from(orderItems)
 		.where(
 			and(
 				eq(orderItems.order_id, orderId),
 				eq(orderItems.status, "PENDIENTE_PESAJE"),
 			),
-		)
-		.limit(1);
-	return Boolean(row);
+		);
+	const pendingProductIds = new Set(
+		pending
+			.map((item) => item.product_id)
+			.filter((id): id is number => id != null),
+	);
+
+	for (const move of moves) {
+		const pieces = move.quantity_change_pieces ?? 0;
+		const kgIsNull =
+			move.quantity_change_kg === null || move.quantity_change_kg === undefined;
+		if (kgIsNull && pieces <= 0) return true;
+		if (move.product_id != null && pendingProductIds.has(move.product_id)) {
+			return true;
+		}
+	}
+	return false;
 }
+
 
 async function loadCancelImpact(dbOrTx: OrdersTx | typeof db, orderId: number) {
 	const incomeTxs = await dbOrTx

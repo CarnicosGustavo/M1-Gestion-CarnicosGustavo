@@ -2503,4 +2503,63 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
 	});
 
+
+	it("P31-R2-1: se puede cancelar una compra por pieza recibida aunque haya una venta por peso pendiente", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 0,
+			stock_kg: "0",
+		});
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "5.000",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 2,
+					unitPrice: 1000,
+					requiresPurchase: true,
+				},
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					quantityKg: 2000,
+				},
+			],
+		});
+		await caller.receivePurchase({ orderId: order.id });
+		const items = await getItems(order.id);
+		expect(
+			items.some(
+				(item) =>
+					item.product_id === pieceProductId && item.status === "COMPLETADO",
+			),
+		).toBe(true);
+		expect(
+			items.some(
+				(item) =>
+					item.product_id === weightProductId &&
+					item.status === "PENDIENTE_PESAJE",
+			),
+		).toBe(true);
+
+		const updated = await caller.update({
+			id: order.id,
+			status: "cancelled",
+		});
+		expect(updated.status).toBe("cancelled");
+		const [piece] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, pieceProductId));
+		const [weight] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(piece.stock_pieces).toBe(2);
+		expect(Number(weight.stock_kg)).toBe(5);
+	});
 });
