@@ -272,7 +272,7 @@ export default function RecipesPage({
 				);
 			if (
 				!window.confirm(
-					`Importar ${total} transformaciones del configurador?\n\n• Las recetas del archivo se crean o actualizan (match por nombre de producto).\n• Las recetas que NO estén en el archivo quedarán INACTIVAS (recuperables en el filtro "Todas").\n• También se actualizan los pesos de referencia (canal y piezas).`,
+					`Importar ${total} transformaciones del configurador?\n\n• Las recetas del archivo se crean o actualizan (match por nombre de producto).\n• De los padres incluidos en el archivo, sus recetas que NO vengan en él quedarán INACTIVAS (recuperables en el filtro "Todas"). Los demás padres no se tocan.\n• Si algún producto no existe en el catálogo, la importación se cancela sin cambios.\n• También se actualizan los pesos de referencia (canal y piezas).`,
 				)
 			)
 				return;

@@ -18,6 +18,7 @@ import {
 	MinusIcon,
 	PackageSearchIcon,
 	PlusIcon,
+	RefreshCwIcon,
 	ScaleIcon,
 	ScissorsIcon,
 	SearchIcon,
@@ -68,7 +69,7 @@ type POSProduct = Pick<
 	priceEdited?: boolean;
 };
 
-type Disp = "stock" | "despiece" | "pesaje" | "faltante";
+type Disp = import("./pos-logic").Disp;
 
 type PieceQtyInputProps = {
 	value: number;
@@ -578,6 +579,11 @@ export default function POSPage() {
 			label: "Por despiece",
 			cls: "bg-cg-blue-wash text-[#1e4560] dark:text-cg-blue",
 			Icon: ScissorsIcon,
+		},
+		conversion: {
+			label: "Por conversión",
+			cls: "bg-cg-blue-wash text-[#1e4560] dark:text-cg-blue",
+			Icon: RefreshCwIcon,
 		},
 		pesaje: {
 			label: "Por pesar",

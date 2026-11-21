@@ -9,8 +9,17 @@ export type Avail = {
 	stockPieces: number | null;
 	stockKg: number | string | null;
 	derivable: boolean;
+	/** #23: se obtiene convirtiendo la presentación de una pieza base con stock. */
+	porConversion?: boolean;
 };
-export type Disp = "stock" | "despiece" | "pesaje" | "faltante";
+export type Disp = "stock" | "despiece" | "conversion" | "pesaje" | "faltante";
+
+/** Sin stock directo: despiece, conversión de presentación o faltante. */
+function fallbackDisp(avail?: Avail | null): Disp {
+	if (avail?.derivable) return "despiece";
+	if (avail?.porConversion) return "conversion";
+	return "faltante";
+}
 
 function validPrice(value: number | undefined | null): value is number {
 	return value != null && Number.isFinite(value) && value > 0;
@@ -130,20 +139,19 @@ export function lineDisp(
 ): Disp {
 	const stockPieces = toNum(avail ? avail.stockPieces : p.stock_pieces);
 	const stockKg = toNum(avail ? avail.stockKg : p.stock_kg);
-	const derivable = avail?.derivable ?? false;
 
 	if (p.is_sellable_by_weight) {
 		// N3-3: 0 kg (como null) sigue siendo pesaje, no "en stock".
 		if (!p.quantityKg) {
 			if (stockKg > 0) return "pesaje";
-			return derivable ? "despiece" : "faltante";
+			return fallbackDisp(avail);
 		}
 		if (p.quantityKg <= stockKg) return "stock";
-		return derivable ? "despiece" : "faltante";
+		return fallbackDisp(avail);
 	}
 
 	if (p.quantityPieces <= stockPieces) return "stock";
-	return derivable ? "despiece" : "faltante";
+	return fallbackDisp(avail);
 }
 
 export function catalogDisp(
@@ -157,10 +165,9 @@ export function catalogDisp(
 ): Disp {
 	const stockPieces = toNum(avail ? avail.stockPieces : p.stock_pieces);
 	const stockKg = toNum(avail ? avail.stockKg : p.stock_kg);
-	const derivable = avail?.derivable ?? false;
 
 	if (stockPieces <= 0 && stockKg <= 0) {
-		return derivable ? "despiece" : "faltante";
+		return fallbackDisp(avail);
 	}
 	return p.is_sellable_by_weight ? "pesaje" : "stock";
 }

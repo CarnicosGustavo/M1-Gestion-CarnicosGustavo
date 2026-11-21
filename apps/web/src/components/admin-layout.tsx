@@ -174,7 +174,7 @@ function ThemeControl() {
 						className="fixed inset-0 z-40 cursor-default"
 						onClick={() => setOpen(false)}
 					/>
-					<div className="absolute right-0 top-[calc(100%+10px)] z-50 w-56 rounded-2xl border bg-popover p-3.5 shadow-xl">
+					<div className="absolute top-[calc(100%+10px)] right-0 z-50 w-56 rounded-2xl border bg-popover p-3.5 shadow-xl">
 						<p className="mb-2.5 font-bold text-[10px] text-muted-foreground uppercase tracking-[0.1em]">
 							Paleta
 						</p>
@@ -252,6 +252,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 		navItems.map((item) => [item.href, t(item.labelKey)]),
 	);
 	const cfgActive = cfgNav.some((i) => i.href === pathname);
+	const isPesajeV2 = pathname.startsWith("/admin/weighing-station/v2");
 
 	// El configurador se abre en su propia ventana: sin menú ni cabecera del
 	// dashboard, a pantalla completa.
@@ -273,7 +274,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 						<span className="sr-only">{t("openMenu")}</span>
 					</Button>
 					<h1 className="min-w-0 truncate font-display text-xl tracking-wide">
-						{pageNames[pathname] ?? ""}
+						{pageNames[pathname] ??
+							(pathname.startsWith("/admin/weighing-station")
+								? t("weighingStation")
+								: "")}
 					</h1>
 				</div>
 
@@ -405,7 +409,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 					</Link>
 					<TooltipProvider delayDuration={200}>
 						{opNav.map(({ href, labelKey, icon: Icon }) => {
-							const on = pathname === href;
+							const on =
+								pathname === href ||
+								(href === "/admin/weighing-station" &&
+									pathname.startsWith("/admin/weighing-station/"));
 							return (
 								<Tooltip key={href}>
 									<TooltipTrigger asChild>
@@ -472,10 +479,22 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 					</TooltipProvider>
 				</nav>
 
-				<main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
-					<div className="mx-auto max-w-[1180px]">
+				<main
+					className={
+						isPesajeV2
+							? "flex min-h-0 flex-1 flex-col overflow-hidden p-2 sm:p-3"
+							: "flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8"
+					}
+				>
+					<div
+						className={
+							isPesajeV2
+								? "flex h-full min-h-0 flex-col"
+								: "mx-auto max-w-[1180px]"
+						}
+					>
 						<AntonellaProvider>
-							<RouteAntonellaSlot />
+							{isPesajeV2 ? null : <RouteAntonellaSlot />}
 							{children}
 						</AntonellaProvider>
 					</div>

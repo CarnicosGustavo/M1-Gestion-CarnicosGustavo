@@ -191,6 +191,22 @@ describe("Regla (a) y F5 — lineDisp", () => {
 		).toBe("despiece");
 	});
 
+	it("#23: sin stock, no derivable pero por conversión queda conversion", () => {
+		expect(
+			lineDisp(
+				{
+					id: 1,
+					stock_pieces: 0,
+					stock_kg: 0,
+					is_sellable_by_weight: false,
+					quantityPieces: 2,
+					quantityKg: null,
+				},
+				{ stockPieces: 0, stockKg: 0, derivable: false, porConversion: true },
+			),
+		).toBe("conversion");
+	});
+
 	it("por peso sin stock y no derivable queda faltante", () => {
 		expect(
 			lineDisp({
