@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	canRegisterWeight,
+	formatCustomTareHint,
 	parseCustomTareKg,
 } from "@/lib/weighing/parse-custom-tare";
 
@@ -71,5 +72,18 @@ describe("canRegisterWeight — P32-1", () => {
 				hasItem: true,
 			}),
 		).toBe(false);
+	});
+});
+
+describe("formatCustomTareHint — hint de Otro", () => {
+	test("no muestra NaN kg ni negativos", () => {
+		expect(formatCustomTareHint("1,5")).toBe("—");
+		expect(formatCustomTareHint("-5")).toBe("—");
+		expect(formatCustomTareHint("abc")).toBe("—");
+		expect(formatCustomTareHint("1,5")).not.toMatch(/NaN/i);
+		expect(formatCustomTareHint("-5")).not.toMatch(/-/);
+		expect(formatCustomTareHint("1.5")).toBe("1.500 kg");
+		expect(formatCustomTareHint("0")).toBe("0.000 kg");
+		expect(formatCustomTareHint("")).toBe("0.000 kg");
 	});
 });

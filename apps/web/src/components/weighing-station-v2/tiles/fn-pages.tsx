@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { formatCustomTareHint } from "@/lib/weighing/parse-custom-tare";
 import { FnScreenOption, FnScreenRow } from "../instrument/function-screen";
 import { SHORTCUT_ROWS } from "../shortcuts";
 import {
@@ -139,7 +140,7 @@ export function RecipientePage({
 					label={container.label}
 					hint={
 						container.tare === null
-							? `${Number(customTare || 0).toFixed(3)} kg`
+							? formatCustomTareHint(customTare)
 							: `${container.tare.toFixed(3)} kg`
 					}
 					shortcut={String(index + 1)}

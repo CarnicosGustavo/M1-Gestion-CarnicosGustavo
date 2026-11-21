@@ -9,6 +9,13 @@ export function parseCustomTareKg(raw: string): number | null {
 	return value;
 }
 
+/** Hint de «Otro»: nunca «NaN kg» ni un valor negativo. */
+export function formatCustomTareHint(raw: string): string {
+	const parsed = parseCustomTareKg(raw);
+	if (parsed === null) return "—";
+	return `${parsed.toFixed(3)} kg`;
+}
+
 export function canRegisterWeight(input: {
 	netKg: number;
 	customTareInvalid: boolean;
