@@ -2463,13 +2463,18 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 		});
 		expect(updated.status).toBe("cancelled");
 		expect(updated.notes).toContain("Pedido del martes");
-		expect(updated.notes).toContain("Cancelado ");
+		expect(updated.notes).toContain("[AUDITORIA-CANCELACION] Cancelado ");
 		expect(updated.notes).toContain("por user-rp");
 		expect(updated.notes).toContain("estado previo: LISTA_PARA_COBRO");
 		expect(updated.notes).toContain("cobros: 1 ($100.00)");
 		expect(updated.notes).toContain("créditos: 0 ($0.00)");
 		expect(updated.notes).toContain("America/Mexico_City");
 		expect(updated.notes).toContain("El stock no se revierte.");
+
+		const ticket = await ticketsCaller.generateTicket({ orderId: created.id });
+		expect(ticket.notes).toBe("Pedido del martes");
+		expect(ticket.notes).not.toContain("[AUDITORIA-CANCELACION]");
+		expect(ticket.notes).not.toContain("user-rp");
 	});
 
 	it("P31-R2-2: orders.update cancela una venta que sigue PENDIENTE_PESAJE", async () => {

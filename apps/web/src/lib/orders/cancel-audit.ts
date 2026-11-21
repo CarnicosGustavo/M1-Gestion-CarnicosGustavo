@@ -1,5 +1,7 @@
 /** Texto y nota de auditoría al cancelar un pedido (sin columnas nuevas). */
 
+export const CANCEL_AUDIT_PREFIX = "[AUDITORIA-CANCELACION]";
+
 export function formatPesosFromCents(cents: number): string {
 	return (cents / 100).toFixed(2);
 }
@@ -19,8 +21,17 @@ export function formatCancelWhen(date = new Date()): string {
 	return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} America/Mexico_City`;
 }
 
+export function formatCancelActor(
+	userId: string,
+	userName?: string | null,
+): string {
+	const name = userName?.trim();
+	return name ? `${name} (${userId})` : userId;
+}
+
 export type CancelImpact = {
 	userId: string;
+	userName?: string | null;
 	when?: Date;
 	previousStatus: string | null;
 	incomeCount: number;
@@ -34,9 +45,22 @@ export function appendCancelAuditNote(
 	input: CancelImpact,
 ): string {
 	const when = formatCancelWhen(input.when ?? new Date());
-	const line = `Cancelado ${when} por ${input.userId}; estado previo: ${input.previousStatus ?? "desconocido"}; cobros: ${input.incomeCount} ($${formatPesosFromCents(input.incomeCents)}); créditos: ${input.creditCount} ($${formatPesosFromCents(input.creditCents)}). El stock no se revierte.`;
+	const actor = formatCancelActor(input.userId, input.userName);
+	const line = `${CANCEL_AUDIT_PREFIX} Cancelado ${when} por ${actor}; estado previo: ${input.previousStatus ?? "desconocido"}; cobros: ${input.incomeCount} ($${formatPesosFromCents(input.incomeCents)}); créditos: ${input.creditCount} ($${formatPesosFromCents(input.creditCents)}). El stock no se revierte.`;
 	const prev = existing?.trim();
 	return prev ? `${prev}\n${line}` : line;
+}
+
+export function stripCancelAuditNotes(
+	notes: string | null | undefined,
+): string | null {
+	if (notes == null) return notes ?? null;
+	const kept = notes
+		.split("\n")
+		.filter((line) => !line.trim().startsWith(CANCEL_AUDIT_PREFIX))
+		.join("\n")
+		.trim();
+	return kept.length > 0 ? kept : null;
 }
 
 export function cancelConfirmSummaryText(input: {
@@ -54,4 +78,7 @@ export function cancelConfirmSummaryText(input: {
 }
 
 export const CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE =
-	"Pese primero o ajuste inventario: no se puede cancelar un pedido con una compra por peso recibida que todavía no se pesó";
+	"Pese primero o ajuste inventario: no se puede cancelar mientras una compra recibida de un producto por peso siga sin pesar.";
+
+export const CANCEL_SUMMARY_ERROR_MESSAGE =
+	"No se pudo cargar el resumen de la cancelación. Inténtalo de nuevo.";

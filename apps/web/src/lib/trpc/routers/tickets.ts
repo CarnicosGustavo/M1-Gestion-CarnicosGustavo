@@ -2,6 +2,7 @@ import { and, eq, or } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import { creditCharges, orders, transactions } from "@/lib/db/schema";
+import { stripCancelAuditNotes } from "@/lib/orders/cancel-audit";
 import { protectedProcedure, router } from "../init";
 
 export const ticketsRouter = router({
@@ -123,7 +124,7 @@ export const ticketsRouter = router({
 				amountDue,
 				paymentStatus,
 				status: order.status,
-				notes: order.notes,
+				notes: stripCancelAuditNotes(order.notes),
 			};
 		}),
 });
