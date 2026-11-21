@@ -165,6 +165,8 @@ const DEMO_TICKETS = [
 	},
 ];
 
+import * as peggyVoice from "./peggy-voice";
+
 type SpeechRecognitionLike = {
 	lang: string;
 	interimResults: boolean;
@@ -242,9 +244,22 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		transcript: string;
 		answer: string;
 	}>({ status: "idle", transcript: "", answer: "" });
-	const [speechSupported, setSpeechSupported] = useState(true);
-	useEffect(() => setSpeechSupported(speechRecognitionCtor() !== null), []);
+	// Con x.ai, el servidor transcribe (cualquier navegador) y Peggy habla (Ara).
+	const voiceInfoQuery = useQuery({
+		...trpc.antonella.voiceInfo.queryOptions(),
+		enabled: !demo,
+		staleTime: 5 * 60_000,
+	});
+	const serverVoice = voiceInfoQuery.data?.serverVoice === true;
+	const [browserSpeech, setBrowserSpeech] = useState(true);
+	const [canRecord, setCanRecord] = useState(false);
+	useEffect(() => {
+		setBrowserSpeech(speechRecognitionCtor() !== null);
+		setCanRecord(peggyVoice.canRecord());
+	}, []);
+	const speechSupported = (serverVoice && canRecord) || browserSpeech;
 	const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+	const recorderRef = useRef<peggyVoice.NoteRecorder | null>(null);
 	/** Esc durante el dictado: se descarta lo grabado. */
 	const voiceCancelledRef = useRef(false);
 	const [newOrderDraft, setNewOrderDraft] = useState<OrderDraft | null>(null);
@@ -1197,6 +1212,30 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			});
 			return;
 		}
+		peggyVoice.hush();
+		if (serverVoice && canRecord) {
+			if (recorderRef.current) return;
+			setVoice({ status: "listening", transcript: "", answer: "" });
+			const starting = peggyVoice.startRecording();
+			// Marcador mientras el navegador pide permiso del micrófono.
+			recorderRef.current = {
+				stop: async () => {
+					const recorder = await starting;
+					return recorder.stop();
+				},
+				cancel: () => {
+					starting.then((recorder) => recorder.cancel()).catch(() => undefined);
+				},
+			};
+			starting.catch(() => {
+				recorderRef.current = null;
+				toast.error(
+					"No pude usar el micrófono: revisa el permiso del navegador.",
+				);
+				setVoice({ status: "error", transcript: "", answer: "" });
+			});
+			return;
+		}
 		const Ctor = speechRecognitionCtor();
 		if (!Ctor) {
 			setVoice({ status: "idle", transcript: "", answer: "" });
@@ -1239,7 +1278,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			recognitionRef.current = null;
 			setVoice((current) => ({ ...current, status: "idle" }));
 		}
-	}, [askAntonella, demo]);
+	}, [askAntonella, demo, serverVoice, canRecord]);
 	const stopVoice = useCallback(() => {
 		if (demo) {
 			if (voiceCancelledRef.current) {
@@ -1250,8 +1289,68 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			transcriptRef.current = "";
 			return;
 		}
+		const recorder = recorderRef.current;
+		if (recorder) {
+			recorderRef.current = null;
+			if (voiceCancelledRef.current) {
+				recorder.cancel();
+				setVoice({ status: "idle", transcript: "", answer: "" });
+				return;
+			}
+			setVoice({ status: "thinking", transcript: "", answer: "" });
+			recorder
+				.stop()
+				.then((audio) => {
+					if (voiceCancelledRef.current) return "";
+					if (audio.size < 2000) return "";
+					return peggyVoice.transcribe(audio);
+				})
+				.then((text) => {
+					if (voiceCancelledRef.current) {
+						setVoice({ status: "idle", transcript: "", answer: "" });
+					} else if (text) {
+						transcriptRef.current = text;
+						askAntonella(text);
+					} else {
+						setVoice({ status: "idle", transcript: "", answer: "" });
+					}
+				})
+				.catch((error: unknown) => {
+					setVoice({ status: "error", transcript: "", answer: "" });
+					toast.error(error instanceof Error ? error.message : "Dictado falló");
+				});
+			return;
+		}
 		recognitionRef.current?.stop();
 	}, [demo, askAntonella]);
+
+	// Peggy contesta en voz alta (Ara) lo que anotó o lo que le preguntaron.
+	const spokenRef = useRef("");
+	useEffect(() => {
+		if (!serverVoice || voice.status !== "answered") return;
+		const key = `${voice.transcript}|${voice.answer}|${newOrderDraft?.transcript ?? ""}`;
+		if (spokenRef.current === key) return;
+		spokenRef.current = key;
+		if (newOrderDraft && newOrderDraft.transcript === voice.transcript) {
+			const customer = catalogCustomers.find(
+				(entry) => entry.id === newOrderDraft.customerId,
+			);
+			void peggyVoice.speak(
+				peggyVoice.orderSummary(
+					customer?.name ?? null,
+					newOrderDraft.customerQuery ?? "",
+					newOrderDraft.lines,
+					(id) => catalog.find((p) => p.id === id)?.name ?? "",
+					newOrderDraft.unmatched ?? [],
+				),
+			);
+		} else if (voice.answer) {
+			void peggyVoice.speak(voice.answer.slice(0, 1200));
+		}
+	}, [serverVoice, voice, newOrderDraft, catalogCustomers, catalog]);
+	useEffect(() => {
+		if (overlay !== "voicenote") peggyVoice.hush();
+	}, [overlay]);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {

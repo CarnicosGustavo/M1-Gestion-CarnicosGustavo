@@ -12,7 +12,7 @@
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:verify-drift": "bun run scripts/verify-schema-drift.ts",
-		"test": "bun test src/lib/trpc/routers/__tests__ src/lib/scale/__tests__ src/app/admin/pos src/app/admin/checkout src/components/weighing-station-v2/__tests__",
+		"test": "bun test src/lib/trpc/routers/__tests__ src/lib/scale/__tests__ src/app/admin/pos src/app/admin/checkout src/components/weighing-station-v2/__tests__ src/lib/ai/__tests__",
 		"test:coverage": "bun test --coverage src/lib/trpc/routers/__tests__ src/lib/scale/__tests__ src/app/admin/pos src/app/admin/checkout",
 		"prepare-prod": "bun scripts/prepare-prod.ts"
 	},
