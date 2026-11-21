@@ -312,9 +312,19 @@ export const DEMO_CATALOG = [
 	},
 ];
 
-export const DEMO_CUSTOMERS = [
+export const DEMO_CUSTOMERS: Array<{
+	id: number;
+	name: string;
+	contact_name?: string;
+	phone?: string;
+}> = [
 	{ id: 1, name: "Carnicería La Esperanza" },
-	{ id: 2, name: "Mercado San Juan" },
+	{
+		id: 2,
+		name: "Mercado San Juan",
+		contact_name: "Don Ramiro",
+		phone: "55 1234 5678",
+	},
 	{ id: 3, name: "Taquería Los Primos" },
 	{ id: 4, name: "Carnicería El Toro" },
 ];

@@ -148,3 +148,16 @@ body:has([data-pesaje-station]) [data-antonella-launcher] {
 	animation: pz-voice 0.9s ease-in-out infinite;
 	transform-origin: center;
 }
+
+/* Nota de voz: cada renglón se «escribe» de izquierda a derecha. */
+@keyframes pz-write {
+	from {
+		clip-path: inset(0 100% 0 0);
+	}
+	to {
+		clip-path: inset(0 0 0 0);
+	}
+}
+.pz-write {
+	animation: pz-write 0.7s steps(28, end) both;
+}

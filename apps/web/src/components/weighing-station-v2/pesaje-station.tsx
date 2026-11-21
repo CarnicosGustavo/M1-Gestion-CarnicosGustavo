@@ -68,6 +68,7 @@ import {
 } from "./overlays/new-order-overlay";
 import { OrdersOverlay } from "./overlays/orders-overlay";
 import { TicketsOverlay } from "./overlays/tickets-overlay";
+import { VoiceNote } from "./overlays/voice-note";
 import { usePesajeTheme } from "./pesaje-themes";
 import "./pesaje-themes.css";
 import {
@@ -244,6 +245,8 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const [speechSupported, setSpeechSupported] = useState(true);
 	useEffect(() => setSpeechSupported(speechRecognitionCtor() !== null), []);
 	const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+	/** Esc durante el dictado: se descarta lo grabado. */
+	const voiceCancelledRef = useRef(false);
 	const [newOrderDraft, setNewOrderDraft] = useState<OrderDraft | null>(null);
 	const transcriptRef = useRef("");
 
@@ -328,7 +331,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	});
 	const customersQuery = useQuery({
 		...trpc.customers.list.queryOptions(),
-		enabled: !demo && overlay === "neworder",
+		enabled: !demo && (overlay === "neworder" || overlay === "voicenote"),
 	});
 	const catalog: CatalogProduct[] = useMemo(
 		() =>
@@ -348,6 +351,8 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		: (customersQuery.data ?? []).map((c) => ({
 				id: c.id,
 				name: c.name ?? `Cliente ${c.id}`,
+				contact_name: c.contact_name ?? undefined,
+				phone: c.phone ?? c.whatsapp_phone ?? undefined,
 			}));
 
 	const orders: PesajeOrder[] = demo
@@ -528,6 +533,30 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			},
 			onError: (error) => toast.error(error.message),
 		}),
+	);
+
+	const createOrder = useCallback(
+		(customerId: number, lines: OrderDraft["lines"]) => {
+			if (demo) {
+				toast.success("Demostración: pedido creado y enviado a Pedidos");
+				setOverlay(null);
+				setNewOrderDraft(null);
+				return;
+			}
+			createOrderMutation.mutate({
+				customerId,
+				items: lines.map((line) => {
+					const product = catalog.find((p) => p.id === line.productId);
+					return {
+						productId: line.productId,
+						quantityPieces: line.pieces || undefined,
+						quantityKg: line.kg ? Math.round(line.kg * 1000) : undefined,
+						unitPrice: Math.round(Number(product?.price ?? 0) * 100),
+					};
+				}),
+			});
+		},
+		[demo, catalog, createOrderMutation],
 	);
 
 	const returnMutation = useMutation(
@@ -1108,10 +1137,9 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					setVoice({
 						status: "answered",
 						transcript: text,
-						answer: "Pedido listo: revísalo y confirma con Ctrl+Enter.",
+						answer: "",
 					});
-					setOverlay("neworder");
-				}, 700);
+				}, 900);
 				return;
 			}
 			if (demo) {
@@ -1141,14 +1169,8 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 								unmatched: result.unmatched,
 								transcript: text,
 							});
-							setVoice({
-								status: "answered",
-								transcript: text,
-								answer: result.customerId
-									? "Pedido listo: revísalo y confirma con Ctrl+Enter."
-									: `No encontré al cliente «${result.customerQuery}»: elígelo y confirma.`,
-							});
-							setOverlay("neworder");
+							// Se queda en la nota: confirmar (Enter) o editar (E).
+							setVoice({ status: "answered", transcript: text, answer: "" });
 							return;
 						}
 						voiceChatMutation.mutate({ message: text });
@@ -1161,7 +1183,20 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const startVoice = useCallback(() => {
 		setFnPage("voz");
 		setFocusedTile(7);
-		setOverlay(null);
+		setNewOrderDraft(null);
+		setOverlay("voicenote");
+		voiceCancelledRef.current = false;
+		if (demo) {
+			// Vista previa sin micrófono: se simula el dictado de ejemplo.
+			transcriptRef.current =
+				"Nuevo pedido para Mercado San Juan: 8 piernas, 5 pechos y 3 cabezas";
+			setVoice({
+				status: "listening",
+				transcript: transcriptRef.current,
+				answer: "",
+			});
+			return;
+		}
 		const Ctor = speechRecognitionCtor();
 		if (!Ctor) {
 			setVoice({ status: "idle", transcript: "", answer: "" });
@@ -1188,6 +1223,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		};
 		recognition.onend = () => {
 			recognitionRef.current = null;
+			if (voiceCancelledRef.current) {
+				setVoice({ status: "idle", transcript: "", answer: "" });
+				return;
+			}
 			const text = transcriptRef.current.trim();
 			if (text) askAntonella(text);
 			else setVoice((current) => ({ ...current, status: "idle" }));
@@ -1200,10 +1239,19 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			recognitionRef.current = null;
 			setVoice((current) => ({ ...current, status: "idle" }));
 		}
-	}, [askAntonella]);
+	}, [askAntonella, demo]);
 	const stopVoice = useCallback(() => {
+		if (demo) {
+			if (voiceCancelledRef.current) {
+				setVoice({ status: "idle", transcript: "", answer: "" });
+			} else if (transcriptRef.current) {
+				askAntonella(transcriptRef.current);
+			}
+			transcriptRef.current = "";
+			return;
+		}
 		recognitionRef.current?.stop();
-	}, []);
+	}, [demo, askAntonella]);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
@@ -1264,7 +1312,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					break;
 				case "close":
 					// Esc siempre regresa de volada a la pantalla principal.
-					if (voice.status === "listening") stopVoice();
+					if (voice.status === "listening") {
+						voiceCancelledRef.current = true;
+						stopVoice();
+					}
 					setOverlay(null);
 					setFnArmed(false);
 					setFnPage("inicio");
@@ -2034,6 +2085,45 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					onClose={() => setOverlay(null)}
 				/>
 			) : null}
+			{overlay === "voicenote" ? (
+				<VoiceNote
+					status={voice.status}
+					transcript={voice.transcript}
+					answer={voice.answer}
+					customer={(() => {
+						const c = catalogCustomers.find(
+							(entry) => entry.id === newOrderDraft?.customerId,
+						);
+						return c
+							? {
+									name: c.name,
+									contact: c.contact_name ?? null,
+									phone: c.phone ?? null,
+								}
+							: null;
+					})()}
+					customerQuery={newOrderDraft?.customerQuery ?? ""}
+					lines={newOrderDraft?.lines ?? []}
+					unmatched={newOrderDraft?.unmatched ?? []}
+					productName={(id) =>
+						catalog.find((p) => p.id === id)?.name ?? `#${id}`
+					}
+					busy={createOrderMutation.isPending}
+					onConfirm={() => {
+						if (newOrderDraft?.customerId) {
+							createOrder(newOrderDraft.customerId, newOrderDraft.lines);
+						}
+					}}
+					onEdit={() => setOverlay("neworder")}
+					onClose={() => {
+						if (voice.status === "listening") {
+							voiceCancelledRef.current = true;
+							stopVoice();
+						}
+						setOverlay(null);
+					}}
+				/>
+			) : null}
 			{overlay === "neworder" ? (
 				<NewOrderOverlay
 					// Un borrador nuevo (voz) reinicia el formulario.
@@ -2042,25 +2132,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					customers={catalogCustomers}
 					initial={newOrderDraft}
 					busy={createOrderMutation.isPending}
-					onCreate={({ customerId, lines }) => {
-						if (demo) {
-							toast.success("Demostración: pedido creado");
-							setOverlay(null);
-							return;
-						}
-						createOrderMutation.mutate({
-							customerId,
-							items: lines.map((line) => {
-								const product = catalog.find((p) => p.id === line.productId);
-								return {
-									productId: line.productId,
-									quantityPieces: line.pieces || undefined,
-									quantityKg: line.kg ? Math.round(line.kg * 1000) : undefined,
-									unitPrice: Math.round(Number(product?.price ?? 0) * 100),
-								};
-							}),
-						});
-					}}
+					onCreate={({ customerId, lines }) => createOrder(customerId, lines)}
 					onClose={() => setOverlay(null)}
 				/>
 			) : null}

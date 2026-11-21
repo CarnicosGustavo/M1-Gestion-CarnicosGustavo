@@ -26,6 +26,7 @@ export type PesajeOverlay =
 	| "batch"
 	| "module"
 	| "neworder"
+	| "voicenote"
 	| null;
 
 /** Páginas de la pantalla de funciones (7). */
