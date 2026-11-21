@@ -944,7 +944,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			shortcut: "Enter",
 			label: "Registrar peso del renglón",
 			onPress: handleRegisterWeight,
-			disabled: !hasValidWeight || currentItem === null,
+			disabled:
+				!hasValidWeight ||
+				currentItem === null ||
+				updateWeightMutation.isPending,
 		},
 	];
 
@@ -999,7 +1002,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			shortcut: "Enter",
 			tone: "green",
 			wide: true,
-			disabled: !hasValidWeight || currentItem === null,
+			disabled:
+				!hasValidWeight ||
+				currentItem === null ||
+				updateWeightMutation.isPending,
 			onPress: handleRegisterWeight,
 		},
 		{

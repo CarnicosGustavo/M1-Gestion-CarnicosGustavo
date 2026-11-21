@@ -98,3 +98,24 @@ describe("input de tara v2 — aria-invalid", () => {
 		expect(src).toMatch(/aria-invalid=\{customTareInvalid\}/);
 	});
 });
+
+describe("canRegisterWeight — botones apagados si isPending", () => {
+	test("los botones de registrar quedan deshabilitados mientras el pesaje está pendiente", () => {
+		expect(
+			canRegisterWeight({
+				netKg: 2,
+				customTareInvalid: false,
+				hasItem: true,
+				isPending: true,
+			}),
+		).toBe(false);
+		expect(
+			canRegisterWeight({
+				netKg: 2,
+				customTareInvalid: false,
+				hasItem: true,
+				isPending: false,
+			}),
+		).toBe(true);
+	});
+});
