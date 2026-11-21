@@ -47,9 +47,14 @@ import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { use, useState } from "react";
 import { toast } from "sonner";
+import { CancelConfirmationDialog } from "@/components/cancel-confirmation-dialog";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { OrderDisassemblyManager } from "@/components/order-disassembly-manager";
 import { TicketModal } from "@/components/ticket-modal";
+import {
+	CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
+	cancelConfirmSummaryText,
+} from "@/lib/orders/cancel-audit";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
 
@@ -117,6 +122,7 @@ export default function OrderDetailPage({
 	const [ticketOpen, setTicketOpen] = useState(false);
 	const [editOpen, setEditOpen] = useState(false);
 	const [deleteOpen, setDeleteOpen] = useState(false);
+	const [cancelOpen, setCancelOpen] = useState(false);
 	const [payOpen, setPayOpen] = useState(false);
 	const [payMethodId, setPayMethodId] = useState<string>("");
 	const [payType, setPayType] = useState<"contado" | "credito">("contado");
@@ -148,6 +154,7 @@ export default function OrderDetailPage({
 				else if (data?.adjustedSale > 0)
 					toast.success("Pedido actualizado y venta ajustada");
 				else toast.success("Pedido actualizado");
+				setCancelOpen(false);
 				setEditOpen(false);
 				refetch();
 				queryClient.invalidateQueries({ queryKey: invalidateKey });
@@ -155,6 +162,11 @@ export default function OrderDetailPage({
 			onError: (err: any) => toast.error(err.message ?? "No se pudo guardar"),
 		}),
 	);
+
+	const cancelSummaryQuery = useQuery({
+		...trpc.orders.cancelSummary.queryOptions({ id: orderId }),
+		enabled: cancelOpen,
+	});
 
 	const deleteMutation = useMutation(
 		trpc.orders.delete.mutationOptions({
@@ -284,7 +296,7 @@ export default function OrderDetailPage({
 	};
 	const editTotalPesos = editItems.reduce((s, r) => s + editSubtotal(r), 0);
 
-	const saveFullEdit = () => {
+	const buildFullEditPayload = () => {
 		const items = editItems
 			.filter((r) => r.productName.trim())
 			.map((r) => ({
@@ -300,13 +312,23 @@ export default function OrderDetailPage({
 			"PENDIENTE_PESAJE",
 			"LISTA_PARA_COBRO",
 		];
-		replaceItemsMutation.mutate({
+		return {
 			orderId,
 			customerId: editCustomerId ? Number.parseInt(editCustomerId) : null,
 			notes: editNotes || undefined,
 			status: allowed.includes(editStatus) ? (editStatus as any) : undefined,
 			items,
-		});
+		};
+	};
+
+	const saveFullEdit = () => {
+		const goingToCancel =
+			editStatus === "cancelled" && order?.status !== "cancelled";
+		if (goingToCancel) {
+			setCancelOpen(true);
+			return;
+		}
+		replaceItemsMutation.mutate(buildFullEditPayload());
 	};
 
 	if (isLoading) {
@@ -953,6 +975,25 @@ export default function OrderDetailPage({
 			</Dialog>
 
 			{/* ── Confirmar eliminación ── */}
+			<CancelConfirmationDialog
+				open={cancelOpen}
+				onOpenChange={setCancelOpen}
+				summaryText={
+					cancelSummaryQuery.data
+						? cancelConfirmSummaryText(cancelSummaryQuery.data)
+						: undefined
+				}
+				isLoading={cancelSummaryQuery.isLoading}
+				blocked={
+					cancelSummaryQuery.data?.blockedByUnweighedReceivedWeight === true
+				}
+				blockedMessage={CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE}
+				isPending={replaceItemsMutation.isPending}
+				onConfirm={() => {
+					replaceItemsMutation.mutate(buildFullEditPayload());
+				}}
+			/>
+
 			<DeleteConfirmationDialog
 				open={deleteOpen}
 				onOpenChange={setDeleteOpen}

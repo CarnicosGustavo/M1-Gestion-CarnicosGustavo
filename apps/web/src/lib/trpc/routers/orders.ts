@@ -16,6 +16,10 @@ import {
 	scaleReadings,
 	transactions,
 } from "@/lib/db/schema";
+import {
+	appendCancelAuditNote,
+	CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
+} from "@/lib/orders/cancel-audit";
 import { despieceRecipeFilter } from "@/lib/recipes/effective-recipes";
 import { almacenProcedure, protectedProcedure, router } from "../init";
 import {
@@ -267,9 +271,6 @@ async function orderHasReceivedPurchase(
 	return Boolean(row);
 }
 
-const CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE =
-	"Pese primero o ajuste inventario: no se puede cancelar un pedido con una compra por peso recibida que todavía no se pesó";
-
 /** Compra recibida por peso todavía sin pesar (C5): hay COMPRA y línea PENDIENTE_PESAJE. */
 async function orderHasUnweighedReceivedWeight(
 	dbOrTx: OrdersTx | typeof db,
@@ -287,6 +288,33 @@ async function orderHasUnweighedReceivedWeight(
 		)
 		.limit(1);
 	return Boolean(row);
+}
+
+async function loadCancelImpact(dbOrTx: OrdersTx | typeof db, orderId: number) {
+	const incomeTxs = await dbOrTx
+		.select({ amount: transactions.amount })
+		.from(transactions)
+		.where(
+			and(eq(transactions.order_id, orderId), eq(transactions.type, "income")),
+		);
+	const credits = await dbOrTx
+		.select({ amount: creditCharges.amount })
+		.from(creditCharges)
+		.where(eq(creditCharges.order_id, orderId));
+	const incomeCents = incomeTxs.reduce(
+		(sum, row) => sum + Math.round(Number(row.amount ?? 0)),
+		0,
+	);
+	const creditPesos = credits.reduce(
+		(sum, row) => sum + Number(row.amount ?? 0),
+		0,
+	);
+	return {
+		incomeCount: incomeTxs.length,
+		incomeCents,
+		creditCount: credits.length,
+		creditCents: Math.round(creditPesos * 100),
+	};
 }
 
 export const ordersRouter = router({
@@ -2524,6 +2552,46 @@ export const ordersRouter = router({
 			});
 		}),
 
+	cancelSummary: protectedProcedure
+		.input(z.object({ id: z.number() }))
+		.output(
+			z.object({
+				status: z.string().nullable(),
+				incomeCount: z.number(),
+				incomeCents: z.number(),
+				creditCount: z.number(),
+				creditCents: z.number(),
+				blockedByUnweighedReceivedWeight: z.boolean(),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			const [order] = await db
+				.select({ id: orders.id, status: orders.status })
+				.from(orders)
+				.where(
+					and(
+						eq(orders.id, input.id),
+						inArray(orders.user_uid, [ctx.user.id, "system"]),
+					),
+				)
+				.limit(1);
+			if (!order) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Pedido no encontrado",
+				});
+			}
+			const impact = await loadCancelImpact(db, input.id);
+			return {
+				status: order.status ?? null,
+				...impact,
+				blockedByUnweighedReceivedWeight: await orderHasUnweighedReceivedWeight(
+					db,
+					input.id,
+				),
+			};
+		}),
+
 	update: protectedProcedure
 		.meta({
 			openapi: {
@@ -2617,6 +2685,14 @@ export const ordersRouter = router({
 				if (status !== undefined) updateData.status = status;
 				if (total_amount !== undefined)
 					updateData.total_amount = total_amount.toFixed(2);
+				if (cancelling) {
+					const impact = await loadCancelImpact(tx, id);
+					updateData.notes = appendCancelAuditNote(order.notes, {
+						userId: ctx.user.id,
+						previousStatus: order.status ?? null,
+						...impact,
+					});
+				}
 				// Cancelar no revierte el stock de las líneas PESADO:
 				// el pesaje de venta no mueve inventario (el descuento es en el
 				// cobro); el de una compra recibida sí suma el peso real y esa
@@ -2717,7 +2793,11 @@ export const ordersRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			return db.transaction(async (tx) => {
 				const [ord] = await tx
-					.select({ id: orders.id, status: orders.status })
+					.select({
+						id: orders.id,
+						status: orders.status,
+						notes: orders.notes,
+					})
 					.from(orders)
 					.where(
 						and(
@@ -2944,6 +3024,14 @@ export const ordersRouter = router({
 							message: CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
 						});
 					}
+					const impact = await loadCancelImpact(tx, input.orderId);
+					const baseNotes =
+						input.notes !== undefined ? input.notes : (ord.notes ?? null);
+					upd.notes = appendCancelAuditNote(baseNotes, {
+						userId: ctx.user.id,
+						previousStatus: ord.status ?? null,
+						...impact,
+					});
 				}
 
 				await tx.update(orders).set(upd).where(eq(orders.id, input.orderId));

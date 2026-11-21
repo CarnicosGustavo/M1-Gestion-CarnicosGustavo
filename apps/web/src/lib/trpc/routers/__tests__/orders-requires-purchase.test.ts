@@ -2149,7 +2149,6 @@ describe("orders R4-13 — Compra recibida suma stock", () => {
 		expect(await stockKg()).toBe(5);
 	});
 
-
 	it("P28-R2-2: el pesaje también rechaza un pedido cerrado COMPLETADA", async () => {
 		const order = await createWeightOnlyFaltante(2000);
 		await caller.receivePurchase({ orderId: order.id });
@@ -2364,7 +2363,6 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 			.where(eq(products.id, weightProductId));
 		expect(Number(after.stock_kg)).toBe(2);
 	});
-
 	it("P31-1: no se cancela una compra por peso recibida que todavía no se pesó", async () => {
 		await updateProductStock(weightProductId, {
 			stock_pieces: 0,
@@ -2398,7 +2396,6 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 			.where(eq(products.id, weightProductId));
 		expect(Number(stock.stock_kg)).toBe(0);
 	});
-
 
 	it("P31-4: delete rechaza un pedido abierto con un solo cobro aunque no haya línea COBRADO", async () => {
 		await updateProductStock(pieceProductId, {
@@ -2436,4 +2433,42 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 		expect(await getTransactions(order.id)).toHaveLength(1);
 	});
 
+	it("al cancelar deja en notas quién, cuándo, el estado previo y que el stock no se revierte", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const [created] = await db
+			.insert(orders)
+			.values({
+				customer_id: customerId,
+				total_amount: "1000",
+				user_uid: "user-rp",
+				status: "LISTA_PARA_COBRO",
+				notes: "Pedido del martes",
+			})
+			.returning();
+		await db.insert(transactions).values({
+			order_id: created.id,
+			payment_method_id: paymentMethodId,
+			amount: 10000,
+			user_uid: "user-rp",
+			status: "completed",
+			category: "selling",
+			type: "income",
+		});
+		const updated = await caller.update({
+			id: created.id,
+			status: "cancelled",
+		});
+		expect(updated.status).toBe("cancelled");
+		expect(updated.notes).toContain("Pedido del martes");
+		expect(updated.notes).toContain("Cancelado ");
+		expect(updated.notes).toContain("por user-rp");
+		expect(updated.notes).toContain("estado previo: LISTA_PARA_COBRO");
+		expect(updated.notes).toContain("cobros: 1 ($100.00)");
+		expect(updated.notes).toContain("créditos: 0 ($0.00)");
+		expect(updated.notes).toContain("America/Mexico_City");
+		expect(updated.notes).toContain("El stock no se revierte.");
+	});
 });
