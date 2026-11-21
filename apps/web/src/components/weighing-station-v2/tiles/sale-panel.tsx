@@ -84,10 +84,6 @@ export function SalePanel(props: SalePanelProps) {
 			bodyClassName="flex min-h-0 flex-1 flex-col p-0"
 		>
 			<div className="flex min-h-0 flex-1 flex-col">
-				<p className="shrink-0 border-[#2d333b] border-b px-3 py-1.5 text-[#8b949e] text-[10px] leading-relaxed">
-					Vista previa: los precios que edites aquí no se guardan. El cobro
-					confirma el precio en caja.
-				</p>
 				{customerName ? (
 					<div className="shrink-0 border-[#2d333b] border-b px-3 py-2">
 						<div className="pz-zoom font-semibold text-[#e6edf3] text-xs leading-snug">

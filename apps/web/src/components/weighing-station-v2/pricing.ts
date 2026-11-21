@@ -16,7 +16,7 @@ export const PRICE_SOURCE_LABELS: Record<PriceSource, string> = {
 	lista: "Lista",
 	pedido: "Pedido",
 	base: "Base",
-	manual: "Vista previa",
+	manual: "Manual",
 };
 
 export type CustomerPriceRow = {

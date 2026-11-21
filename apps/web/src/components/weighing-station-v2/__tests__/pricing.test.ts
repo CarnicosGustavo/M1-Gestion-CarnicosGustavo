@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
 	lineSubtotalCents,
 	orderUnitPriceToPesos,
@@ -16,39 +18,64 @@ const row = (
 	...over,
 });
 
+/**
+ * Fixture con valores como los entrega la BD (P33-1):
+ * - `order_items.unit_price` va en CENTAVOS por kg, como numeric ("8600.00").
+ * - `products.price_per_kg`, `customer_prices` y listas van en PESOS por kg.
+ */
+const PIERNA_BASE = "86.00"; // pesos/kg
+const PIERNA_ORDER_UNIT_PRICE = "8600.00"; // centavos/kg (= $86.00)
+const ESPALDILLA_ORDER_UNIT_PRICE = "7850.00"; // centavos/kg (= $78.50)
+
 describe("resolveDefaultPrice", () => {
 	test("prefiere el último precio cobrado al cliente", () => {
 		expect(
 			resolveDefaultPrice(
 				row({ customerPricePerKg: 92, listPricePerKg: 88, pricePerKg: 80 }),
-				"8600",
+				PIERNA_ORDER_UNIT_PRICE,
 			),
 		).toEqual({ pricePerKg: 92, source: "ultimo" });
 	});
 
 	test("luego la lista del cliente, el pedido y el precio base", () => {
-		expect(resolveDefaultPrice(row({ listPricePerKg: 88 }), "8600")).toEqual({
-			pricePerKg: 88,
-			source: "lista",
-		});
-		expect(resolveDefaultPrice(row({ pricePerKg: "80" }), "8600")).toEqual({
-			pricePerKg: 86,
-			source: "pedido",
-		});
-		expect(resolveDefaultPrice(row({ pricePerKg: "80" }), null)).toEqual({
+		expect(
+			resolveDefaultPrice(row({ listPricePerKg: 88 }), PIERNA_ORDER_UNIT_PRICE),
+		).toEqual({ pricePerKg: 88, source: "lista" });
+		expect(
+			resolveDefaultPrice(
+				row({ pricePerKg: "80.00" }),
+				PIERNA_ORDER_UNIT_PRICE,
+			),
+		).toEqual({ pricePerKg: 86, source: "pedido" });
+		expect(resolveDefaultPrice(row({ pricePerKg: "80.00" }), null)).toEqual({
 			pricePerKg: 80,
 			source: "base",
 		});
 		expect(resolveDefaultPrice(undefined, "0")).toBeNull();
 	});
 
-	test("el unit_price del pedido está en centavos", () => {
-		expect(orderUnitPriceToPesos("8600")).toBe(86);
+	test("el unit_price del pedido está en centavos (P33-1)", () => {
+		expect(orderUnitPriceToPesos(PIERNA_ORDER_UNIT_PRICE)).toBe(86);
 		expect(orderUnitPriceToPesos(8600)).toBe(86);
+		expect(orderUnitPriceToPesos(ESPALDILLA_ORDER_UNIT_PRICE)).toBe(78.5);
 		expect(orderUnitPriceToPesos("0")).toBeNull();
-		const suggested = resolveDefaultPrice(row(), "8600.00");
+		const suggested = resolveDefaultPrice(row(), PIERNA_ORDER_UNIT_PRICE);
 		expect(suggested).toEqual({ pricePerKg: 86, source: "pedido" });
-		expect(lineSubtotalCents(2, suggested!.pricePerKg)).toBe(17200);
+		// 2 kg a $86 = $172.00 = 17,200 centavos (no 1,720,000).
+		expect(lineSubtotalCents(2, suggested?.pricePerKg ?? 0)).toBe(17200);
+	});
+
+	test("el precio del pedido coincide con el base cuando se capturó igual", () => {
+		const fromOrder = resolveDefaultPrice(
+			row({ pricePerKg: PIERNA_BASE }),
+			PIERNA_ORDER_UNIT_PRICE,
+		);
+		const fromBase = resolveDefaultPrice(
+			row({ pricePerKg: PIERNA_BASE }),
+			null,
+		);
+		expect(fromOrder?.pricePerKg).toBe(fromBase?.pricePerKg);
+		expect(fromOrder?.pricePerKg).toBeLessThan(5000);
 	});
 
 	test("subtotal en centavos", () => {
@@ -56,7 +83,18 @@ describe("resolveDefaultPrice", () => {
 		expect(lineSubtotalCents(Number.NaN, 78)).toBe(0);
 	});
 
-	test("el precio editado se rotula como vista previa", () => {
-		expect(PRICE_SOURCE_LABELS.manual).toBe("Vista previa");
+	test("el precio editado se rotula «Manual» (ya no es vista previa: se cobra)", () => {
+		expect(PRICE_SOURCE_LABELS.manual).toBe("Manual");
+	});
+});
+
+describe("P33-12 — el panel de venta ya no dice «Vista previa»", () => {
+	test("sale-panel no declara que los precios editados no se guardan", () => {
+		const source = readFileSync(
+			join(import.meta.dir, "../tiles/sale-panel.tsx"),
+			"utf8",
+		);
+		expect(source).not.toContain("Vista previa");
+		expect(source).not.toContain("no se guardan");
 	});
 });
