@@ -3038,12 +3038,12 @@ export const ordersRouter = router({
 				const chargeCount = incomeTxs.length + credits.length;
 				if (
 					existing.some((item) => item.status === "COBRADO") ||
-					chargeCount > 1
+					chargeCount > 0
 				) {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
 						message:
-							"No se puede eliminar un pedido con líneas ya cobradas o con más de un cobro",
+							"No se puede eliminar un pedido con líneas ya cobradas o con algún cobro",
 					});
 				}
 				if (await orderHasReceivedPurchase(tx, input.id)) {

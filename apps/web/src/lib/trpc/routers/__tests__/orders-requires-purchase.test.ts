@@ -2228,7 +2228,7 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 			paymentMethodId,
 		});
 		await expect(caller.delete({ id: order.id })).rejects.toThrow(
-			/líneas ya cobradas o con más de un cobro|cerrado o en cobro/i,
+			/líneas ya cobradas o con algún cobro|cerrado o en cobro/i,
 		);
 		expect(await getOrder(order.id)).toBeDefined();
 		expect(
@@ -2397,6 +2397,43 @@ describe("orders — robustez (delete, user_uid, cancelar)", () => {
 			.from(products)
 			.where(eq(products.id, weightProductId));
 		expect(Number(stock.stock_kg)).toBe(0);
+	});
+
+
+	it("P31-4: delete rechaza un pedido abierto con un solo cobro aunque no haya línea COBRADO", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		expect(
+			(await getItems(order.id)).some((item) => item.status === "COBRADO"),
+		).toBe(false);
+		await db.insert(transactions).values({
+			order_id: order.id,
+			payment_method_id: paymentMethodId,
+			amount: 1000,
+			user_uid: "user-rp",
+			status: "completed",
+			category: "selling",
+			type: "income",
+			description: "Cobro legado sin línea COBRADO",
+		});
+		await expect(caller.delete({ id: order.id })).rejects.toThrow(
+			/líneas ya cobradas o con algún cobro/i,
+		);
+		expect(await getOrder(order.id)).toBeDefined();
+		expect(await getTransactions(order.id)).toHaveLength(1);
 	});
 
 });
