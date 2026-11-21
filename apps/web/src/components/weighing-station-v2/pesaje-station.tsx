@@ -63,6 +63,7 @@ import { OrdersOverlay } from "./overlays/orders-overlay";
 import { TicketsOverlay } from "./overlays/tickets-overlay";
 import { usePesajeTheme } from "./pesaje-themes";
 import "./pesaje-themes.css";
+import { parseCustomTareKg } from "@/lib/weighing/parse-custom-tare";
 import { type CustomerPriceRow, resolveDefaultPrice } from "./pricing";
 import {
 	matchPesajeShortcut,
@@ -254,10 +255,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const containerDef = CONTAINERS.find(
 		(container) => container.id === containerId,
 	)!;
+	const parsedCustomTare = parseCustomTareKg(customTare);
+	const customTareInvalid = containerId === "otro" && parsedCustomTare === null;
 	const tareKg =
-		containerId === "otro"
-			? Number.parseFloat(customTare) || 0
-			: (containerDef.tare ?? 0);
+		containerId === "otro" ? (parsedCustomTare ?? 0) : (containerDef.tare ?? 0);
 
 	const usingSerialNet =
 		!manualWeight && serialTotals !== null && serialTotals.count > 0;
@@ -1044,6 +1045,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					<RecipientePage
 						containerId={containerId}
 						customTare={customTare}
+						customTareInvalid={customTareInvalid}
 						onContainer={setContainerId}
 						onCustomTare={setCustomTare}
 						onTareFromWeight={handleCaptureTare}

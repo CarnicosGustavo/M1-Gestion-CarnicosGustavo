@@ -114,12 +114,14 @@ export function InicioPage({
 export function RecipientePage({
 	containerId,
 	customTare,
+	customTareInvalid = false,
 	onContainer,
 	onCustomTare,
 	onTareFromWeight,
 }: {
 	containerId: ContainerId;
 	customTare: string;
+	customTareInvalid?: boolean;
 	onContainer: (id: ContainerId) => void;
 	onCustomTare: (value: string) => void;
 	onTareFromWeight: () => void;
@@ -155,6 +157,11 @@ export function RecipientePage({
 						className="w-24 rounded border border-[#4d7652] bg-[#0b1710] px-2 py-1 text-right text-[#c9ff99] outline-none focus:border-[#f39a1e]"
 					/>
 				</label>
+			) : null}
+			{containerId === "otro" && customTareInvalid ? (
+				<p className="mt-2 text-[#f39a1e] text-[11px]">
+					La tara debe ser 0 o más, sin coma (usa punto).
+				</p>
 			) : null}
 			<button
 				type="button"
