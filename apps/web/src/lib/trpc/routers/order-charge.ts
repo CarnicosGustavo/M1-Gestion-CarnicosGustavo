@@ -11,6 +11,29 @@ export type OrderStatusAfterCharge =
 	| "LISTA_PARA_COBRO"
 	| "COMPLETADA";
 
+/**
+ * Topes de cordura de `priceAndCharge` (P33-1). El precio llega en pesos por
+ * kg (o por pieza); un precio de centavos tomado por pesos (×100) o un total
+ * descomunal se rechaza en el servidor, con independencia de lo que mande el
+ * cliente.
+ */
+export const MAX_UNIT_PRICE_PESOS = 5000;
+export const MAX_CHARGE_TOTAL_CENTS = 50_000_000; // $500,000 (la columna numeric(10,2) desborda en $1,000,000)
+
+export function unitPriceSanityError(pricePerKg: number): string | null {
+	if (!Number.isFinite(pricePerKg) || pricePerKg > MAX_UNIT_PRICE_PESOS) {
+		return `Precio unitario absurdo ($${Number.isFinite(pricePerKg) ? pricePerKg.toFixed(2) : pricePerKg}): el máximo permitido es $${MAX_UNIT_PRICE_PESOS} por kg o pieza. Revisa que el precio esté en pesos, no en centavos.`;
+	}
+	return null;
+}
+
+export function totalSanityError(totalCents: number): string | null {
+	if (!Number.isFinite(totalCents) || totalCents > MAX_CHARGE_TOTAL_CENTS) {
+		return `Total absurdo ($${(totalCents / 100).toFixed(2)}): el máximo permitido por cobro es $${(MAX_CHARGE_TOTAL_CENTS / 100).toFixed(2)}. Revisa cantidades y precios.`;
+	}
+	return null;
+}
+
 const CHARGEABLE_STATUSES = new Set<string>([
 	"COMPLETADO",
 	"PESADO",

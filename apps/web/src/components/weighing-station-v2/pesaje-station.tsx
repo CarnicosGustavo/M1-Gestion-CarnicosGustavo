@@ -46,6 +46,10 @@ import { DEFAULT_SCALE_SETTINGS } from "@/lib/scale/webserial/settings";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
 import {
+	canRegisterWeight,
+	parseCustomTareKg,
+} from "@/lib/weighing/parse-custom-tare";
+import {
 	DEMO_CAPTURES,
 	DEMO_CATALOG,
 	DEMO_CUSTOMER_PRICES,
@@ -439,10 +443,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const containerDef = CONTAINERS.find(
 		(container) => container.id === containerId,
 	)!;
+	const parsedCustomTare = parseCustomTareKg(customTare);
+	const customTareInvalid = containerId === "otro" && parsedCustomTare === null;
 	const tareKg =
-		containerId === "otro"
-			? Number.parseFloat(customTare) || 0
-			: (containerDef.tare ?? 0);
+		containerId === "otro" ? (parsedCustomTare ?? 0) : (containerDef.tare ?? 0);
 
 	const usingSerialNet =
 		!manualWeight && serialTotals !== null && serialTotals.count > 0;
@@ -450,7 +454,11 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const netKg = usingSerialNet
 		? serialTotals.netG / 1000
 		: Math.max(0, manualGrossKg - tareKg);
-	const hasValidWeight = netKg > 0;
+	const hasValidWeight = canRegisterWeight({
+		netKg,
+		customTareInvalid,
+		hasItem: currentItem !== null,
+	});
 
 	const serialLine = useMemo(() => {
 		if (!selectedOrder || !currentItem) return null;
@@ -604,6 +612,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 
 	const handleRegisterWeight = useCallback(() => {
 		if (!currentItem || !hasValidWeight) return;
+		if (updateWeightMutation.isPending) return;
 		if (demo) {
 			const itemId = currentItem.id;
 			const kg = netKg.toFixed(3);
@@ -759,6 +768,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					const row = priceRows.find(
 						(candidate) => candidate.productId === item.product_id,
 					);
+					// unit_price del pedido está en centavos; resolveDefaultPrice lo convierte.
 					const suggested = resolveDefaultPrice(row, item.unit_price);
 					const edited = priceEdits[item.id];
 					return {
@@ -1267,6 +1277,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			}
 			const action = matchPesajeShortcut(event, {
 				overlayOpen: overlay !== null,
+				isPending: updateWeightMutation.isPending,
 			});
 			if (!action) return;
 			event.preventDefault();
@@ -1332,6 +1343,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		cycleTheme,
 		pressPage,
 		runCommand,
+		updateWeightMutation.isPending,
 		voice.status,
 		startVoice,
 		stopVoice,
@@ -1572,7 +1584,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			shortcut: "Enter",
 			label: "Registrar peso del renglón",
 			onPress: handleRegisterWeight,
-			disabled: !hasValidWeight || currentItem === null,
+			disabled:
+				!hasValidWeight ||
+				currentItem === null ||
+				updateWeightMutation.isPending,
 		},
 	];
 
@@ -1761,6 +1776,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					<RecipientePage
 						containerId={containerId}
 						customTare={customTare}
+						customTareInvalid={customTareInvalid}
 						onContainer={setContainerId}
 						onCustomTare={setCustomTare}
 						onTareFromWeight={handleCaptureTare}

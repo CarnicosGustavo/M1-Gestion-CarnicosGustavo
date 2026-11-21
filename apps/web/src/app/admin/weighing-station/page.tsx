@@ -53,6 +53,10 @@ import { ScaleSerialPanel } from "@/components/scale-serial/scale-serial-panel";
 import type { LineTotals } from "@/lib/scale/webserial/line-totals";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
+import {
+	canRegisterWeight,
+	parseCustomTareKg,
+} from "@/lib/weighing/parse-custom-tare";
 
 // ---------------------------------------------------------------------------
 // Contenedores / Tara predefinida
@@ -205,10 +209,10 @@ export default function WeighingStationPage() {
 	// Cálculo de tara / neto
 	// ---------------------------------------------------------------------------
 	const containerDef = CONTAINERS.find((c) => c.id === containerId)!;
+	const parsedCustomTare = parseCustomTareKg(customTare);
+	const customTareInvalid = containerId === "otro" && parsedCustomTare === null;
 	const tareKg =
-		containerId === "otro"
-			? Number.parseFloat(customTare) || 0
-			: (containerDef.tare ?? 0);
+		containerId === "otro" ? (parsedCustomTare ?? 0) : (containerDef.tare ?? 0);
 
 	const [serialTotals, setSerialTotals] = useState<LineTotals | null>(null);
 	const [manualWeight, setManualWeight] = useState(false);
@@ -221,7 +225,11 @@ export default function WeighingStationPage() {
 	const netKg = usingSerialNet
 		? serialTotals.netG / 1000
 		: Math.max(0, manualGrossKg - tareKg);
-	const hasValidWeight = netKg > 0;
+	const hasValidWeight = canRegisterWeight({
+		netKg,
+		customTareInvalid,
+		hasItem: currentItem !== null,
+	});
 
 	// Báscula por cable (Web Serial): renglón activo y total de capturas.
 	const serialLine = useMemo(() => {
@@ -757,7 +765,8 @@ export default function WeighingStationPage() {
 												Peso del recipiente (kg)
 											</Label>
 											<Input
-												type="number"
+												type="text"
+												inputMode="decimal"
 												step="0.001"
 												min="0"
 												value={customTare}
@@ -765,7 +774,13 @@ export default function WeighingStationPage() {
 												onFocus={(e) => e.currentTarget.select()}
 												className="w-32 text-center font-mono"
 												placeholder="0.000"
+												aria-invalid={customTareInvalid}
 											/>
+											{customTareInvalid ? (
+												<p className="text-destructive text-xs">
+													La tara debe ser 0 o más, sin coma (usa punto).
+												</p>
+											) : null}
 										</div>
 									)}
 
