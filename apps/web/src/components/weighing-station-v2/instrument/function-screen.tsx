@@ -11,6 +11,10 @@ export interface FnKey {
 	active?: boolean;
 	tone?: "neutral" | "red" | "orange" | "cyan" | "green";
 	disabled?: boolean;
+	icon?: ReactNode;
+	/** Tecla de mantener (micrófono): se usa en vez de onPress. */
+	onHoldStart?: () => void;
+	onHoldEnd?: () => void;
 }
 
 export interface FnKeyGroup {
@@ -37,9 +41,19 @@ function FunctionKey({ item }: { item: FnKey }) {
 			aria-label={item.label}
 			aria-pressed={item.active}
 			disabled={item.disabled}
-			onClick={item.onPress}
+			onClick={item.onHoldStart ? undefined : item.onPress}
+			onPointerDown={
+				item.onHoldStart
+					? (event) => {
+							event.currentTarget.setPointerCapture(event.pointerId);
+							item.onHoldStart?.();
+						}
+					: undefined
+			}
+			onPointerUp={item.onHoldStart ? () => item.onHoldEnd?.() : undefined}
+			onPointerCancel={item.onHoldStart ? () => item.onHoldEnd?.() : undefined}
 			className={cn(
-				"relative flex h-full min-h-[3rem] w-full min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg border px-2 pt-1.5 pb-1 font-mono uppercase shadow-[0_2px_0_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f39a1e] active:translate-y-px active:shadow-none disabled:cursor-not-allowed disabled:opacity-40 [@media(max-height:860px)]:min-h-[2.6rem]",
+				"relative flex h-full min-h-[3rem] w-full min-w-0 touch-none select-none flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg border px-2 pt-1.5 pb-1 font-mono uppercase shadow-[0_2px_0_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f39a1e] active:translate-y-px active:shadow-none disabled:cursor-not-allowed disabled:opacity-40 [@media(max-height:860px)]:min-h-[2.6rem]",
 				keyTones[item.tone ?? "neutral"],
 				item.active &&
 					"border-[#f39a1e] from-[#3a2a10] to-[#2a1e0b] text-[#f39a1e] shadow-[0_0_0_1px_#f39a1e55,0_2px_0_rgba(0,0,0,0.55)]",
@@ -51,7 +65,8 @@ function FunctionKey({ item }: { item: FnKey }) {
 					className="absolute inset-x-3 top-0 h-[3px] rounded-b bg-[#f39a1e] shadow-[0_0_8px_#f39a1e]"
 				/>
 			) : null}
-			<span className="max-w-full truncate font-bold text-[12px] tracking-[0.08em]">
+			<span className="flex max-w-full items-center gap-1.5 truncate font-bold text-[12px] tracking-[0.08em]">
+				{item.icon}
 				{item.label}
 			</span>
 			<kbd className="max-w-full truncate font-mono font-normal text-[9px] tracking-wide opacity-55">

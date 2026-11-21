@@ -32,11 +32,14 @@ export type FnPage =
 	| "teclado"
 	| "atajos"
 	| "config"
+	| "pedidos"
+	| "tickets"
+	| "produccion"
 	| "recetas"
 	| "frio"
-	| "precios"
 	| "clientes"
-	| "cobranza";
+	| "cobro"
+	| "voz";
 
 /** Módulos del negocio que viven en la fila inferior (pantalla 7 + ventana). */
 export function isModulePage(page: FnPage): page is ModulePage {
@@ -46,10 +49,23 @@ export function isModulePage(page: FnPage): page is ModulePage {
 export const MODULE_PAGES = [
 	"recetas",
 	"frio",
-	"precios",
 	"clientes",
-	"cobranza",
 ] as const satisfies readonly FnPage[];
+
+/**
+ * Teclas con dos niveles: pulsar = vista rápida en la pantalla 7;
+ * Fn + tecla (o pulsarla otra vez, o Enter) = ventana grande encima.
+ */
+export const DETAIL_PAGES = [
+	"pedidos",
+	"tickets",
+	"produccion",
+	...MODULE_PAGES,
+] as const satisfies readonly FnPage[];
+export type DetailPage = (typeof DETAIL_PAGES)[number];
+export function isDetailPage(page: FnPage): page is DetailPage {
+	return (DETAIL_PAGES as readonly FnPage[]).includes(page);
+}
 export type ModulePage = (typeof MODULE_PAGES)[number];
 
 export type PesajeThemeId = "m1" | "tokyo-night" | "gruvbox";

@@ -118,3 +118,33 @@
 body:has([data-pesaje-station]) [data-antonella-launcher] {
 	display: none;
 }
+
+/* Tamaño de letra de la estación: normal · mediano · grande.
+   zoom agranda texto y renglones juntos; las listas hacen scroll. */
+[data-pesaje-station] {
+	--pz-zoom: 1;
+}
+[data-pesaje-station][data-pesaje-font="mediano"] {
+	--pz-zoom: 1.15;
+}
+[data-pesaje-station][data-pesaje-font="grande"] {
+	--pz-zoom: 1.32;
+}
+[data-pesaje-station] .pz-zoom {
+	zoom: var(--pz-zoom);
+}
+
+/* Onda de voz en la pantalla 7 mientras Antonella escucha. */
+@keyframes pz-voice {
+	0%,
+	100% {
+		transform: scaleY(0.25);
+	}
+	50% {
+		transform: scaleY(1);
+	}
+}
+[data-pesaje-station] .pz-voice-bar {
+	animation: pz-voice 0.9s ease-in-out infinite;
+	transform-origin: center;
+}

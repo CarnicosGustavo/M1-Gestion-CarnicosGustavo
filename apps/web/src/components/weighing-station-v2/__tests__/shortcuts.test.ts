@@ -30,6 +30,17 @@ describe("matchPesajeShortcut", () => {
 		).toEqual({ type: "page", page: "config" });
 	});
 
+	test("Alt+Espacio habla con Antonella; Súper+Shift+G cobra a crédito", () => {
+		expect(
+			matchPesajeShortcut(event(" ", { altKey: true, code: "Space" })),
+		).toEqual({ type: "voice" });
+		expect(
+			matchPesajeShortcut(
+				event("G", { metaKey: true, shiftKey: true, code: "KeyG" }),
+			),
+		).toEqual({ type: "command", command: "charge-credit" });
+	});
+
 	test("Súper y Alt enfocan teselas", () => {
 		expect(matchPesajeShortcut(event("1", { metaKey: true }))).toEqual({
 			type: "focus-tile",
@@ -43,15 +54,15 @@ describe("matchPesajeShortcut", () => {
 
 	test("Súper+T abre tickets y Súper+Shift+T cicla el tema", () => {
 		expect(matchPesajeShortcut(event("t", { metaKey: true }))).toEqual({
-			type: "overlay",
-			overlay: "tickets",
+			type: "page",
+			page: "tickets",
 		});
 		expect(
 			matchPesajeShortcut(event("T", { metaKey: true, shiftKey: true })),
 		).toEqual({ type: "cycle-theme" });
 		expect(matchPesajeShortcut(event("o", { altKey: true }))).toEqual({
-			type: "overlay",
-			overlay: "orders",
+			type: "page",
+			page: "pedidos",
 		});
 		expect(matchPesajeShortcut(event("b", { altKey: true }))).toEqual({
 			type: "page",
@@ -96,7 +107,7 @@ describe("matchPesajeShortcut", () => {
 		expect(matchPesajeShortcut(event("j", { target: real }))).toBeNull();
 		expect(
 			matchPesajeShortcut(event("t", { metaKey: true, target: real })),
-		).toEqual({ type: "overlay", overlay: "tickets" });
+		).toEqual({ type: "page", page: "tickets" });
 	});
 
 	test("no usa Ctrl (evita choques con el navegador)", () => {

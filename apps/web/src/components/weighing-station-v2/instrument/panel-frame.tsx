@@ -57,10 +57,13 @@ export function PanelRow({
 	label,
 	value,
 	accent = false,
+	wrap = false,
 }: {
 	label: string;
 	value: ReactNode;
 	accent?: boolean;
+	/** Texto largo (cliente): se parte en renglones en vez de cortarse. */
+	wrap?: boolean;
 }) {
 	return (
 		<div className="flex items-center justify-between gap-3 border-[var(--pz-panel-border,#2d333b)]/75 border-b px-3 py-2.5 last:border-b-0">
@@ -69,7 +72,8 @@ export function PanelRow({
 			</span>
 			<span
 				className={cn(
-					"min-w-0 truncate text-right font-semibold text-[#f4f6f8] text-sm",
+					"min-w-0 text-right font-semibold text-[#f4f6f8] text-sm",
+					wrap ? "line-clamp-2 break-words leading-tight" : "truncate",
 					accent && "text-[#f39a1e]",
 				)}
 			>
@@ -105,7 +109,7 @@ export function PanelListItem({
 			)}
 		>
 			<span className="min-w-0 flex-1">
-				<span className="block truncate font-bold text-[15px] leading-tight">
+				<span className="line-clamp-2 block break-words font-bold text-[15px] leading-tight">
 					{title}
 				</span>
 				{subtitle ? (
