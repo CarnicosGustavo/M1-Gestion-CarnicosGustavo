@@ -32,15 +32,25 @@ function positive(value: unknown): number | null {
 	return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** `unit_price` del renglón del pedido está en centavos; el resto de fuentes van en pesos/kg. */
+export function orderUnitPriceToPesos(
+	unitPrice: string | number | null | undefined,
+): number | null {
+	const cents = positive(unitPrice);
+	if (cents === null) return null;
+	const pesos = cents / 100;
+	return pesos > 0 ? pesos : null;
+}
+
 export function resolveDefaultPrice(
 	row: CustomerPriceRow | undefined,
-	orderUnitPrice: string | number | null | undefined,
+	orderUnitPriceCents: string | number | null | undefined,
 ): { pricePerKg: number; source: PriceSource } | null {
 	const customer = positive(row?.customerPricePerKg);
 	if (customer !== null) return { pricePerKg: customer, source: "ultimo" };
 	const list = positive(row?.listPricePerKg);
 	if (list !== null) return { pricePerKg: list, source: "lista" };
-	const order = positive(orderUnitPrice);
+	const order = orderUnitPriceToPesos(orderUnitPriceCents);
 	if (order !== null) return { pricePerKg: order, source: "pedido" };
 	const base = positive(row?.pricePerKg);
 	if (base !== null) return { pricePerKg: base, source: "base" };

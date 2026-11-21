@@ -515,6 +515,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					const row = priceRows.find(
 						(candidate) => candidate.productId === item.product_id,
 					);
+					// unit_price del pedido está en centavos; resolveDefaultPrice lo convierte.
 					const suggested = resolveDefaultPrice(row, item.unit_price);
 					const edited = priceEdits[item.id];
 					return {
