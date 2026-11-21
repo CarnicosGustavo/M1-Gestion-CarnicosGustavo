@@ -11,6 +11,7 @@ import { Skeleton } from "@finopenpos/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { PrinterIcon } from "lucide-react";
 import { useRef } from "react";
+import { stripCancelAuditNotes } from "@/lib/orders/cancel-audit";
 import { useTRPC } from "@/lib/trpc/client";
 
 interface TicketModalProps {
@@ -252,7 +253,11 @@ ${TICKET_STYLE}
 					</>
 				)}
 
-				{ticket.notes && <div className="t-notes">Notas: {ticket.notes}</div>}
+				{stripCancelAuditNotes(ticket.notes) ? (
+					<div className="t-notes">
+						Notas: {stripCancelAuditNotes(ticket.notes)}
+					</div>
+				) : null}
 
 				<div className="t-foot">¡Gracias por su preferencia!</div>
 			</>

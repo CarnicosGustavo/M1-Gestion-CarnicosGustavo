@@ -3,6 +3,7 @@ import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { CLIENT_NAME, DEMO_EMAIL } from "@/lib/constants";
 import { auth } from "../auth";
 import { db } from ".";
+import { countIsEmpty } from "./count-is-empty";
 import {
 	account,
 	customers,
@@ -128,7 +129,7 @@ export async function seed(
 		.select({ count: sql<number>`count(*)` })
 		.from(paymentMethods);
 
-	if (existing[0].count === 0) {
+	if (countIsEmpty(existing[0].count)) {
 		await db
 			.insert(paymentMethods)
 			.values([

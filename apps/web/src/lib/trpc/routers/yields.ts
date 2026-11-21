@@ -44,7 +44,7 @@ const sheetInput = z.object({
 // CANAL AMERICANO (canal completo); 1 cerdo nacional = 1 lado Lomo + 1 lado
 // Espilomo. Devuelve cuántos "comprados" corresponden al nombre del canal.
 
-/** Normaliza db.execute: node-postgres/`pg` devuelve un array; PGlite, { rows }. */
+/** Normaliza db.execute: postgres-js (producción) devuelve un array; PGlite, { rows }. */
 function executeRows<T>(res: unknown): T[] {
 	if (Array.isArray(res)) return res as T[];
 	if (res && typeof res === "object" && "rows" in res) {
