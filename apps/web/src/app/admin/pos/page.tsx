@@ -18,8 +18,8 @@ import {
 	MinusIcon,
 	PackageSearchIcon,
 	PlusIcon,
-	ScaleIcon,
 	RefreshCwIcon,
+	ScaleIcon,
 	ScissorsIcon,
 	SearchIcon,
 	ShoppingCartIcon,
@@ -69,7 +69,7 @@ type POSProduct = Pick<
 	priceEdited?: boolean;
 };
 
-type Disp = "stock" | "despiece" | "pesaje" | "faltante";
+type Disp = import("./pos-logic").Disp;
 
 type PieceQtyInputProps = {
 	value: number;
