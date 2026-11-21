@@ -63,7 +63,10 @@ import { OrdersOverlay } from "./overlays/orders-overlay";
 import { TicketsOverlay } from "./overlays/tickets-overlay";
 import { usePesajeTheme } from "./pesaje-themes";
 import "./pesaje-themes.css";
-import { parseCustomTareKg } from "@/lib/weighing/parse-custom-tare";
+import {
+	canRegisterWeight,
+	parseCustomTareKg,
+} from "@/lib/weighing/parse-custom-tare";
 import { type CustomerPriceRow, resolveDefaultPrice } from "./pricing";
 import {
 	matchPesajeShortcut,
@@ -266,7 +269,11 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const netKg = usingSerialNet
 		? serialTotals.netG / 1000
 		: Math.max(0, manualGrossKg - tareKg);
-	const hasValidWeight = netKg > 0;
+	const hasValidWeight = canRegisterWeight({
+		netKg,
+		customTareInvalid,
+		hasItem: currentItem !== null,
+	});
 
 	const serialLine = useMemo(() => {
 		if (!selectedOrder || !currentItem) return null;

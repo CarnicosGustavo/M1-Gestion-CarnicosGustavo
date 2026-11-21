@@ -53,7 +53,10 @@ import { ScaleSerialPanel } from "@/components/scale-serial/scale-serial-panel";
 import type { LineTotals } from "@/lib/scale/webserial/line-totals";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
-import { parseCustomTareKg } from "@/lib/weighing/parse-custom-tare";
+import {
+	canRegisterWeight,
+	parseCustomTareKg,
+} from "@/lib/weighing/parse-custom-tare";
 
 // ---------------------------------------------------------------------------
 // Contenedores / Tara predefinida
@@ -222,7 +225,11 @@ export default function WeighingStationPage() {
 	const netKg = usingSerialNet
 		? serialTotals.netG / 1000
 		: Math.max(0, manualGrossKg - tareKg);
-	const hasValidWeight = netKg > 0;
+	const hasValidWeight = canRegisterWeight({
+		netKg,
+		customTareInvalid,
+		hasItem: currentItem !== null,
+	});
 
 	// Báscula por cable (Web Serial): renglón activo y total de capturas.
 	const serialLine = useMemo(() => {

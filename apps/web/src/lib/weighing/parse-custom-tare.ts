@@ -8,3 +8,17 @@ export function parseCustomTareKg(raw: string): number | null {
 	if (!Number.isFinite(value) || value < 0) return null;
 	return value;
 }
+
+export function canRegisterWeight(input: {
+	netKg: number;
+	customTareInvalid: boolean;
+	hasItem: boolean;
+	isPending?: boolean;
+}): boolean {
+	return (
+		input.netKg > 0 &&
+		!input.customTareInvalid &&
+		input.hasItem &&
+		!input.isPending
+	);
+}
