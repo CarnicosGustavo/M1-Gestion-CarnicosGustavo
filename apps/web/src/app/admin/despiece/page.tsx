@@ -940,6 +940,8 @@ function RecipeTreeCard({ parent }: { parent: any }) {
 	const { data: tree = [] } = useQuery(
 		trpc.products.getTransformations.queryOptions({
 			parentProductId: parent.id,
+			// Árbol de recetas: también muestra variantes (marcadas abajo).
+			includeVariants: true,
 		}),
 	) as { data: any[] };
 
@@ -978,6 +980,11 @@ function RecipeTreeCard({ parent }: { parent: any }) {
 									<span className="text-primary">└</span>
 									<span className="flex-1">
 										{t.childProduct?.name ?? `#${t.child_product_id}`}
+										{t.is_variant && (
+											<span className="ml-1.5 rounded bg-amber-100 px-1 font-semibold text-[10px] text-amber-800 uppercase">
+												variante
+											</span>
+										)}
 									</span>
 									<span className="text-muted-foreground text-xs">
 										{Number(t.yield_quantity_pieces)} pz ·{" "}

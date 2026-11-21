@@ -10,6 +10,12 @@ import {
 	productTransformations,
 } from "@/lib/db/schema";
 import {
+	buildEffectiveRecipes,
+	despieceRecipeFilter,
+	getEffectiveRecipes,
+	recipeTypesFor,
+} from "@/lib/recipes/effective-recipes";
+import {
 	adminProcedure,
 	almacenProcedure,
 	protectedProcedure,
@@ -64,6 +70,7 @@ const productTransformationSchema = z.object({
 	yield_weight_ratio: z.union([z.string(), z.number()]),
 	transformation_type: z.string(),
 	is_active: z.boolean(),
+	is_variant: z.boolean().optional(),
 	created_at: z.date().nullable().optional(),
 	updated_at: z.date().nullable().optional(),
 	childProduct: z
@@ -491,56 +498,20 @@ export const productsRouter = router({
 					(typeLower.includes("cuero") ||
 						parentNameLower.includes("panza") ||
 						parentNameLower.includes("cuero"));
-				const typesToApply =
-					selectedType === "BASE" ? ["BASE"] : ["BASE", selectedType];
+				// Recetas efectivas (BASE + estilo, sin variantes: las variantes solo
+				// se obtienen con convertToVariant).
+				const effectiveRecipes = await getEffectiveRecipes(
+					tx,
+					parentProductId,
+					selectedType,
+				);
 
-				const recipes = await tx
-					.select()
-					.from(productTransformations)
-					.where(
-						and(
-							eq(productTransformations.parent_product_id, parentProductId),
-							inArray(productTransformations.transformation_type, typesToApply),
-							eq(productTransformations.is_active, true),
-						),
-					);
-
-				if (recipes.length === 0) {
+				if (effectiveRecipes.length === 0) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
 						message: "No se encontraron recetas para este despiece",
 					});
 				}
-
-				const dedupeByChild = <
-					T extends {
-						id: number;
-						child_product_id: number;
-						transformation_type: string | null;
-					},
-				>(
-					rows: T[],
-				) => {
-					const map = new Map<number, T>();
-					for (const r of rows) {
-						const prev = map.get(r.child_product_id);
-						if (!prev || r.id > prev.id) map.set(r.child_product_id, r);
-					}
-					return map;
-				};
-
-				const effectiveRecipes = (() => {
-					const base = recipes.filter((r) => r.transformation_type === "BASE");
-					if (selectedType === "BASE")
-						return Array.from(dedupeByChild(base).values());
-					const specific = recipes.filter(
-						(r) => r.transformation_type === selectedType,
-					);
-					const baseMap = dedupeByChild(base);
-					const specMap = dedupeByChild(specific);
-					for (const [k, v] of specMap) baseMap.set(k, v);
-					return Array.from(baseMap.values());
-				})();
 
 				// 6. Incrementar Hijos
 				let hasRecorteChild = false;
@@ -815,45 +786,6 @@ export const productsRouter = router({
 			};
 
 			return await db.transaction(async (tx) => {
-				const dedupeByChild = <
-					T extends {
-						id: number;
-						child_product_id: number;
-						transformation_type: string | null;
-					},
-				>(
-					rows: T[],
-				) => {
-					const map = new Map<number, T>();
-					for (const r of rows) {
-						const prev = map.get(r.child_product_id);
-						if (!prev || r.id > prev.id) map.set(r.child_product_id, r);
-					}
-					return map;
-				};
-
-				const buildEffectiveRecipes = <
-					T extends {
-						id: number;
-						child_product_id: number;
-						transformation_type: string | null;
-					},
-				>(
-					rows: T[],
-					selectedType: string,
-				) => {
-					const base = rows.filter((r) => r.transformation_type === "BASE");
-					if (selectedType === "BASE")
-						return Array.from(dedupeByChild(base).values());
-					const specific = rows.filter(
-						(r) => r.transformation_type === selectedType,
-					);
-					const baseMap = dedupeByChild(base);
-					const specMap = dedupeByChild(specific);
-					for (const [k, v] of specMap) baseMap.set(k, v);
-					return Array.from(baseMap.values());
-				};
-
 				const applyDisassemblyTx = async (args: {
 					parentProductId: number;
 					quantityToProcess: number;
@@ -932,34 +864,18 @@ export const productsRouter = router({
 						(typeLower.includes("cuero") ||
 							parentNameLower.includes("panza") ||
 							parentNameLower.includes("cuero"));
-					const typesToApply =
-						selectedType === "BASE" ? ["BASE"] : ["BASE", selectedType];
+					const effectiveRecipes = await getEffectiveRecipes(
+						tx,
+						args.parentProductId,
+						selectedType,
+					);
 
-					const recipes = await tx
-						.select()
-						.from(productTransformations)
-						.where(
-							and(
-								eq(
-									productTransformations.parent_product_id,
-									args.parentProductId,
-								),
-								inArray(
-									productTransformations.transformation_type,
-									typesToApply,
-								),
-								eq(productTransformations.is_active, true),
-							),
-						);
-
-					if (recipes.length === 0) {
+					if (effectiveRecipes.length === 0) {
 						throw new TRPCError({
 							code: "NOT_FOUND",
 							message: "No se encontraron recetas para este despiece",
 						});
 					}
-
-					const effectiveRecipes = buildEffectiveRecipes(recipes, selectedType);
 
 					let hasRecorteChild = false;
 					for (const recipe of effectiveRecipes) {
@@ -1153,38 +1069,20 @@ export const productsRouter = router({
 					canalName.includes("canal americano") ||
 					canalName.includes("canal nacional lomo") ||
 					canalName.includes("canal nacional espilomo");
-				const typesToApply =
-					selectedType === "BASE"
-						? ["BASE"]
-						: isSpecificCanal
-							? [selectedType]
-							: ["BASE", selectedType];
+				// Canales específicos no mezclan BASE. Sin variantes.
+				const effectiveCanalRecipes = await getEffectiveRecipes(
+					tx,
+					input.canalProductId,
+					selectedType,
+					{ mixBase: !isSpecificCanal },
+				);
 
-				const canalRecipes = await tx
-					.select()
-					.from(productTransformations)
-					.where(
-						and(
-							eq(
-								productTransformations.parent_product_id,
-								input.canalProductId,
-							),
-							inArray(productTransformations.transformation_type, typesToApply),
-							eq(productTransformations.is_active, true),
-						),
-					);
-
-				if (!canalRecipes.length) {
+				if (!effectiveCanalRecipes.length) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
 						message: "No se encontraron recetas para despiece de canal",
 					});
 				}
-
-				const effectiveCanalRecipes = buildEffectiveRecipes(
-					canalRecipes,
-					selectedType,
-				);
 
 				const generatedByChildId = new Map<number, number>();
 				for (const recipe of effectiveCanalRecipes) {
@@ -1263,6 +1161,7 @@ export const productsRouter = router({
 									intermediateIds,
 								),
 								eq(productTransformations.is_active, true),
+								despieceRecipeFilter(),
 							),
 						);
 
@@ -1365,6 +1264,8 @@ export const productsRouter = router({
 			z.object({
 				parentProductId: z.number(),
 				transformationType: z.string().optional(),
+				// Incluir variantes (is_variant). Default false = solo despiece.
+				includeVariants: z.boolean().optional().default(false),
 			}),
 		)
 		.output(z.array(productTransformationSchema))
@@ -1399,51 +1300,24 @@ export const productsRouter = router({
 				parentName.includes("canal americano") ||
 				parentName.includes("canal nacional lomo") ||
 				parentName.includes("canal nacional espilomo");
-			const typesToApply =
-				selectedType === "BASE"
-					? ["BASE"]
-					: isSpecificCanal
-						? [selectedType]
-						: ["BASE", selectedType];
-
 			const rows = await db.query.productTransformations.findMany({
 				where: and(
 					eq(productTransformations.parent_product_id, input.parentProductId),
-					inArray(productTransformations.transformation_type, typesToApply),
+					inArray(
+						productTransformations.transformation_type,
+						recipeTypesFor(selectedType, { mixBase: !isSpecificCanal }),
+					),
 					eq(productTransformations.is_active, true),
+					// Por defecto solo recetas de despiece (lo que genera el despiece).
+					// includeVariants=true también trae variantes (marcadas is_variant).
+					despieceRecipeFilter({ includeVariants: input.includeVariants }),
 				),
 				with: {
 					childProduct: true,
 				},
 			});
 
-			const dedupeByChild = <
-				T extends {
-					id: number;
-					child_product_id: number;
-					transformation_type: string | null;
-				},
-			>(
-				rs: T[],
-			) => {
-				const map = new Map<number, T>();
-				for (const r of rs) {
-					const prev = map.get(r.child_product_id);
-					if (!prev || r.id > prev.id) map.set(r.child_product_id, r);
-				}
-				return map;
-			};
-
-			const base = rows.filter((r) => r.transformation_type === "BASE");
-			if (selectedType === "BASE")
-				return Array.from(dedupeByChild(base).values());
-			const specific = rows.filter(
-				(r) => r.transformation_type === selectedType,
-			);
-			const baseMap = dedupeByChild(base);
-			const specMap = dedupeByChild(specific);
-			for (const [k, v] of specMap) baseMap.set(k, v);
-			return Array.from(baseMap.values());
+			return buildEffectiveRecipes(rows, selectedType);
 		}),
 
 	registerChannelPurchase: almacenProcedure
@@ -1809,6 +1683,7 @@ export const productsRouter = router({
 					and(
 						inArray(productTransformations.parent_product_id, seedParentIds),
 						eq(productTransformations.is_active, true),
+						despieceRecipeFilter(),
 					),
 				);
 
@@ -1834,6 +1709,8 @@ export const productsRouter = router({
 					and(
 						inArray(productTransformations.parent_product_id, parentIds),
 						eq(productTransformations.is_active, true),
+						// Vista previa de lo que genera el despiece: sin variantes.
+						despieceRecipeFilter(),
 					),
 				);
 
@@ -1917,6 +1794,8 @@ export const productsRouter = router({
 					and(
 						eq(productTransformations.parent_product_id, input.parentProductId),
 						eq(productTransformations.is_active, true),
+						// Estilos de despiece: un tipo que solo tiene variantes no se ofrece.
+						despieceRecipeFilter(),
 					),
 				)
 				.orderBy(productTransformations.transformation_type);

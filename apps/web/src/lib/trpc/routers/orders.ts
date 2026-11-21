@@ -16,6 +16,7 @@ import {
 	scaleReadings,
 	transactions,
 } from "@/lib/db/schema";
+import { despieceRecipeFilter } from "@/lib/recipes/effective-recipes";
 import { almacenProcedure, protectedProcedure, router } from "../init";
 import {
 	isChargeableItem,
@@ -561,6 +562,8 @@ export const ordersRouter = router({
 							productTransformations.transformation_type,
 							input.transformationType,
 						),
+						// Las variantes no salen del despiece (solo convertToVariant).
+						despieceRecipeFilter(),
 					),
 				);
 
@@ -883,6 +886,8 @@ export const ordersRouter = router({
 							productTransformations.transformation_type,
 							input.transformationType,
 						),
+						// Las variantes no salen del despiece (solo convertToVariant).
+						despieceRecipeFilter(),
 					),
 				);
 
@@ -1243,6 +1248,7 @@ export const ordersRouter = router({
 									args.transformationType,
 								),
 								eq(productTransformations.is_active, true),
+								despieceRecipeFilter(),
 							),
 						);
 
