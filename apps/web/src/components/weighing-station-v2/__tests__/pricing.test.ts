@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	lineSubtotalCents,
 	orderUnitPriceToPesos,
+	PRICE_SOURCE_LABELS,
 	resolveDefaultPrice,
 } from "../pricing";
 
@@ -53,5 +54,9 @@ describe("resolveDefaultPrice", () => {
 	test("subtotal en centavos", () => {
 		expect(lineSubtotalCents(8.15, 78)).toBe(63570);
 		expect(lineSubtotalCents(Number.NaN, 78)).toBe(0);
+	});
+
+	test("el precio editado se rotula como vista previa", () => {
+		expect(PRICE_SOURCE_LABELS.manual).toBe("Vista previa");
 	});
 });
