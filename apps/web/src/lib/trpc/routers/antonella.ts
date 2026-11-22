@@ -29,6 +29,7 @@ import {
 	sqlUnsatisfiedItem,
 	UNSATISFIED_ITEM_STATUS_SQL,
 } from "@/lib/orders/demand-sql";
+import { XAI_MODEL, XAI_VOICE, xaiEnabled, xaiRespond } from "../../ai/xai";
 import { protectedProcedure, router } from "../init";
 
 // System prompt por defecto (precargado). El usuario lo puede editar en
@@ -1568,71 +1569,81 @@ export const antonicellaRouter = router({
 			let confirmationData: Record<string, unknown> = {};
 			let answerText = "";
 
+			// Ejecuta una herramienta pedida por el modelo (igual para ambos proveedores).
+			const runTool = async (name: string, toolInput: any) => {
+				const toolResult = customNames.has(name)
+					? `[Herramienta personalizada "${name}"] ${customTools.find((t) => t?.name === name)?.description ?? ""}\n\n(Esta habilidad está declarada pero su ejecución automática aún no está conectada.)`
+					: await executeTool(name, toolInput, userId);
+				toolCalls.push({ name, input: toolInput, result: toolResult });
+				if (name === "execute_despiece" || name === "convert_to_variant") {
+					requiresConfirmation = true;
+					confirmationData = { toolName: name, toolInput };
+				}
+				return toolResult;
+			};
+
+			if (xaiEnabled()) {
+				// Grok (x.ai): mismo loop agéntico con la API de respuestas.
+				const xaiInput: unknown[] = [{ role: "user", content: input.message }];
+				const xaiModel =
+					cfg?.model && cfg.model.startsWith("grok") ? cfg.model : XAI_MODEL;
+				for (let round = 0; round < 5; round++) {
+					const turn = await xaiRespond({
+						model: xaiModel,
+						instructions: systemPrompt,
+						input: xaiInput,
+						tools: activeTools as any,
+					});
+					if (turn.text) answerText = turn.text;
+					if (turn.calls.length === 0) break;
+					xaiInput.push(...turn.output);
+					for (const call of turn.calls) {
+						const output = await runTool(call.name, call.arguments);
+						xaiInput.push({
+							type: "function_call_output",
+							call_id: call.call_id,
+							output: String(output),
+						});
+					}
+				}
+				return {
+					answer: answerText,
+					toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+					requiresConfirmation,
+					confirmationData: requiresConfirmation ? confirmationData : undefined,
+				};
+			}
+
 			const client = getClient();
 
 			// Loop agéntico: hasta 5 rondas de tool_use para evitar bucles infinitos
 			for (let round = 0; round < 5; round++) {
 				const response = await client.messages.create({
-					model,
+					model: model.startsWith("grok") ? "claude-opus-4-8" : model,
 					max_tokens: 2000,
 					tools: activeTools as any,
 					messages: conversation,
 					system: systemPrompt,
 				});
 
-				// Capturar el texto de esta respuesta
 				const textBlock = response.content.find((b: any) => b.type === "text");
 				if (textBlock) answerText = (textBlock as any).text;
+				conversation.push({ role: "assistant", content: response.content });
 
-				// Agregar la respuesta del asistente a la conversación
-				conversation.push({
-					role: "assistant",
-					content: response.content,
-				});
-
-				// Recolectar todos los tool_use de esta respuesta
 				const toolUses = response.content.filter(
 					(b: any) => b.type === "tool_use",
 				);
-
-				// Si no pidió herramientas, terminamos
 				if (toolUses.length === 0) break;
 
-				// Ejecutar cada herramienta y juntar los resultados
 				const toolResults: any[] = [];
 				for (const block of toolUses) {
 					const toolUse = block as any;
-					// Herramienta personalizada: aún no tiene ejecución real; devolvemos
-					// su descripción para que el modelo la use como contexto.
-					const toolResult = customNames.has(toolUse.name)
-						? `[Herramienta personalizada "${toolUse.name}"] ${customTools.find((t) => t?.name === toolUse.name)?.description ?? ""}\n\n(Esta habilidad está declarada pero su ejecución automática aún no está conectada.)`
-						: await executeTool(toolUse.name, toolUse.input, userId);
-
-					toolCalls.push({
-						name: toolUse.name,
-						input: toolUse.input,
-						result: toolResult,
-					});
-
-					if (
-						toolUse.name === "execute_despiece" ||
-						toolUse.name === "convert_to_variant"
-					) {
-						requiresConfirmation = true;
-						confirmationData = {
-							toolName: toolUse.name,
-							toolInput: toolUse.input,
-						};
-					}
-
 					toolResults.push({
 						type: "tool_result",
 						tool_use_id: toolUse.id,
-						content: toolResult,
+						content: await runTool(toolUse.name, toolUse.input),
 					});
 				}
-
-				// Agregar los resultados como mensaje del usuario y continuar el loop
 				conversation.push({ role: "user", content: toolResults });
 			}
 
@@ -1745,17 +1756,30 @@ ${customerRows.map((c) => `${c.id}|${c.name}`).join("\n")}
 PRODUCTOS (id|nombre):
 ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 
-			const response = await getClient().messages.create({
-				model: "claude-sonnet-5-5",
-				max_tokens: 1500,
-				system,
-				tools: tools as any,
-				tool_choice: { type: "any" },
-				messages: [{ role: "user", content: input.text }],
-			});
-			const call = response.content.find((b: any) => b.type === "tool_use") as
-				| { name: string; input: any }
-				| undefined;
+			let call: { name: string; input: any } | undefined;
+			if (xaiEnabled()) {
+				const turn = await xaiRespond({
+					instructions: system,
+					input: [{ role: "user", content: input.text }],
+					tools,
+					toolChoice: "required",
+					maxOutputTokens: 1500,
+				});
+				const first = turn.calls[0];
+				call = first ? { name: first.name, input: first.arguments } : undefined;
+			} else {
+				const response = await getClient().messages.create({
+					model: "claude-sonnet-5-5",
+					max_tokens: 1500,
+					system,
+					tools: tools as any,
+					tool_choice: { type: "any" },
+					messages: [{ role: "user", content: input.text }],
+				});
+				call = response.content.find((b: any) => b.type === "tool_use") as
+					| { name: string; input: any }
+					| undefined;
+			}
 			if (!call || call.name !== "propose_order") return { kind: "question" };
 
 			// Validar contra el catálogo: lo que no exista se descarta.
@@ -1788,6 +1812,14 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 					: [],
 			};
 		}),
+
+	/** Qué voz tiene Peggy: con x.ai, dictado y respuesta hablada (Ara). */
+	voiceInfo: protectedProcedure.query(() => ({
+		provider: xaiEnabled() ? ("xai" as const) : ("anthropic" as const),
+		serverVoice: xaiEnabled(),
+		voice: xaiEnabled() ? XAI_VOICE : null,
+		model: xaiEnabled() ? XAI_MODEL : null,
+	})),
 
 	executeAction: protectedProcedure
 		.input(
