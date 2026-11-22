@@ -41,6 +41,20 @@ function isTypingTarget(target: EventTarget | null): boolean {
 	);
 }
 
+/** Enter/Espacio deben activar el control, no registrar peso ni capturar. */
+export function isActivateTarget(target: EventTarget | null): boolean {
+	if (!target || typeof target !== "object") return false;
+	const element = target as {
+		tagName?: string;
+		closest?: (selector: string) => unknown;
+	};
+	const tag = element.tagName;
+	if (tag === "BUTTON" || tag === "A" || tag === "SUMMARY") return true;
+	return Boolean(
+		element.closest?.("button, a, [role='button'], [role='link']"),
+	);
+}
+
 function modifierKey(
 	event: Pick<KeyboardEvent, "metaKey" | "altKey">,
 ): boolean {
@@ -102,9 +116,16 @@ const MOD_KEYS: Record<string, PesajeAction> = {
 export function matchPesajeShortcut(
 	event: Pick<
 		KeyboardEvent,
-		"key" | "code" | "metaKey" | "altKey" | "ctrlKey" | "shiftKey" | "target"
+		| "key"
+		| "code"
+		| "metaKey"
+		| "altKey"
+		| "ctrlKey"
+		| "shiftKey"
+		| "target"
+		| "repeat"
 	>,
-	options?: { overlayOpen?: boolean },
+	options?: { overlayOpen?: boolean; isPending?: boolean },
 ): PesajeAction | null {
 	const overlayOpen = options?.overlayOpen ?? false;
 	const key = event.key;
@@ -114,6 +135,8 @@ export function matchPesajeShortcut(
 	if (key === "Escape") {
 		return { type: "close" };
 	}
+	if (event.repeat) return null;
+	if (options?.isPending) return null;
 	if (event.ctrlKey) return null;
 
 	if (key === "?" && !typing && !mod) {
@@ -157,9 +180,11 @@ export function matchPesajeShortcut(
 		return { type: "move-line", direction: -1 };
 	}
 	if (key === "Enter") {
+		if (isActivateTarget(event.target)) return null;
 		return { type: "confirm" };
 	}
 	if (key === " " || key === "Spacebar") {
+		if (isActivateTarget(event.target)) return null;
 		return { type: "capture" };
 	}
 

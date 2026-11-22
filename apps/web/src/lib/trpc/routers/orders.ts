@@ -23,10 +23,13 @@ import {
 import { despieceRecipeFilter } from "@/lib/recipes/effective-recipes";
 import { almacenProcedure, protectedProcedure, router } from "../init";
 import {
+	chargeableSubtotalCents,
 	isChargeableItem,
 	isChargedItem,
 	nextStatusAfterCharge,
 	nextStatusAfterReceive,
+	totalSanityError,
+	unitPriceSanityError,
 } from "./order-charge";
 
 const orderWithCustomerSchema = z.object({
@@ -2505,6 +2508,11 @@ export const ordersRouter = router({
 		)
 		.output(z.object({ success: z.boolean(), total: z.number() }))
 		.mutation(async ({ ctx, input }) => {
+			// P33-1: tope de cordura antes de tocar nada (precio en pesos, no centavos).
+			for (const it of input.items) {
+				const message = unitPriceSanityError(it.pricePerKg);
+				if (message) throw new TRPCError({ code: "BAD_REQUEST", message });
+			}
 			return db.transaction(async (tx) => {
 				const [orderData] = await tx
 					.update(orders)
@@ -2616,6 +2624,14 @@ export const ordersRouter = router({
 					.from(orderItems)
 					.where(eq(orderItems.order_id, input.orderId));
 				const chargeable = allItems.filter(isChargeableItem);
+				// P33-1: tope del total antes de descontar inventario (la
+				// transacción completa se revierte si se rechaza).
+				const totalMessage = totalSanityError(
+					chargeableSubtotalCents(chargeable),
+				);
+				if (totalMessage) {
+					throw new TRPCError({ code: "BAD_REQUEST", message: totalMessage });
+				}
 				if (chargeable.length === 0) {
 					if (!allItems.some(isChargedItem)) {
 						throw new TRPCError({

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { formatCustomTareHint } from "@/lib/weighing/parse-custom-tare";
 import { FnScreenOption, FnScreenRow } from "../instrument/function-screen";
 import { SHORTCUT_ROWS } from "../shortcuts";
 import {
@@ -310,12 +311,14 @@ export function InicioPage({
 export function RecipientePage({
 	containerId,
 	customTare,
+	customTareInvalid = false,
 	onContainer,
 	onCustomTare,
 	onTareFromWeight,
 }: {
 	containerId: ContainerId;
 	customTare: string;
+	customTareInvalid?: boolean;
 	onContainer: (id: ContainerId) => void;
 	onCustomTare: (value: string) => void;
 	onTareFromWeight: () => void;
@@ -333,7 +336,7 @@ export function RecipientePage({
 					label={container.label}
 					hint={
 						container.tare === null
-							? `${Number(customTare || 0).toFixed(3)} kg`
+							? formatCustomTareHint(customTare)
 							: `${container.tare.toFixed(3)} kg`
 					}
 					shortcut={String(index + 1)}
@@ -348,9 +351,15 @@ export function RecipientePage({
 						inputMode="decimal"
 						value={customTare}
 						onChange={(event) => onCustomTare(event.target.value)}
+						aria-invalid={customTareInvalid}
 						className="w-24 rounded border border-[#4d7652] bg-[#0b1710] px-2 py-1 text-right text-[#c9ff99] outline-none focus:border-[#f39a1e]"
 					/>
 				</label>
+			) : null}
+			{containerId === "otro" && customTareInvalid ? (
+				<p className="mt-2 text-[#f39a1e] text-[11px]">
+					La tara debe ser 0 o más, sin coma (usa punto).
+				</p>
 			) : null}
 			<button
 				type="button"
