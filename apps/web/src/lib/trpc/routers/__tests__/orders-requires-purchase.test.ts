@@ -1600,7 +1600,7 @@ describe("orders N7 — no reabrir cobrados y tests oficiales de N6-5", () => {
 		expect(await getTransactions(order.id)).toHaveLength(0);
 	});
 
-	it("N7-1: se puede cambiar el total de un COMPLETADA sin tocar el estado", async () => {
+	it("N7-1 / ronda 8: no se puede editar el total de un COMPLETADA", async () => {
 		await updateProductStock(pieceProductId, {
 			stock_pieces: 5,
 			stock_kg: "0",
@@ -1620,14 +1620,17 @@ describe("orders N7 — no reabrir cobrados y tests oficiales de N6-5", () => {
 			orderId: order.id,
 			paymentMethodId,
 		});
+		const totalBefore = Number((await getOrder(order.id))?.total_amount);
 
-		const updated = await caller.update({
-			id: order.id,
-			total_amount: 12000,
-		});
-		expect(updated.status).toBe("COMPLETADA");
+		await expect(
+			caller.update({
+				id: order.id,
+				total_amount: 12000,
+			}),
+		).rejects.toThrow(/total de un pedido cerrado o en cobro/i);
+
 		expect((await getOrder(order.id))?.status).toBe("COMPLETADA");
-		expect(Number((await getOrder(order.id))?.total_amount)).toBe(12000);
+		expect(Number((await getOrder(order.id))?.total_amount)).toBe(totalBefore);
 		expect(await getTransactions(order.id)).toHaveLength(1);
 	});
 
@@ -2108,13 +2111,28 @@ describe("orders R4-13 — Compra recibida suma stock", () => {
 	});
 
 	it("P28-R2-2: el pesaje rechaza un pedido cancelado y no suma stock", async () => {
-		const order = await createWeightOnlyFaltante(2000);
-		await caller.receivePurchase({ orderId: order.id });
+		// Una venta por peso (sin compra recibida) sí se puede cancelar
+		// estando PENDIENTE_PESAJE. El caso C5 (compra recibida sin pesar)
+		// ahora lo bloquea P31-1; el pesaje de un cancelado se cubre aquí.
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "5.000",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					quantityKg: 2000,
+				},
+			],
+		});
 		const weightItem = (await getItems(order.id)).find(
 			(item) => item.status === "PENDIENTE_PESAJE",
 		);
 		expect(weightItem).toBeDefined();
-		const createdAt = (await purchaseMoves(order.id))[0]?.created_at;
 
 		await caller.update({ id: order.id, status: "cancelled" });
 		expect((await getOrder(order.id))?.status).toBe("cancelled");
@@ -2128,10 +2146,7 @@ describe("orders R4-13 — Compra recibida suma stock", () => {
 
 		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
 		expect((await getOrder(order.id))?.status).toBe("cancelled");
-		expect(await stockKg()).toBe(0);
-		const moves = await purchaseMoves(order.id);
-		expect(moves[0]?.quantity_change_kg).toBeNull();
-		expect(moves[0]?.created_at?.getTime()).toBe(createdAt?.getTime());
+		expect(await stockKg()).toBe(5);
 	});
 
 	it("P28-R2-2: el pesaje también rechaza un pedido cerrado COMPLETADA", async () => {
@@ -2154,5 +2169,396 @@ describe("orders R4-13 — Compra recibida suma stock", () => {
 
 		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
 		expect(await stockKg()).toBe(0);
+	});
+});
+
+describe("orders — robustez (delete, user_uid, cancelar)", () => {
+	it("update no reasigna el user_uid de un pedido system", async () => {
+		const [order] = await db
+			.insert(orders)
+			.values({
+				customer_id: customerId,
+				total_amount: "10.00",
+				user_uid: "system",
+				status: "LISTA_PARA_COBRO",
+			})
+			.returning();
+		const updated = await caller.update({
+			id: order.id,
+			total_amount: 2500,
+		});
+		expect(Number(updated.total_amount)).toBe(2500);
+		expect((await getOrder(order.id))?.user_uid).toBe("system");
+		expect((await getOrder(order.id))?.status).toBe("LISTA_PARA_COBRO");
+	});
+
+	it("delete rechaza un pedido cerrado COMPLETADA y no borra líneas", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+		await expect(caller.delete({ id: order.id })).rejects.toThrow(
+			/eliminar un pedido cerrado o en cobro/i,
+		);
+		expect(await getOrder(order.id)).toBeDefined();
+		expect(await getItems(order.id)).toHaveLength(1);
+		expect(await getTransactions(order.id)).toHaveLength(1);
+	});
+
+	it("delete rechaza un pedido con cobro parcial (línea COBRADO)", async () => {
+		const order = await createPartialOrder();
+		await caller.completeOrderPayment({
+			orderId: order.id,
+			paymentMethodId,
+		});
+		await expect(caller.delete({ id: order.id })).rejects.toThrow(
+			/líneas ya cobradas o con algún cobro|cerrado o en cobro/i,
+		);
+		expect(await getOrder(order.id)).toBeDefined();
+		expect(
+			(await getItems(order.id)).some((item) => item.status === "COBRADO"),
+		).toBe(true);
+	});
+
+	it("delete rechaza un pedido con compra recibida y conserva las líneas", async () => {
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					requiresPurchase: true,
+					quantityKg: 2000,
+				},
+			],
+		});
+		await caller.receivePurchase({ orderId: order.id });
+		const itemsBefore = await getItems(order.id);
+		expect(itemsBefore[0]?.status).toBe("PENDIENTE_PESAJE");
+		await expect(caller.delete({ id: order.id })).rejects.toThrow(
+			/compra recibida pendiente de pesaje o cobro/i,
+		);
+		expect(await getOrder(order.id)).toBeDefined();
+		expect((await getItems(order.id))[0]?.id).toBe(itemsBefore[0]?.id);
+	});
+
+	it("delete permite borrar un pedido abierto sin cobro ni recepción", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		const result = await caller.delete({ id: order.id });
+		expect(result.success).toBe(true);
+		expect(await getOrder(order.id)).toBeUndefined();
+		expect(await getItems(order.id)).toHaveLength(0);
+	});
+
+	it("cancelar un PESADO de venta no cambia el stock", async () => {
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "5.000",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					quantityKg: 2000,
+				},
+			],
+		});
+		const weightItem = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_PESAJE",
+		);
+		expect(weightItem).toBeDefined();
+		await caller.updateOrderItemWeight({
+			orderItemId: weightItem!.id,
+			actualWeightGrams: 2000,
+		});
+		const [before] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(Number(before.stock_kg)).toBe(5);
+
+		await caller.update({ id: order.id, status: "cancelled" });
+		expect((await getOrder(order.id))?.status).toBe("cancelled");
+		const [after] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(Number(after.stock_kg)).toBe(5);
+		expect((await getItems(order.id))[0]?.status).toBe("PESADO");
+	});
+
+	it("cancelar después de pesar una compra recibida no quita el stock que ya entró", async () => {
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					requiresPurchase: true,
+					quantityKg: 2000,
+				},
+			],
+		});
+		await caller.receivePurchase({ orderId: order.id });
+		const weightItem = (await getItems(order.id)).find(
+			(item) => item.status === "PENDIENTE_PESAJE",
+		);
+		await caller.updateOrderItemWeight({
+			orderItemId: weightItem!.id,
+			actualWeightGrams: 2000,
+		});
+		const [before] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(Number(before.stock_kg)).toBe(2);
+
+		await caller.update({ id: order.id, status: "cancelled" });
+		expect((await getOrder(order.id))?.status).toBe("cancelled");
+		const [after] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(Number(after.stock_kg)).toBe(2);
+	});
+	it("P31-1: no se cancela una compra por peso recibida que todavía no se pesó", async () => {
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					requiresPurchase: true,
+					quantityKg: 2000,
+				},
+			],
+		});
+		await caller.receivePurchase({ orderId: order.id });
+		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
+
+		await expect(
+			caller.update({ id: order.id, status: "cancelled" }),
+		).rejects.toThrow(/pese primero o ajuste inventario/i);
+
+		const persisted = await getOrder(order.id);
+		expect(persisted?.status).not.toBe("cancelled");
+		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
+		const [stock] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(Number(stock.stock_kg)).toBe(0);
+	});
+
+	it("P31-4: delete rechaza un pedido abierto con un solo cobro aunque no haya línea COBRADO", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 1,
+					unitPrice: 1000,
+				},
+			],
+		});
+		expect(
+			(await getItems(order.id)).some((item) => item.status === "COBRADO"),
+		).toBe(false);
+		await db.insert(transactions).values({
+			order_id: order.id,
+			payment_method_id: paymentMethodId,
+			amount: 1000,
+			user_uid: "user-rp",
+			status: "completed",
+			category: "selling",
+			type: "income",
+			description: "Cobro legado sin línea COBRADO",
+		});
+		await expect(caller.delete({ id: order.id })).rejects.toThrow(
+			/líneas ya cobradas o con algún cobro/i,
+		);
+		expect(await getOrder(order.id)).toBeDefined();
+		expect(await getTransactions(order.id)).toHaveLength(1);
+	});
+
+	it("al cancelar deja en notas quién, cuándo, el estado previo y que el stock no se revierte", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 5,
+			stock_kg: "0",
+		});
+		const [created] = await db
+			.insert(orders)
+			.values({
+				customer_id: customerId,
+				total_amount: "1000",
+				user_uid: "user-rp",
+				status: "LISTA_PARA_COBRO",
+				notes: "Pedido del martes",
+			})
+			.returning();
+		await db.insert(transactions).values({
+			order_id: created.id,
+			payment_method_id: paymentMethodId,
+			amount: 10000,
+			user_uid: "user-rp",
+			status: "completed",
+			category: "selling",
+			type: "income",
+		});
+		const updated = await caller.update({
+			id: created.id,
+			status: "cancelled",
+		});
+		expect(updated.status).toBe("cancelled");
+		expect(updated.notes).toContain("Pedido del martes");
+		expect(updated.notes).toContain("[AUDITORIA-CANCELACION] Cancelado ");
+		expect(updated.notes).toContain("por Test (user-rp)");
+		expect(updated.notes).toContain("estado previo: LISTA_PARA_COBRO");
+		expect(updated.notes).toContain("cobros: 1 ($100.00)");
+		expect(updated.notes).toContain("créditos: 0 ($0.00)");
+		expect(updated.notes).toContain("America/Mexico_City");
+		expect(updated.notes).toContain("El stock no se revierte.");
+
+		const ticket = await ticketsCaller.generateTicket({ orderId: created.id });
+		expect(ticket.notes).toBe("Pedido del martes");
+		expect(ticket.notes).not.toContain("[AUDITORIA-CANCELACION]");
+		expect(ticket.notes).not.toContain("user-rp");
+	});
+
+	it("P31-R2-2: orders.update cancela una venta que sigue PENDIENTE_PESAJE", async () => {
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "5.000",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					quantityKg: 2000,
+				},
+			],
+		});
+		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
+		const updated = await caller.update({
+			id: order.id,
+			status: "cancelled",
+		});
+		expect(updated.status).toBe("cancelled");
+		expect((await getOrder(order.id))?.status).toBe("cancelled");
+		expect((await getItems(order.id))[0]?.status).toBe("PENDIENTE_PESAJE");
+	});
+
+	it("P31-R2-1: se puede cancelar una compra por pieza recibida aunque haya una venta por peso pendiente", async () => {
+		await updateProductStock(pieceProductId, {
+			stock_pieces: 0,
+			stock_kg: "0",
+		});
+		await updateProductStock(weightProductId, {
+			stock_pieces: 0,
+			stock_kg: "5.000",
+		});
+		const order = await caller.create({
+			customerId,
+			paymentMethodId,
+			items: [
+				{
+					productId: pieceProductId,
+					quantityPieces: 2,
+					unitPrice: 1000,
+					requiresPurchase: true,
+				},
+				{
+					productId: weightProductId,
+					unitPrice: 10000,
+					quantityKg: 2000,
+				},
+			],
+		});
+		await caller.receivePurchase({ orderId: order.id });
+		const items = await getItems(order.id);
+		expect(
+			items.some(
+				(item) =>
+					item.product_id === pieceProductId && item.status === "COMPLETADO",
+			),
+		).toBe(true);
+		expect(
+			items.some(
+				(item) =>
+					item.product_id === weightProductId &&
+					item.status === "PENDIENTE_PESAJE",
+			),
+		).toBe(true);
+
+		const updated = await caller.update({
+			id: order.id,
+			status: "cancelled",
+		});
+		expect(updated.status).toBe("cancelled");
+		const [piece] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, pieceProductId));
+		const [weight] = await db
+			.select()
+			.from(products)
+			.where(eq(products.id, weightProductId));
+		expect(piece.stock_pieces).toBe(2);
+		expect(Number(weight.stock_kg)).toBe(5);
 	});
 });

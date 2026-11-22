@@ -16,6 +16,10 @@ import {
 	scaleReadings,
 	transactions,
 } from "@/lib/db/schema";
+import {
+	appendCancelAuditNote,
+	CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
+} from "@/lib/orders/cancel-audit";
 import { despieceRecipeFilter } from "@/lib/recipes/effective-recipes";
 import { almacenProcedure, protectedProcedure, router } from "../init";
 import {
@@ -265,6 +269,84 @@ async function orderHasReceivedPurchase(
 		)
 		.limit(1);
 	return Boolean(row);
+}
+
+/** Compra recibida por peso todavía sin pesar (C5).
+ * Bloquea solo si un COMPRA de este pedido es de un producto cuya línea
+ * sigue PENDIENTE_PESAJE, o si el movimiento es de peso (kg nulo y sin piezas).
+ * No bloquea una venta por peso pendiente junto a una compra por pieza ya recibida.
+ */
+async function orderHasUnweighedReceivedWeight(
+	dbOrTx: OrdersTx | typeof db,
+	orderId: number,
+): Promise<boolean> {
+	const moves = await dbOrTx
+		.select({
+			product_id: inventoryTransactions.product_id,
+			quantity_change_kg: inventoryTransactions.quantity_change_kg,
+			quantity_change_pieces: inventoryTransactions.quantity_change_pieces,
+		})
+		.from(inventoryTransactions)
+		.where(
+			and(
+				eq(inventoryTransactions.transaction_type, "COMPRA"),
+				eq(inventoryTransactions.reference_id, orderId),
+			),
+		);
+	if (moves.length === 0) return false;
+
+	const pending = await dbOrTx
+		.select({ product_id: orderItems.product_id })
+		.from(orderItems)
+		.where(
+			and(
+				eq(orderItems.order_id, orderId),
+				eq(orderItems.status, "PENDIENTE_PESAJE"),
+			),
+		);
+	const pendingProductIds = new Set(
+		pending
+			.map((item) => item.product_id)
+			.filter((id): id is number => id != null),
+	);
+
+	for (const move of moves) {
+		const pieces = move.quantity_change_pieces ?? 0;
+		const kgIsNull =
+			move.quantity_change_kg === null || move.quantity_change_kg === undefined;
+		if (kgIsNull && pieces <= 0) return true;
+		if (move.product_id != null && pendingProductIds.has(move.product_id)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+async function loadCancelImpact(dbOrTx: OrdersTx | typeof db, orderId: number) {
+	const incomeTxs = await dbOrTx
+		.select({ amount: transactions.amount })
+		.from(transactions)
+		.where(
+			and(eq(transactions.order_id, orderId), eq(transactions.type, "income")),
+		);
+	const credits = await dbOrTx
+		.select({ amount: creditCharges.amount })
+		.from(creditCharges)
+		.where(eq(creditCharges.order_id, orderId));
+	const incomeCents = incomeTxs.reduce(
+		(sum, row) => sum + Math.round(Number(row.amount ?? 0)),
+		0,
+	);
+	const creditPesos = credits.reduce(
+		(sum, row) => sum + Number(row.amount ?? 0),
+		0,
+	);
+	return {
+		incomeCount: incomeTxs.length,
+		incomeCents,
+		creditCount: credits.length,
+		creditCents: Math.round(creditPesos * 100),
+	};
 }
 
 export const ordersRouter = router({
@@ -2614,6 +2696,46 @@ export const ordersRouter = router({
 			});
 		}),
 
+	cancelSummary: protectedProcedure
+		.input(z.object({ id: z.number() }))
+		.output(
+			z.object({
+				status: z.string().nullable(),
+				incomeCount: z.number(),
+				incomeCents: z.number(),
+				creditCount: z.number(),
+				creditCents: z.number(),
+				blockedByUnweighedReceivedWeight: z.boolean(),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			const [order] = await db
+				.select({ id: orders.id, status: orders.status })
+				.from(orders)
+				.where(
+					and(
+						eq(orders.id, input.id),
+						inArray(orders.user_uid, [ctx.user.id, "system"]),
+					),
+				)
+				.limit(1);
+			if (!order) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Pedido no encontrado",
+				});
+			}
+			const impact = await loadCancelImpact(db, input.id);
+			return {
+				status: order.status ?? null,
+				...impact,
+				blockedByUnweighedReceivedWeight: await orderHasUnweighedReceivedWeight(
+					db,
+					input.id,
+				),
+			};
+		}),
+
 	update: protectedProcedure
 		.meta({
 			openapi: {
@@ -2680,14 +2802,49 @@ export const ordersRouter = router({
 					});
 				}
 
+				if (
+					total_amount !== undefined &&
+					closedStatuses.includes(order.status ?? "")
+				) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede editar el total de un pedido cerrado o en cobro",
+					});
+				}
+
+				const cancelling =
+					status === "cancelled" && order.status !== "cancelled";
+				if (cancelling && (await orderHasUnweighedReceivedWeight(tx, id))) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
+					});
+				}
+
 				const updateData: any = {
 					...data,
-					user_uid: ctx.user.id,
 					updated_at: new Date(),
 				};
 				if (status !== undefined) updateData.status = status;
 				if (total_amount !== undefined)
 					updateData.total_amount = total_amount.toFixed(2);
+				if (cancelling) {
+					const impact = await loadCancelImpact(tx, id);
+					updateData.notes = appendCancelAuditNote(order.notes, {
+						userId: ctx.user.id,
+						userName: ctx.user.name,
+						previousStatus: order.status ?? null,
+						...impact,
+					});
+				}
+				// Cancelar no revierte el stock de las líneas PESADO:
+				// el pesaje de venta no mueve inventario (el descuento es en el
+				// cobro); el de una compra recibida sí suma el peso real y esa
+				// mercancía ya entró a la tienda; el de producción deja el
+				// pedido en COMPLETADA, que esta vía ya no cancela. No hay
+				// otra mutación en el repo que revierta ese stock al cancelar.
+				// Des-cancelar queda fuera (los cerrados no cambian de estado).
 
 				const [updated] = await tx
 					.update(orders)
@@ -2781,7 +2938,11 @@ export const ordersRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			return db.transaction(async (tx) => {
 				const [ord] = await tx
-					.select({ id: orders.id, status: orders.status })
+					.select({
+						id: orders.id,
+						status: orders.status,
+						notes: orders.notes,
+					})
 					.from(orders)
 					.where(
 						and(
@@ -3001,6 +3162,24 @@ export const ordersRouter = router({
 					upd.status = derivedStatus;
 				}
 
+				if (upd.status === "cancelled" && ord.status !== "cancelled") {
+					if (await orderHasUnweighedReceivedWeight(tx, input.orderId)) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message: CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
+						});
+					}
+					const impact = await loadCancelImpact(tx, input.orderId);
+					const baseNotes =
+						input.notes !== undefined ? input.notes : (ord.notes ?? null);
+					upd.notes = appendCancelAuditNote(baseNotes, {
+						userId: ctx.user.id,
+						userName: ctx.user.name,
+						previousStatus: ord.status ?? null,
+						...impact,
+					});
+				}
+
 				await tx.update(orders).set(upd).where(eq(orders.id, input.orderId));
 
 				// Refleja el cambio en el dinero del sistema si el pedido ya estaba
@@ -3045,15 +3224,72 @@ export const ordersRouter = router({
 		.output(z.object({ success: z.boolean() }))
 		.mutation(async ({ ctx, input }) => {
 			await db.transaction(async (tx) => {
-				await tx.delete(orderItems).where(eq(orderItems.order_id, input.id));
-				await tx
-					.delete(orders)
+				const [order] = await tx
+					.select()
+					.from(orders)
 					.where(
 						and(
 							eq(orders.id, input.id),
 							inArray(orders.user_uid, [ctx.user.id, "system"]),
 						),
+					)
+					.for("update")
+					.limit(1);
+				if (!order) return;
+
+				const closedStatuses = [
+					"COMPLETADA",
+					"paid",
+					"completed",
+					"delivered",
+					"cancelled",
+					"PROCESANDO_PAGO",
+				];
+				if (closedStatuses.includes(order.status ?? "")) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "No se puede eliminar un pedido cerrado o en cobro",
+					});
+				}
+
+				const existing = await tx
+					.select()
+					.from(orderItems)
+					.where(eq(orderItems.order_id, input.id));
+				const incomeTxs = await tx
+					.select({ id: transactions.id })
+					.from(transactions)
+					.where(
+						and(
+							eq(transactions.order_id, input.id),
+							eq(transactions.type, "income"),
+						),
 					);
+				const credits = await tx
+					.select({ id: creditCharges.id })
+					.from(creditCharges)
+					.where(eq(creditCharges.order_id, input.id));
+				const chargeCount = incomeTxs.length + credits.length;
+				if (
+					existing.some((item) => item.status === "COBRADO") ||
+					chargeCount > 0
+				) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede eliminar un pedido con líneas ya cobradas o con algún cobro",
+					});
+				}
+				if (await orderHasReceivedPurchase(tx, input.id)) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No se puede eliminar un pedido con una compra recibida pendiente de pesaje o cobro",
+					});
+				}
+
+				await tx.delete(orderItems).where(eq(orderItems.order_id, input.id));
+				await tx.delete(orders).where(eq(orders.id, input.id));
 			});
 			return { success: true };
 		}),

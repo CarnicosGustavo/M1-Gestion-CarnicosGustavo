@@ -55,9 +55,15 @@ import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
+import { CancelConfirmationDialog } from "@/components/cancel-confirmation-dialog";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { TicketModal } from "@/components/ticket-modal";
 import { useCrudMutation } from "@/hooks/use-crud-mutation";
+import {
+	CANCEL_SUMMARY_ERROR_MESSAGE,
+	CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE,
+	cancelConfirmSummaryText,
+} from "@/lib/orders/cancel-audit";
 import { useTRPC } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/router";
 import { formatCurrency } from "@/lib/utils";
@@ -240,6 +246,12 @@ export default function OrdersPage() {
 	const [statusFilter, setStatusFilter] = useState("all");
 	const [editCustomerName, setEditCustomerName] = useState("");
 	const [editStatusRaw, setEditStatusRaw] = useState<string>("pending");
+	const [cancelOpen, setCancelOpen] = useState(false);
+	const [pendingUpdate, setPendingUpdate] = useState<{
+		id: number;
+		total_amount?: number;
+		status?: OrderStatus;
+	} | null>(null);
 
 	const [ticketOrderId, setTicketOrderId] = useState<number | null>(null);
 
@@ -338,7 +350,18 @@ export default function OrdersPage() {
 		invalidateKeys,
 		successMessage: t("updated"),
 		errorMessage: t("updateError"),
-		onSuccess: () => setIsDialogOpen(false),
+		onSuccess: () => {
+			setCancelOpen(false);
+			setPendingUpdate(null);
+			setIsDialogOpen(false);
+		},
+	});
+
+	const cancelSummaryQuery = useQuery({
+		...trpc.orders.cancelSummary.queryOptions({
+			id: pendingUpdate?.id ?? 0,
+		}),
+		enabled: cancelOpen && pendingUpdate != null,
 	});
 
 	const deleteMutation = useCrudMutation({
@@ -360,11 +383,26 @@ export default function OrdersPage() {
 		},
 		onSubmit: ({ value }) => {
 			if (editingId !== null) {
-				updateMutation.mutate({
+				const locked = isStatusChangeLocked(editStatusRaw);
+				const payload = {
 					id: editingId,
-					total_amount: Math.round(Number.parseFloat(value.total) * 100),
-					...(value.status ? { status: value.status } : {}),
-				});
+					...(locked
+						? {}
+						: {
+								total_amount: Math.round(Number.parseFloat(value.total) * 100),
+							}),
+					...(!locked && value.status ? { status: value.status } : {}),
+				};
+				const goingToCancel =
+					!locked &&
+					value.status === "cancelled" &&
+					editStatusRaw !== "cancelled";
+				if (goingToCancel) {
+					setPendingUpdate(payload);
+					setCancelOpen(true);
+					return;
+				}
+				updateMutation.mutate(payload);
 			}
 		},
 	});
@@ -702,6 +740,7 @@ export default function OrdersPage() {
 												id="total"
 												type="number"
 												value={field.state.value}
+												disabled={isStatusChangeLocked(editStatusRaw)}
 												onChange={(e) => field.handleChange(e.target.value)}
 												onBlur={field.handleBlur}
 												error={
@@ -768,6 +807,34 @@ export default function OrdersPage() {
 					</form>
 				</DialogContent>
 			</Dialog>
+
+			<CancelConfirmationDialog
+				open={cancelOpen}
+				onOpenChange={(open) => {
+					setCancelOpen(open);
+					if (!open) setPendingUpdate(null);
+				}}
+				summaryText={
+					cancelSummaryQuery.data
+						? cancelConfirmSummaryText(cancelSummaryQuery.data)
+						: undefined
+				}
+				isLoading={cancelSummaryQuery.isLoading}
+				blocked={
+					cancelSummaryQuery.data?.blockedByUnweighedReceivedWeight === true ||
+					cancelSummaryQuery.isError
+				}
+				blockedMessage={
+					cancelSummaryQuery.isError
+						? CANCEL_SUMMARY_ERROR_MESSAGE
+						: CANCEL_UNWEIGHED_RECEIVED_WEIGHT_MESSAGE
+				}
+				isPending={updateMutation.isPending}
+				onConfirm={() => {
+					if (!pendingUpdate) return;
+					updateMutation.mutate(pendingUpdate);
+				}}
+			/>
 
 			<DeleteConfirmationDialog
 				open={isDeleteOpen}
