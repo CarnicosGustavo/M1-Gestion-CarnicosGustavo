@@ -65,3 +65,39 @@ export async function logout() {
 	revalidatePath("/", "layout");
 	redirect("/");
 }
+
+/** «Olvidé mi contraseña»: siempre responde igual, exista o no el correo. */
+export async function requestReset(formData: FormData) {
+	const email = String(formData.get("email") ?? "")
+		.trim()
+		.toLowerCase();
+	if (email) {
+		try {
+			await auth.api.requestPasswordReset({
+				body: { email, redirectTo: "/login/nueva" },
+				headers: await headers(),
+			});
+		} catch (err) {
+			console.error("Password reset request failed:", err);
+		}
+	}
+	redirect("/login/olvide?enviado=1");
+}
+
+export async function resetPassword(formData: FormData) {
+	const token = String(formData.get("token") ?? "");
+	const password = String(formData.get("password") ?? "");
+	const confirm = String(formData.get("confirm") ?? "");
+	const back = (error: string) =>
+		redirect(`/login/nueva?token=${encodeURIComponent(token)}&error=${error}`);
+	if (!token) redirect("/login/olvide?error=enlace");
+	if (password.length < 8) back("corta");
+	if (password !== confirm) back("distintas");
+	try {
+		await auth.api.resetPassword({ body: { newPassword: password, token } });
+	} catch (err) {
+		console.error("Password reset failed:", err);
+		redirect("/login/olvide?error=enlace");
+	}
+	redirect("/login?cambiada=1");
+}
