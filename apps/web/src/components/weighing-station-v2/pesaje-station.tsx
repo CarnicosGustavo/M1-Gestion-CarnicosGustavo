@@ -47,6 +47,7 @@ import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
 import {
 	canRegisterWeight,
+	INVALID_TARE_CAPTURE_MESSAGE,
 	parseCustomTareKg,
 } from "@/lib/weighing/parse-custom-tare";
 import {
@@ -486,8 +487,13 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	}, [selectedOrder, currentItem]);
 
 	const serialContainer = useMemo(
-		() => ({ id: containerId, label: containerDef.label, tareKg }),
-		[containerId, containerDef.label, tareKg],
+		() => ({
+			id: containerId,
+			label: containerDef.label,
+			tareKg,
+			tareInvalid: customTareInvalid,
+		}),
+		[containerId, containerDef.label, tareKg, customTareInvalid],
 	);
 
 	useEffect(() => {
@@ -675,6 +681,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	]);
 
 	const handleCaptureStable = useCallback(() => {
+		if (customTareInvalid) {
+			toast.error(INVALID_TARE_CAPTURE_MESSAGE);
+			return;
+		}
 		if (demo) {
 			if (!live?.stable || live.overload || live.weightG == null) {
 				toast.info("En la demostración el peso de ejemplo ya está capturado");
@@ -686,7 +696,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			return;
 		}
 		controlsRef.current?.captureManual();
-	}, [demo, live]);
+	}, [demo, live, customTareInvalid]);
 
 	const handleUndo = useCallback(() => {
 		if (demo) {
@@ -727,12 +737,17 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		}
 	};
 
-	const handlePrevItem = () =>
-		setCurrentItemIndex((index) => Math.max(0, index - 1));
-	const handleNextItem = () =>
-		setCurrentItemIndex((index) =>
-			index + 1 < pendingItems.length ? index + 1 : index,
-		);
+	const handlePrevItem = useCallback(
+		() => setCurrentItemIndex((index) => Math.max(0, index - 1)),
+		[],
+	);
+	const handleNextItem = useCallback(
+		() =>
+			setCurrentItemIndex((index) =>
+				index + 1 < pendingItems.length ? index + 1 : index,
+			),
+		[pendingItems.length],
+	);
 
 	const cycleContainer = useCallback((direction: number) => {
 		setContainerId((current) => {
@@ -979,7 +994,8 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			orders,
 			selectedOrderId,
 			cycleContainer,
-			pendingItems.length,
+			handlePrevItem,
+			handleNextItem,
 			saleLines.length,
 			fnPage,
 			cycleTheme,
@@ -1439,6 +1455,8 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		moveSelection,
 		selectCurrent,
 		handleCaptureStable,
+		handlePrevItem,
+		handleNextItem,
 		cycleTheme,
 		pressPage,
 		runCommand,

@@ -269,8 +269,9 @@ export default function WeighingStationPage() {
 			id: containerId,
 			label: containerDef.label,
 			tareKg,
+			tareInvalid: customTareInvalid,
 		}),
-		[containerId, containerDef.label, tareKg],
+		[containerId, containerDef.label, tareKg, customTareInvalid],
 	);
 
 	const containerLabels = useMemo(
