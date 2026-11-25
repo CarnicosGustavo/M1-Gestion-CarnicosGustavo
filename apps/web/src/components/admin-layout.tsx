@@ -242,7 +242,13 @@ function ThemeControl() {
 	);
 }
 
-export function AdminLayout({ children }: { children: React.ReactNode }) {
+export function AdminLayout({
+	children,
+	userRole = null,
+}: {
+	children: React.ReactNode;
+	userRole?: string | null;
+}) {
 	const pathname = usePathname();
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	const userMenuTriggerId = useId();
@@ -265,7 +271,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 	if (isPesajeV2) {
 		return (
 			<div className="flex h-screen w-full flex-col overflow-hidden bg-background p-1.5">
-				<AntonellaProvider>{children}</AntonellaProvider>
+				<AntonellaProvider userRole={userRole}>{children}</AntonellaProvider>
 			</div>
 		);
 	}
@@ -503,7 +509,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 								: "mx-auto max-w-[1180px]"
 						}
 					>
-						<AntonellaProvider>
+						<AntonellaProvider userRole={userRole}>
 							{isPesajeV2 ? null : <RouteAntonellaSlot />}
 							{children}
 						</AntonellaProvider>

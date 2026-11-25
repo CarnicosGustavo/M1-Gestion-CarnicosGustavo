@@ -1,21 +1,18 @@
-import type { UserRole } from "@finopenpos/api";
-
 if (typeof window !== "undefined") {
 	throw new Error(
 		"src/lib/ai/antonella-access.ts solo puede ejecutarse en el servidor.",
 	);
 }
 
+export {
+	ANTONELLA_ALLOWED_ROLES,
+	canUseAntonella,
+} from "./antonella-roles";
+
 /**
  * P34-2: Control de acceso único para Antonella (voz, /stt, /tts, chat y parseVoiceOrder).
- * Default seguro: solo "admin" hasta que Beto confirme otros roles.
+ * La lista de roles vive en antonella-roles.ts (también la usa la UI).
  */
-export const ANTONELLA_ALLOWED_ROLES: readonly UserRole[] = ["admin"];
-
-export function canUseAntonella(role: string | null | undefined): boolean {
-	if (!role) return false;
-	return ANTONELLA_ALLOWED_ROLES.includes(role as UserRole);
-}
 
 export type AntonellaRateBucket = "stt" | "tts" | "chat" | "parseVoiceOrder";
 
@@ -28,6 +25,13 @@ export const ANTONELLA_RATE_LIMITS: Record<AntonellaRateBucket, number> = {
 	parseVoiceOrder: 20,
 };
 
+/**
+ * P36-2: el tope vive en un Map de este proceso. Basta por ahora: la
+ * producción corre en un solo contenedor de Coolify, no en serverless,
+ * así que no hay varias instancias ni cold starts que reinicien el
+ * contador. Si más adelante se escala a más de un proceso, habría que
+ * moverlo a un almacén compartido.
+ */
 const buckets = new Map<string, number[]>();
 
 export function consumeAntonellaRateLimit(

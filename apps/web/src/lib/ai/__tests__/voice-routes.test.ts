@@ -8,6 +8,8 @@ import {
 	it,
 	mock,
 } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createTestDb, SCHEMA_DDL } from "../../trpc/routers/__tests__/helpers";
 
 const { pg, db } = createTestDb();
@@ -30,6 +32,7 @@ const {
 	consumeAntonellaRateLimit,
 	resetAntonellaRateLimits,
 } = await import("../antonella-access");
+const rolesMod = await import("../antonella-roles");
 const {
 	buildVoiceKeyterms,
 	handleSttPost,
@@ -84,6 +87,18 @@ describe("antonella-access y voice-routes (P34-2, P34-6, P34-7)", () => {
 		expect(canUseAntonella("cajero")).toBe(false);
 		expect(canUseAntonella("almacen")).toBe(false);
 		expect(canUseAntonella(null)).toBe(false);
+		expect(ANTONELLA_ALLOWED_ROLES).toBe(rolesMod.ANTONELLA_ALLOWED_ROLES);
+		expect(canUseAntonella).toBe(rolesMod.canUseAntonella);
+	});
+
+	it("P36-4: antonella-access reexporta la lista; no hay una segunda copia", () => {
+		const src = readFileSync(
+			join(import.meta.dir, "../antonella-access.ts"),
+			"utf8",
+		);
+		expect(src).toContain('from "./antonella-roles"');
+		expect(src).toContain("ANTONELLA_ALLOWED_ROLES");
+		expect(src).not.toMatch(/export const ANTONELLA_ALLOWED_ROLES:\s*readonly/);
 	});
 
 	it("P34-2: rate limit por usuario en ventana de 60s", () => {

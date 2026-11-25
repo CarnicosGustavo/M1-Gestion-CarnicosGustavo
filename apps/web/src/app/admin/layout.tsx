@@ -1,12 +1,14 @@
 import { AdminLayout } from "@/components/admin-layout";
+import { getAuthUser } from "@/lib/auth-guard";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default function Layout({
+export default async function Layout({
 	children,
 }: Readonly<{
 	children: React.ReactNode;
 }>) {
-	return <AdminLayout>{children}</AdminLayout>;
+	const user = await getAuthUser();
+	return <AdminLayout userRole={user?.role ?? null}>{children}</AdminLayout>;
 }

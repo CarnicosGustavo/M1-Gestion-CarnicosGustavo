@@ -158,4 +158,38 @@ describe("P34-8 y P34-12: carreras de voz, Esc en thinking, micrófono y aria-li
 		expect(psSrc).toContain('spokenRef.current = ""');
 		expect(psSrc).toContain("recorderRef.current?.cancel()");
 	});
+
+	test("P36-1: CobroPage suma con saleLinesTotalCents; P36-4: tecla Antonella según canUseAntonella", () => {
+		const psSrc = readFileSync(
+			join(import.meta.dir, "../pesaje-station.tsx"),
+			"utf8",
+		);
+		expect(psSrc).toContain('from "@/lib/ai/antonella-roles"');
+		expect(psSrc).toContain("canUseAntonella(role)");
+		expect(psSrc).toContain("saleLinesTotalCents(saleLines)");
+		const cobro = psSrc.slice(psSrc.indexOf('case "cobro":'));
+		expect(cobro).toContain("saleLinesTotalCents(saleLines)");
+		expect(cobro).not.toContain("lineSubtotalCents");
+		const grupo = psSrc.slice(
+			psSrc.indexOf('id: "sistema"'),
+			psSrc.indexOf("const containerLabel"),
+		);
+		expect(grupo).toContain("...(canUseVoice");
+		expect(grupo).toContain('id: "voz"');
+		expect(psSrc).toContain("if (!canUseVoice) return;");
+		expect(psSrc).toContain("if (!canUseVoice) break;");
+	});
+
+	test("P36-4: el dock oculta el launcher con la misma canUseAntonella", () => {
+		const dock = readFileSync(
+			join(import.meta.dir, "../../antonella-dock.tsx"),
+			"utf8",
+		);
+		expect(dock).toContain('from "@/lib/ai/antonella-roles"');
+		expect(dock).toContain("canUseAntonella(userRole)");
+		expect(dock).toContain("data-antonella-launcher=");
+		const launch = dock.slice(dock.indexOf("const allowed"));
+		expect(launch).toContain("{allowed ? (");
+		expect(launch).toContain("data-antonella-launcher=");
+	});
 });

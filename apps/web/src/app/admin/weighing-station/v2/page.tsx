@@ -1,7 +1,7 @@
-"use client";
+import { getAuthUser } from "@/lib/auth-guard";
+import { WeighingStationV2Client } from "./v2-client";
 
-import { PesajeStation } from "@/components/weighing-station-v2/pesaje-station";
-
-export default function WeighingStationV2Page() {
-	return <PesajeStation />;
+export default async function WeighingStationV2Page() {
+	const user = await getAuthUser();
+	return <WeighingStationV2Client role={user?.role ?? null} />;
 }
