@@ -8,7 +8,7 @@ export type PesajeCommand =
 	| "hold" // HOLD: congelar el display
 	| "undo" // deshacer la última captura
 	| "charge" // cobrar de contado (panel 5 → pantalla 7)
-	| "charge-credit" // anotar a crédito (lo más común)
+	| "charge-credit" // anotar a crédito (Súper+Shift+G)
 	| "antonella"
 	| "classic";
 
@@ -102,7 +102,7 @@ const MOD_KEYS: Record<string, PesajeAction> = {
 	r: { type: "command", command: "tare" },
 	l: { type: "command", command: "hold" },
 	z: { type: "command", command: "undo" },
-	g: { type: "command", command: "charge-credit" },
+	g: { type: "command", command: "charge" },
 	i: { type: "voice" },
 	v: { type: "command", command: "classic" },
 };
@@ -150,7 +150,7 @@ export function matchPesajeShortcut(
 		if (physical === "t" && event.shiftKey) return { type: "cycle-theme" };
 		if (physical === "a" && event.shiftKey) return { type: "cycle-font" };
 		if (physical === "g" && event.shiftKey) {
-			return { type: "command", command: "charge" };
+			return { type: "command", command: "charge-credit" };
 		}
 		if (physical === "b" && event.shiftKey) {
 			return { type: "command", command: "power" };
@@ -263,7 +263,11 @@ export const SHORTCUT_ROWS: Array<{
 		fallback: "soltar 🎤",
 		action: "Terminar de grabar",
 	},
-	{ keys: "Súper+G", fallback: "Alt+G", action: "Cobrar de contado" },
+	{
+		keys: "Súper+G",
+		fallback: "Alt+G",
+		action: "Cobrar de contado (efectivo)",
+	},
 	{
 		keys: "Súper+Shift+G",
 		fallback: "Alt+Shift+G",

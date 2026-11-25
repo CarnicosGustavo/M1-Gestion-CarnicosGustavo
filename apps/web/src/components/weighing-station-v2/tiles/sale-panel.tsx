@@ -203,7 +203,7 @@ export function SalePanel(props: SalePanelProps) {
 								Crédito
 							</span>
 							<kbd className="font-mono font-normal text-[9px] opacity-70">
-								Súper+G · Enter
+								Súper+⇧G · Enter
 							</kbd>
 						</button>
 						<button
@@ -217,7 +217,7 @@ export function SalePanel(props: SalePanelProps) {
 								Contado
 							</span>
 							<kbd className="font-mono font-normal text-[9px] opacity-70">
-								Súper+⇧G
+								Súper+G
 							</kbd>
 						</button>
 					</div>

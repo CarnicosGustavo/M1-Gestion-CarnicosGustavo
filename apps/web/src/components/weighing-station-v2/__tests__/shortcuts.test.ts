@@ -31,18 +31,22 @@ describe("matchPesajeShortcut", () => {
 		).toEqual({ type: "page", page: "config" });
 	});
 
-	test("Alt+Espacio habla con Peggy; Súper+G crédito y Súper+Shift+G contado", () => {
+	test("Alt+Espacio habla con Peggy; Súper+G contado y Súper+Shift+G crédito (P33-7)", () => {
 		expect(
 			matchPesajeShortcut(event(" ", { altKey: true, code: "Space" })),
 		).toEqual({ type: "voice" });
 		expect(
+			matchPesajeShortcut(event("g", { metaKey: true, code: "KeyG" })),
+		).toEqual({ type: "command", command: "charge" });
+		expect(
 			matchPesajeShortcut(
 				event("G", { metaKey: true, shiftKey: true, code: "KeyG" }),
 			),
-		).toEqual({ type: "command", command: "charge" });
-		expect(
-			matchPesajeShortcut(event("g", { metaKey: true, code: "KeyG" })),
 		).toEqual({ type: "command", command: "charge-credit" });
+		const gRow = SHORTCUT_ROWS.find((row) => row.keys === "Súper+G");
+		const shiftGRow = SHORTCUT_ROWS.find((row) => row.keys === "Súper+Shift+G");
+		expect(gRow?.action).toMatch(/contado|efectivo/i);
+		expect(shiftGRow?.action).toMatch(/crédito/i);
 	});
 
 	test("Súper y Alt enfocan teselas", () => {
