@@ -1,11 +1,11 @@
 // Solo servidor: usa RESEND_API_KEY.
 /**
- * Correo saliente (Resend, solo fetch). Si falta RESEND_API_KEY no se envía
- * nada y se avisa en el log, sin escribir el enlace.
+ * Correo saliente (Resend, solo fetch). Si falta RESEND_API_KEY o Resend
+ * falla, lanza un error (sin afirmar un envío). No escribe el enlace en el log.
  */
 
 export function emailEnabled(): boolean {
-	return Boolean(process.env.RESEND_API_KEY);
+	return Boolean(process.env.RESEND_API_KEY?.trim());
 }
 
 export async function sendEmail(params: {
@@ -14,12 +14,10 @@ export async function sendEmail(params: {
 	html: string;
 	text: string;
 }): Promise<void> {
-	const apiKey = process.env.RESEND_API_KEY;
+	const apiKey = process.env.RESEND_API_KEY?.trim();
 	if (!apiKey) {
-		console.warn(
-			`Correo no configurado (falta RESEND_API_KEY): ${params.subject}`,
-		);
-		return;
+		console.error("Correo no configurado (falta RESEND_API_KEY)");
+		throw new Error("email_not_configured");
 	}
 	const res = await fetch("https://api.resend.com/emails", {
 		method: "POST",
@@ -40,10 +38,11 @@ export async function sendEmail(params: {
 	if (!res.ok) {
 		const body = await res.text().catch(() => "");
 		console.error(`Resend ${res.status}: ${body.slice(0, 300)}`);
+		throw new Error("email_send_failed");
 	}
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
 	return value.replace(
 		/[&<>"']/g,
 		(ch) =>
