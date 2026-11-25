@@ -193,7 +193,7 @@ export default function DespiecePage() {
 
 			{tab === "despiezar" && (
 				<>
-					{/* Peggy: presencia con contexto de demanda */}
+					{/* Antonella: presencia con contexto de demanda */}
 					<AntonellaSlot
 						data={
 							totalDemandPieces > 0
@@ -216,7 +216,7 @@ export default function DespiecePage() {
 						}
 					/>
 
-					{/* Peggy: plan de despiece sugerido (calcula y ejecuta) */}
+					{/* Antonella: plan de despiece sugerido (calcula y ejecuta) */}
 					<DespiecePlanCard onDone={invalidate} />
 
 					{/* Cards de canales disponibles */}

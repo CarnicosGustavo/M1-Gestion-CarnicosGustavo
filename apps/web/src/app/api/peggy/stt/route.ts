@@ -4,7 +4,7 @@ import { getAuthUser } from "@/lib/auth-guard";
 import { db } from "@/lib/db";
 import { customers, products } from "@/lib/db/schema";
 
-// Peggy escucha: nota de voz (webm/opus del navegador) → texto en español.
+// Antonella escucha: nota de voz (webm/opus del navegador) → texto en español.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

@@ -133,7 +133,7 @@ export function VoiceNote({
 			<section
 				role="dialog"
 				aria-modal="true"
-				aria-label="Nota de voz para Peggy"
+				aria-label="Nota de voz para Antonella"
 				className={cn(
 					handwriting.className,
 					"relative z-10 flex max-h-[92vh] w-[min(64rem,92vw)] rotate-[-0.4deg] flex-col overflow-hidden rounded-sm text-[1.9rem] leading-none shadow-[0_18px_40px_rgba(0,0,0,0.55),0_2px_0_#d8d2c2]",
@@ -154,7 +154,7 @@ export function VoiceNote({
 						Cárnicos Gustavo
 					</span>
 					<span className="font-semibold text-[#7d8794] text-xs uppercase tracking-[0.3em]">
-						Notas · Peggy 🎤
+						Notas · Antonella 🎤
 					</span>
 				</header>
 
@@ -230,7 +230,7 @@ export function VoiceNote({
 								className={cn(ink, "pz-write whitespace-pre-wrap")}
 								style={write()}
 							>
-								<span className={label}>Peggy: </span>
+								<span className={label}>Antonella: </span>
 								{answer}
 							</p>
 						) : (
@@ -253,7 +253,7 @@ export function VoiceNote({
 						{status === "listening"
 							? "🎤 Escuchando… suelta el botón o pulsa Espacio"
 							: status === "thinking"
-								? "✍️ Peggy está anotando…"
+								? "✍️ Antonella está anotando…"
 								: hasOrder
 									? "Revisa la nota"
 									: ""}

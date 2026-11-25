@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { matchPesajeShortcut, SHORTCUT_ROWS } from "../shortcuts";
 
 function event(
@@ -31,7 +32,7 @@ describe("matchPesajeShortcut", () => {
 		).toEqual({ type: "page", page: "config" });
 	});
 
-	test("Alt+Espacio habla con Peggy; Súper+G contado y Súper+Shift+G crédito (P33-7)", () => {
+	test("Alt+Espacio habla con Antonella; Súper+G contado y Súper+Shift+G crédito (P33-7)", () => {
 		expect(
 			matchPesajeShortcut(event(" ", { altKey: true, code: "Space" })),
 		).toEqual({ type: "voice" });
@@ -185,5 +186,22 @@ describe("matchPesajeShortcut", () => {
 		expect(matchPesajeShortcut(event("Escape"), { isPending: true })).toEqual({
 			type: "close",
 		});
+	});
+
+	test("la UI, ayuda, tecla Fn y prompts usan Antonella (sin Peggy visible)", () => {
+		const helpActions = SHORTCUT_ROWS.map((row) => row.action).join("\n");
+		expect(helpActions).toContain("Antonella");
+		expect(helpActions).not.toMatch(/Peggy/);
+		for (const rel of [
+			"../pesaje-station.tsx",
+			"../tiles/fn-pages.tsx",
+			"../overlays/voice-note.tsx",
+			"../overlays/new-order-overlay.tsx",
+			"../../../lib/trpc/routers/antonella.ts",
+			"../../../lib/ai/xai.ts",
+		]) {
+			const src = readFileSync(new URL(rel, import.meta.url), "utf8");
+			expect(src).not.toContain("Peggy");
+		}
 	});
 });

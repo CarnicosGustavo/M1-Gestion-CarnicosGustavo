@@ -251,7 +251,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		transcript: string;
 		answer: string;
 	}>({ status: "idle", transcript: "", answer: "" });
-	// Con x.ai, el servidor transcribe (cualquier navegador) y Peggy habla (Ara).
+	// Con x.ai, el servidor transcribe (cualquier navegador) y Antonella habla (Ara).
 	const voiceInfoQuery = useQuery({
 		...trpc.antonella.voiceInfo.queryOptions(),
 		enabled: !demo,
@@ -1147,7 +1147,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		[fnArmed, fnPage, overlay, openDetail, openPage],
 	);
 
-	// ── Voz: mantener 🎤 (o Alt+Espacio) → dictado → Peggy responde en 7
+	// ── Voz: mantener 🎤 (o Alt+Espacio) → dictado → Antonella responde en 7
 	const voiceChatMutation = useMutation(
 		trpc.antonella.chat.mutationOptions({
 			onSuccess: (data) => {
@@ -1161,7 +1161,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			},
 			onError: (error) => {
 				setVoice((current) => ({ ...current, status: "error" }));
-				toast.error(error.message ?? "Peggy no respondió");
+				toast.error(error.message ?? "Antonella no respondió");
 			},
 		}),
 	);
@@ -1169,7 +1169,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		trpc.antonella.parseVoiceOrder.mutationOptions({
 			onError: (error) => {
 				setVoice((current) => ({ ...current, status: "error" }));
-				toast.error(error.message ?? "Peggy no respondió");
+				toast.error(error.message ?? "Antonella no respondió");
 			},
 		}),
 	);
@@ -1204,13 +1204,13 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 							status: "answered",
 							transcript: text,
 							answer:
-								"Demostración: aquí llega la respuesta de Peggy (p. ej. «Pierna: 48 kg en existencia, 3 pedidos la esperan»).",
+								"Demostración: aquí llega la respuesta de Antonella (p. ej. «Pierna: 48 kg en existencia, 3 pedidos la esperan»).",
 						}),
 					900,
 				);
 				return;
 			}
-			// 1) ¿Es un pedido? Peggy lo arma y se abre para confirmar.
+			// 1) ¿Es un pedido? Antonella lo arma y se abre para confirmar.
 			// 2) Si no, responde como siempre en la pantalla 7.
 			voiceOrderMutation.mutate(
 				{ text },
@@ -1364,7 +1364,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		recognitionRef.current?.stop();
 	}, [demo, askAntonella]);
 
-	// Peggy contesta en voz alta (Ara) lo que anotó o lo que le preguntaron.
+	// Antonella contesta en voz alta (Ara) lo que anotó o lo que le preguntaron.
 	const spokenRef = useRef("");
 	useEffect(() => {
 		if (!serverVoice || voice.status !== "answered") return;
@@ -1779,7 +1779,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				},
 				{
 					id: "voz",
-					label: voice.status === "listening" ? "Escucho" : "Peggy",
+					label: voice.status === "listening" ? "Escucho" : "Antonella",
 					shortcut: "Mantén · Alt+Espacio",
 					icon: <MicIcon aria-hidden="true" className="size-3.5" />,
 					tone: voice.status === "listening" ? "red" : "neutral",

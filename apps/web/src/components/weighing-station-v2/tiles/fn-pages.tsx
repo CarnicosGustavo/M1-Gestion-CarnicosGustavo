@@ -32,7 +32,7 @@ export const FN_PAGE_TITLES: Record<FnPage, string> = {
 	frio: "Inventario frío",
 	clientes: "Clientes · precios · cobranza",
 	cobro: "Cobro",
-	voz: "Peggy · voz",
+	voz: "Antonella · voz",
 };
 
 /** Pie común de las vistas rápidas: cómo abrir la ventana grande. */
@@ -634,7 +634,7 @@ export function CobroPage({
 	);
 }
 
-/** Voz (solo micrófono): onda mientras escucha; luego Peggy actúa o responde. */
+/** Voz (solo micrófono): onda mientras escucha; luego Antonella actúa o responde. */
 export function VozPage({
 	status,
 	transcript,
@@ -680,7 +680,7 @@ export function VozPage({
 						: status === "listening"
 							? "Escuchando… suelta 🎤 o pulsa Espacio"
 							: status === "thinking"
-								? "Peggy está pensando…"
+								? "Antonella está pensando…"
 								: "Mantén 🎤 o Alt+Espacio para hablar"}
 				</p>
 			</div>
@@ -695,13 +695,13 @@ export function VozPage({
 				) : (
 					<p className="text-xs opacity-50">
 						Ej.: «Nuevo pedido para Mercado San Juan: 8 piernas, 5 pechos y 3
-						cabezas». Peggy arma el pedido y tú lo confirmas con Enter.
+						cabezas». Antonella arma el pedido y tú lo confirmas con Enter.
 					</p>
 				)}
 				{answer ? (
 					<div className="pz-zoom whitespace-pre-wrap rounded border border-[#355440] bg-[#0b1710]/70 p-3 text-[#d5ffd1] text-xs leading-relaxed">
 						<span className="mb-1 block font-bold text-[#72b777] text-[10px] uppercase tracking-[0.14em]">
-							Peggy
+							Antonella
 						</span>
 						{answer}
 					</div>

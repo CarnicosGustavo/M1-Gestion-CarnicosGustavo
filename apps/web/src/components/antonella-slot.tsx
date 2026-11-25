@@ -50,7 +50,7 @@ export interface AntonellaSlotData {
 	acciones?: string[];
 }
 
-// Bloque inline de Peggy arriba del contenido de un módulo.
+// Bloque inline de Antonella arriba del contenido de un módulo.
 // La primera acción es la "principal" (ejecuta la pregunta); las demás también
 // abren el chat con esa consulta. "Preguntar más" abre el chat vacío.
 export function AntonellaSlot({ data }: { data: AntonellaSlotData | null }) {
@@ -67,7 +67,7 @@ export function AntonellaSlot({ data }: { data: AntonellaSlotData | null }) {
 				<div className="min-w-0 flex-1">
 					<div className="mb-1.5 flex flex-wrap items-center gap-2">
 						<span className="font-extrabold text-[13px] text-foreground">
-							Peggy
+							Antonella
 						</span>
 						<span className="h-[3px] w-[3px] rounded-full bg-muted-foreground" />
 						<span className="font-semibold text-muted-foreground text-xs">

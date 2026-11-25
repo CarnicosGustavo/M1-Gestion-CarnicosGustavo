@@ -34,7 +34,7 @@ import { protectedProcedure, router } from "../init";
 
 // System prompt por defecto (precargado). El usuario lo puede editar en
 // /admin/settings/antonella; si lo deja vacío, se usa éste.
-export const DEFAULT_SYSTEM_PROMPT = `Eres Peggy, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
+export const DEFAULT_SYSTEM_PROMPT = `Eres Antonella, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
 
 Tu rol: Ayudar a optimizar inventario, producción y órdenes.
 
@@ -159,7 +159,7 @@ function getClient(): Anthropic {
 			throw new TRPCError({
 				code: "INTERNAL_SERVER_ERROR",
 				message:
-					"Peggy no está configurada: falta ANTHROPIC_API_KEY en el servidor.",
+					"Antonella no está configurada: falta ANTHROPIC_API_KEY en el servidor.",
 			});
 		}
 		_client = new Anthropic({ apiKey });
@@ -416,7 +416,7 @@ const tools = [
 			required: ["title"],
 		},
 	},
-	// ── DATASETS (bases de datos que Peggy crea) ──
+	// ── DATASETS (bases de datos que Antonella crea) ──
 	{
 		name: "create_dataset",
 		description:
@@ -474,7 +474,7 @@ const tools = [
 	{
 		name: "list_datasets",
 		description:
-			"Lista todas las tablas que Peggy ha creado, con su descripción y columnas.",
+			"Lista todas las tablas que Antonella ha creado, con su descripción y columnas.",
 		input_schema: { type: "object", properties: {}, required: [] },
 	},
 ];
@@ -1493,7 +1493,7 @@ export const antonicellaRouter = router({
 					? cfg.system_prompt
 					: DEFAULT_SYSTEM_PROMPT;
 
-			// Cargar las memorias recientes/importantes para que Peggy sea
+			// Cargar las memorias recientes/importantes para que Antonella sea
 			// "consciente" de lo que ya sabe (puede usar recall para el detalle).
 			const memories = await db
 				.select({
@@ -1656,7 +1656,7 @@ export const antonicellaRouter = router({
 		}),
 
 	/**
-	 * Nota de voz → borrador de pedido. Peggy reconoce cliente y productos
+	 * Nota de voz → borrador de pedido. Antonella reconoce cliente y productos
 	 * contra el catálogo real; NO crea nada: la báscula muestra el borrador y
 	 * el usuario lo confirma con Enter (orders.create).
 	 */
@@ -1748,7 +1748,7 @@ export const antonicellaRouter = router({
 					input_schema: { type: "object", properties: {} },
 				},
 			];
-			const system = `Eres Peggy, asistente de Cárnicos Gustavo (CEDIS de carne de cerdo, México). Recibes la transcripción de una nota de voz. Si pide un pedido, llama propose_order eligiendo el cliente y los productos más parecidos de estas listas (ignora acentos, plurales y errores de dictado: «pechos» → PECHO, «cabezas» → CABEZA). Si es una pregunta o no pide crear un pedido, llama not_an_order. Nunca inventes ids.
+			const system = `Eres Antonella, asistente de Cárnicos Gustavo (CEDIS de carne de cerdo, México). Recibes la transcripción de una nota de voz. Si pide un pedido, llama propose_order eligiendo el cliente y los productos más parecidos de estas listas (ignora acentos, plurales y errores de dictado: «pechos» → PECHO, «cabezas» → CABEZA). Si es una pregunta o no pide crear un pedido, llama not_an_order. Nunca inventes ids.
 
 CLIENTES (id|nombre):
 ${customerRows.map((c) => `${c.id}|${c.name}`).join("\n")}
@@ -1815,7 +1815,7 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 			};
 		}),
 
-	/** Qué voz tiene Peggy: con x.ai, dictado y respuesta hablada (Ara). */
+	/** Qué voz tiene Antonella: con x.ai, dictado y respuesta hablada (Ara). */
 	voiceInfo: protectedProcedure.query(() => ({
 		provider: xaiEnabled() ? ("xai" as const) : ("anthropic" as const),
 		serverVoice: xaiEnabled(),
@@ -1878,7 +1878,7 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 					quantity_change_kg: null,
 					transaction_type: "DESPIECE_SOLICITADO",
 					reference_id: null,
-					notes: `Despiece solicitado por Peggy: ${quantity} ${canal_type}`,
+					notes: `Despiece solicitado por Antonella: ${quantity} ${canal_type}`,
 				});
 
 				return {
@@ -1934,7 +1934,7 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 					quantity_change_kg: null,
 					transaction_type: "VARIANTE_SOLICITADA",
 					reference_id: null,
-					notes: `Conversión solicitada por Peggy: ${quantity} ${base_product_name} → ${variant_product_name}`,
+					notes: `Conversión solicitada por Antonella: ${quantity} ${base_product_name} → ${variant_product_name}`,
 				});
 
 				return {
@@ -1949,7 +1949,7 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 			};
 		}),
 
-	// ── Notificaciones internas (Peggy vigilando el negocio) ──
+	// ── Notificaciones internas (Antonella vigilando el negocio) ──
 	// Detecta condiciones reales y devuelve avisos para mostrar en el dashboard.
 	notifications: protectedProcedure
 		.input(z.void())
@@ -2071,7 +2071,7 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 			return { items };
 		}),
 
-	// ── Configuración de Peggy ──
+	// ── Configuración de Antonella ──
 
 	// Lista las herramientas integradas con su metadata (para la UI)
 	listTools: protectedProcedure

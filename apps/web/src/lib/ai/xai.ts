@@ -15,7 +15,8 @@ export function xaiEnabled(): boolean {
 
 function key(): string {
 	const apiKey = process.env.XAI_API_KEY;
-	if (!apiKey) throw new Error("Peggy no está configurada: falta XAI_API_KEY.");
+	if (!apiKey)
+		throw new Error("Antonella no está configurada: falta XAI_API_KEY.");
 	return apiKey;
 }
 
@@ -112,7 +113,7 @@ export async function xaiRespond(params: {
 	return { text: text.trim(), calls, output: replay };
 }
 
-/** Texto → audio MP3 con la voz de Peggy (Ara por defecto). */
+/** Texto → audio MP3 con la voz de Antonella (Ara por defecto). */
 export async function xaiSpeak(text: string): Promise<ArrayBuffer> {
 	const res = await fetch(`${BASE}/tts`, {
 		method: "POST",

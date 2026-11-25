@@ -4,8 +4,8 @@ import type { DraftLine } from "./overlays/new-order-overlay";
 import { noteProductName, noteQuantity } from "./overlays/voice-note";
 
 /**
- * Voz de Peggy con x.ai: se graba la nota en el navegador (MediaRecorder),
- * el servidor la transcribe (Grok STT) y Peggy contesta hablando (voz Ara).
+ * Voz de Antonella con x.ai: se graba la nota en el navegador (MediaRecorder),
+ * el servidor la transcribe (Grok STT) y Antonella contesta hablando (voz Ara).
  * Funciona en cualquier navegador moderno, no solo en Chrome.
  */
 
@@ -74,7 +74,7 @@ export async function transcribe(audio: Blob): Promise<string> {
 let current: HTMLAudioElement | null = null;
 let pending: AbortController | null = null;
 
-/** Calla a Peggy (Esc, nueva nota o cerrar). */
+/** Calla a Antonella (Esc, nueva nota o cerrar). */
 export function hush(): void {
 	pending?.abort();
 	pending = null;
@@ -85,7 +85,7 @@ export function hush(): void {
 	}
 }
 
-/** Peggy dice el texto con su voz; si falla, se queda callada. */
+/** Antonella dice el texto con su voz; si falla, se queda callada. */
 export async function speak(text: string): Promise<void> {
 	hush();
 	const clean = text.replace(/[*_#`>]/g, "").trim();

@@ -144,7 +144,7 @@ export function matchPesajeShortcut(
 	}
 
 	if (mod) {
-		// Alt+Espacio: empezar a dictarle a Peggy (Espacio solo termina).
+		// Alt+Espacio: empezar a dictarle a Antonella (Espacio solo termina).
 		if (key === " " || event.code === "Space") return { type: "voice" };
 		const physical = physicalKey(event);
 		if (physical === "t" && event.shiftKey) return { type: "cycle-theme" };
@@ -256,7 +256,7 @@ export const SHORTCUT_ROWS: Array<{
 	{
 		keys: "Alt+Espacio",
 		fallback: "mantener 🎤",
-		action: "Hablar con Peggy",
+		action: "Hablar con Antonella",
 	},
 	{
 		keys: "Espacio (grabando)",
@@ -276,7 +276,7 @@ export const SHORTCUT_ROWS: Array<{
 	{
 		keys: "Súper+I",
 		fallback: "Alt+I",
-		action: "Hablarle a Peggy (igual que Alt+Espacio)",
+		action: "Hablarle a Antonella (igual que Alt+Espacio)",
 	},
 	{ keys: "Súper+V", fallback: "Alt+V", action: "Versión clásica" },
 	{ keys: "Súper+Shift+T", fallback: "Alt+Shift+T", action: "Cambiar tema" },

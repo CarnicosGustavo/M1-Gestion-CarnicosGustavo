@@ -15,7 +15,7 @@ const TONE: Record<string, { dot: string; bg: string }> = {
 	ok: { dot: "var(--cg-green)", bg: "var(--cg-green-wash)" },
 };
 
-// Centro de notificaciones de Peggy: vigila el negocio y avisa en el
+// Centro de notificaciones de Antonella: vigila el negocio y avisa en el
 // dashboard (cobranza vencida, pedidos por pesar, despiece, merma alta).
 export function NotificationBell() {
 	const trpc = useTRPC();
@@ -33,7 +33,7 @@ export function NotificationBell() {
 			<button
 				type="button"
 				onClick={() => setOpen((o) => !o)}
-				title="Avisos de Peggy"
+				title="Avisos de Antonella"
 				className="relative flex h-9 w-9 items-center justify-center rounded-full border bg-secondary text-muted-foreground transition-colors hover:text-foreground"
 			>
 				<BellIcon className="h-4 w-4" />
@@ -61,7 +61,7 @@ export function NotificationBell() {
 						<div className="flex items-center gap-2 border-b bg-[var(--cg-chrome)] px-4 py-3 text-[var(--cg-chrome-fg)]">
 							<AntonellaAvatar size={28} />
 							<div className="min-w-0">
-								<div className="font-bold text-sm">Avisos de Peggy</div>
+								<div className="font-bold text-sm">Avisos de Antonella</div>
 								<div className="text-[11px] text-[var(--cg-chrome-fg)]/70">
 									{count > 0 ? `${count} cosa(s) que revisar` : "Todo en orden"}
 								</div>

@@ -30,7 +30,7 @@ export function AntonellaChat() {
 			id: "welcome",
 			role: "assistant",
 			content:
-				"¡Hola! Soy Peggy, tu asistente de inventario. Puedo ayudarte con:\n\n📦 Inventario (stock actual, capacidad)\n📋 Demanda (órdenes abiertas, pedidos)\n📊 Análisis (cobertura, forecast)\n✂️ Acciones (despiece, variantes)\n\n¿En qué puedo ayudarte?",
+				"¡Hola! Soy Antonella, tu asistente de inventario. Puedo ayudarte con:\n\n📦 Inventario (stock actual, capacidad)\n📋 Demanda (órdenes abiertas, pedidos)\n📊 Análisis (cobertura, forecast)\n✂️ Acciones (despiece, variantes)\n\n¿En qué puedo ayudarte?",
 			timestamp: new Date(),
 		},
 	]);
@@ -72,7 +72,7 @@ export function AntonellaChat() {
 				setIsLoading(false);
 			},
 			onError: (error: any) => {
-				toast.error(error.message ?? "Error en Peggy");
+				toast.error(error.message ?? "Error en Antonella");
 				setIsLoading(false);
 			},
 		}),
@@ -138,7 +138,7 @@ export function AntonellaChat() {
 		<div className="mx-auto max-w-3xl space-y-4">
 			<Card className="flex h-[600px] flex-col">
 				<CardHeader className="flex flex-row items-center justify-between">
-					<CardTitle>Peggy - Asistente de Inventario</CardTitle>
+					<CardTitle>Antonella - Asistente de Inventario</CardTitle>
 					<Button
 						size="sm"
 						variant="ghost"

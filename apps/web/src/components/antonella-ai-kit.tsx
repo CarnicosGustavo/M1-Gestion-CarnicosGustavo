@@ -316,7 +316,7 @@ export function AiPresenceBar({
 			<AntonellaAvatar size={36} />
 			<div className="min-w-0 flex-1">
 				<div className="mb-2 font-extrabold text-[12.5px] text-[var(--cg-cream)]">
-					Peggy vigilando {items.length} módulos
+					Antonella vigilando {items.length} módulos
 				</div>
 				<div className="flex flex-wrap gap-1.5">
 					{items.map((it) => (

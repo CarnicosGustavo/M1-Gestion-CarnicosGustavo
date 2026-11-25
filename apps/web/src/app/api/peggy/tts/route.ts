@@ -1,7 +1,7 @@
 import { xaiEnabled, xaiSpeak } from "@/lib/ai/xai";
 import { getAuthUser } from "@/lib/auth-guard";
 
-// Peggy habla: texto → MP3 con la voz de x.ai (Ara).
+// Antonella habla: texto → MP3 con la voz de x.ai (Ara).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

@@ -47,7 +47,7 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 			id: "welcome",
 			role: "assistant",
 			content:
-				"¡Hola! Soy Peggy, el cerebro del sistema. Conozco inventario, despiece, pesaje, pedidos y cobranza. ¿En qué te ayudo?",
+				"¡Hola! Soy Antonella, el cerebro del sistema. Conozco inventario, despiece, pesaje, pedidos y cobranza. ¿En qué te ayudo?",
 			timestamp: new Date(),
 		},
 	]);
@@ -83,7 +83,7 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 				setIsLoading(false);
 			},
 			onError: (e: any) => {
-				toast.error(e.message ?? "Error en Peggy");
+				toast.error(e.message ?? "Error en Antonella");
 				setIsLoading(false);
 			},
 		}),
@@ -157,7 +157,7 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 			<button
 				type="button"
 				onClick={() => setOpen((o) => !o)}
-				aria-label="Abrir Peggy"
+				aria-label="Abrir Antonella"
 				data-antonella-launcher=""
 				className={cn(
 					"fixed right-5 bottom-5 z-[80] flex h-[58px] items-center gap-3 rounded-full border border-[var(--cg-chrome)] bg-[var(--cg-chrome)] shadow-2xl transition-all",
@@ -172,7 +172,7 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 				</span>
 				{!open && (
 					<span className="pr-1 font-bold text-[var(--cg-chrome-fg)] text-sm">
-						Peggy
+						Antonella
 					</span>
 				)}
 			</button>
@@ -198,7 +198,7 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 				<div className="flex items-center gap-3 bg-[var(--cg-chrome)] px-4 py-4 text-[var(--cg-chrome-fg)]">
 					<AntonellaAvatar size={44} />
 					<div className="min-w-0 flex-1">
-						<div className="font-bold text-base">Peggy</div>
+						<div className="font-bold text-base">Antonella</div>
 						<div className="flex items-center gap-1.5 text-[var(--cg-chrome-fg)]/70 text-xs">
 							<span className="h-1.5 w-1.5 rounded-full bg-[var(--cg-green)]" />
 							El cerebro del sistema · en línea

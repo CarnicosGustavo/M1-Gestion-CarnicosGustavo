@@ -28,7 +28,7 @@ export interface OrderDraft {
 	customerId: number | null;
 	customerQuery?: string;
 	lines: DraftLine[];
-	/** Lo que Peggy no pudo reconocer (se muestra para corregir a mano). */
+	/** Lo que Antonella no pudo reconocer (se muestra para corregir a mano). */
 	unmatched?: string[];
 	/** Frase original de la nota de voz. */
 	transcript?: string;
@@ -252,7 +252,7 @@ export function NewOrderOverlay({
 				<div className="flex min-h-0 flex-col gap-3 p-4">
 					{initial?.transcript ? (
 						<div className="rounded-md border border-[#f39a1e]/60 bg-[#fff7e6] px-3 py-2 text-[#5a3b06] text-sm">
-							<span className="mr-2 font-bold">🎤 Peggy entendió:</span>«
+							<span className="mr-2 font-bold">🎤 Antonella entendió:</span>«
 							{initial.transcript}»
 							{initial.unmatched && initial.unmatched.length > 0 ? (
 								<span className="mt-1 block text-[#a33] text-xs">
