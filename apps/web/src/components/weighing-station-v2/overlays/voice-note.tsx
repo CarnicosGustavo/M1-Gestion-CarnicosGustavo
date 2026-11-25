@@ -3,6 +3,7 @@
 import { cn } from "@finopenpos/ui/lib/utils";
 import localFont from "next/font/local";
 import { useEffect, useRef } from "react";
+import { noteProductName, noteQuantity } from "../peggy-voice";
 import { matchVoiceNoteKey } from "../shortcuts";
 import type { DraftLine } from "./new-order-overlay";
 
@@ -24,19 +25,7 @@ export interface NoteCustomer {
 	phone: string | null;
 }
 
-/** «PIERNA» → «Piernas» (8 pzs); los nombres compuestos se dejan igual. */
-export function noteProductName(name: string, pieces: number): string {
-	const title = name
-		.toLowerCase()
-		.replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
-	if (pieces <= 1 || /\s|\//.test(title) || /s$/i.test(title)) return title;
-	return /[aeiou]$/i.test(title) ? `${title}s` : `${title}es`;
-}
-
-export function noteQuantity(line: DraftLine): string {
-	if (line.kg && !line.pieces) return `${line.kg} kg`;
-	return `${line.pieces} ${line.pieces === 1 ? "pz" : "pzs"}`;
-}
+export { noteProductName, noteQuantity };
 
 /**
  * Nota de voz con aspecto de libreta de cuadrícula: parece apuntada a mano,
@@ -234,7 +223,10 @@ export function VoiceNote({
 								{answer}
 							</p>
 						) : (
-							<p className="text-[#9aa4ae] italic">
+							<output
+								aria-live="polite"
+								className="block text-[#9aa4ae] italic"
+							>
 								{status === "listening"
 									? transcript || "te escucho…"
 									: status === "thinking"
@@ -242,14 +234,14 @@ export function VoiceNote({
 										: status === "error"
 											? "No te entendí, inténtalo otra vez."
 											: "Mantén 🎤 y dicta el pedido…"}
-							</p>
+							</output>
 						)}
 					</div>
 				</div>
 
 				{/* Pie: cancelar, editar o confirmar */}
 				<footer className="flex items-center justify-between gap-4 border-[#d8d2c2] border-t bg-[#fdfcf6]/95 px-[5.6rem] py-3 font-sans">
-					<span className="text-[#7d8794] text-sm">
+					<output aria-live="polite" className="text-[#7d8794] text-sm">
 						{status === "listening"
 							? "🎤 Escuchando… suelta el botón o pulsa Espacio"
 							: status === "thinking"
@@ -257,7 +249,7 @@ export function VoiceNote({
 								: hasOrder
 									? "Revisa la nota"
 									: ""}
-					</span>
+					</output>
 					{hasOrder ? (
 						<div className="flex gap-3">
 							<button

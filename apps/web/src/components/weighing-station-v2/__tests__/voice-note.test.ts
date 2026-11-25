@@ -136,3 +136,26 @@ describe("P33-6 — nota de voz: Enter respeta botones y evita repetición", () 
 		expect(noSrc).toContain("if (event.repeat) return;");
 	});
 });
+
+describe("P34-8 y P34-12: carreras de voz, Esc en thinking, micrófono y aria-live", () => {
+	test("voice-note.tsx expone role='status' y aria-live='polite'", () => {
+		const vnSrc = readFileSync(
+			join(import.meta.dir, "../overlays/voice-note.tsx"),
+			"utf8",
+		);
+		expect(vnSrc).toContain('aria-live="polite"');
+		expect(vnSrc).toContain("<output");
+	});
+
+	test("pesaje-station.tsx cancela Esc durante thinking, reinicia spokenRef y limpia micrófono al desmontar", () => {
+		const psSrc = readFileSync(
+			join(import.meta.dir, "../pesaje-station.tsx"),
+			"utf8",
+		);
+		expect(psSrc).toContain("voiceGenRef");
+		expect(psSrc).toContain("cancelVoice");
+		expect(psSrc).toContain('voice.status === "thinking"');
+		expect(psSrc).toContain('spokenRef.current = ""');
+		expect(psSrc).toContain("recorderRef.current?.cancel()");
+	});
+});

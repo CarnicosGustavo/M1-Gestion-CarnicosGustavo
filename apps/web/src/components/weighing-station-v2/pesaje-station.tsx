@@ -255,6 +255,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const voiceInfoQuery = useQuery({
 		...trpc.antonella.voiceInfo.queryOptions(),
 		enabled: !demo,
+		retry: false,
 		staleTime: 5 * 60_000,
 	});
 	const serverVoice = voiceInfoQuery.data?.serverVoice === true;
@@ -267,8 +268,9 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const speechSupported = (serverVoice && canRecord) || browserSpeech;
 	const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 	const recorderRef = useRef<peggyVoice.NoteRecorder | null>(null);
-	/** Esc durante el dictado: se descarta lo grabado. */
+	/** Esc durante el dictado o thinking: invalida respuestas en vuelo. */
 	const voiceCancelledRef = useRef(false);
+	const voiceGenRef = useRef(0);
 	const [newOrderDraft, setNewOrderDraft] = useState<OrderDraft | null>(null);
 	const transcriptRef = useRef("");
 
@@ -1148,37 +1150,33 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	);
 
 	// ── Voz: mantener 🎤 (o Alt+Espacio) → dictado → Antonella responde en 7
-	const voiceChatMutation = useMutation(
-		trpc.antonella.chat.mutationOptions({
-			onSuccess: (data) => {
-				setVoice((current) => ({
-					...current,
-					status: "answered",
-					answer: data.requiresConfirmation
-						? `${data.answer}\n\n(Esta acción pide confirmación: ábrela en «Chat completo».)`
-						: data.answer,
-				}));
-			},
-			onError: (error) => {
-				setVoice((current) => ({ ...current, status: "error" }));
-				toast.error(error.message ?? "Antonella no respondió");
-			},
-		}),
-	);
+	const spokenRef = useRef("");
+	const voiceChatMutation = useMutation(trpc.antonella.chat.mutationOptions());
 	const voiceOrderMutation = useMutation(
-		trpc.antonella.parseVoiceOrder.mutationOptions({
-			onError: (error) => {
-				setVoice((current) => ({ ...current, status: "error" }));
-				toast.error(error.message ?? "Antonella no respondió");
-			},
-		}),
+		trpc.antonella.parseVoiceOrder.mutationOptions(),
 	);
+	const cancelVoice = useCallback(() => {
+		voiceGenRef.current += 1;
+		voiceCancelledRef.current = true;
+		peggyVoice.hush();
+		const recorder = recorderRef.current;
+		if (recorder) {
+			recorderRef.current = null;
+			recorder.cancel();
+		}
+		recognitionRef.current?.stop();
+		recognitionRef.current = null;
+		setNewOrderDraft(null);
+		setVoice({ status: "idle", transcript: "", answer: "" });
+	}, []);
 	const askAntonella = useCallback(
 		(text: string) => {
+			const gen = voiceGenRef.current;
 			setFnPage("voz");
 			setVoice({ status: "thinking", transcript: text, answer: "" });
 			if (demo && /pedido/i.test(text)) {
 				setTimeout(() => {
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
 					setNewOrderDraft({
 						customerId: 2,
 						lines: [
@@ -1198,16 +1196,15 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				return;
 			}
 			if (demo) {
-				setTimeout(
-					() =>
-						setVoice({
-							status: "answered",
-							transcript: text,
-							answer:
-								"Demostración: aquí llega la respuesta de Antonella (p. ej. «Pierna: 48 kg en existencia, 3 pedidos la esperan»).",
-						}),
-					900,
-				);
+				setTimeout(() => {
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
+					setVoice({
+						status: "answered",
+						transcript: text,
+						answer:
+							"Demostración: aquí llega la respuesta de Antonella (p. ej. «Pierna: 48 kg en existencia, 3 pedidos la esperan»).",
+					});
+				}, 900);
 				return;
 			}
 			// 1) ¿Es un pedido? Antonella lo arma y se abre para confirmar.
@@ -1216,6 +1213,8 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				{ text },
 				{
 					onSuccess: (result) => {
+						if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+							return;
 						if (result.kind === "order") {
 							setNewOrderDraft({
 								customerId: result.customerId,
@@ -1228,7 +1227,34 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 							setVoice({ status: "answered", transcript: text, answer: "" });
 							return;
 						}
-						voiceChatMutation.mutate({ message: text });
+						voiceChatMutation.mutate(
+							{ message: text },
+							{
+								onSuccess: (data) => {
+									if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+										return;
+									setVoice((current) => ({
+										...current,
+										status: "answered",
+										answer: data.requiresConfirmation
+											? `${data.answer}\n\n(Esta acción pide confirmación: ábrela en «Chat completo».)`
+											: data.answer,
+									}));
+								},
+								onError: (error) => {
+									if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+										return;
+									setVoice((current) => ({ ...current, status: "error" }));
+									toast.error(error.message ?? "Antonella no respondió");
+								},
+							},
+						);
+					},
+					onError: (error) => {
+						if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+							return;
+						setVoice((current) => ({ ...current, status: "error" }));
+						toast.error(error.message ?? "Antonella no respondió");
 					},
 				},
 			);
@@ -1236,6 +1262,9 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		[demo, voiceChatMutation, voiceOrderMutation],
 	);
 	const startVoice = useCallback(() => {
+		voiceGenRef.current += 1;
+		const gen = voiceGenRef.current;
+		spokenRef.current = "";
 		setFnPage("voz");
 		setFocusedTile(7);
 		setNewOrderDraft(null);
@@ -1267,10 +1296,14 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					starting.then((recorder) => recorder.cancel()).catch(() => undefined);
 				},
 			};
-			starting.catch(() => {
+			starting.catch((err: unknown) => {
 				recorderRef.current = null;
+				if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
+				const name = err instanceof Error ? err.name : "";
 				toast.error(
-					"No pude usar el micrófono: revisa el permiso del navegador.",
+					name === "NotFoundError"
+						? "No se detectó micrófono conectado."
+						: "No pude usar el micrófono: revisa el permiso del navegador.",
 				);
 				setVoice({ status: "error", transcript: "", answer: "" });
 			});
@@ -1320,6 +1353,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		}
 	}, [askAntonella, demo, serverVoice, canRecord]);
 	const stopVoice = useCallback(() => {
+		const gen = voiceGenRef.current;
 		if (demo) {
 			if (voiceCancelledRef.current) {
 				setVoice({ status: "idle", transcript: "", answer: "" });
@@ -1338,24 +1372,34 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				return;
 			}
 			setVoice({ status: "thinking", transcript: "", answer: "" });
+			let tooShort = false;
 			recorder
 				.stop()
 				.then((audio) => {
-					if (voiceCancelledRef.current) return "";
-					if (audio.size < 2000) return "";
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+						return "";
+					if (audio.size < 2000) {
+						tooShort = true;
+						return "";
+					}
 					return peggyVoice.transcribe(audio);
 				})
 				.then((text) => {
-					if (voiceCancelledRef.current) {
-						setVoice({ status: "idle", transcript: "", answer: "" });
-					} else if (text) {
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
+					if (text) {
 						transcriptRef.current = text;
 						askAntonella(text);
+					} else if (tooShort) {
+						setVoice({ status: "error", transcript: "", answer: "" });
+						toast.info(
+							"No te escuché; intenta hablar más cerca del micrófono.",
+						);
 					} else {
 						setVoice({ status: "idle", transcript: "", answer: "" });
 					}
 				})
 				.catch((error: unknown) => {
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
 					setVoice({ status: "error", transcript: "", answer: "" });
 					toast.error(error instanceof Error ? error.message : "Dictado falló");
 				});
@@ -1364,8 +1408,19 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		recognitionRef.current?.stop();
 	}, [demo, askAntonella]);
 
+	useEffect(() => {
+		return () => {
+			voiceGenRef.current += 1;
+			voiceCancelledRef.current = true;
+			peggyVoice.hush();
+			recorderRef.current?.cancel();
+			recorderRef.current = null;
+			recognitionRef.current?.stop();
+			recognitionRef.current = null;
+		};
+	}, []);
+
 	// Antonella contesta en voz alta (Ara) lo que anotó o lo que le preguntaron.
-	const spokenRef = useRef("");
 	useEffect(() => {
 		if (!serverVoice || voice.status !== "answered") return;
 		const key = `${voice.transcript}|${voice.answer}|${newOrderDraft?.transcript ?? ""}`;
@@ -1451,10 +1506,13 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					cycleTheme();
 					break;
 				case "close":
-					// Esc siempre regresa de volada a la pantalla principal.
-					if (voice.status === "listening") {
-						voiceCancelledRef.current = true;
-						stopVoice();
+					// Esc siempre regresa de volada a la pantalla principal y cancela voz en vuelo.
+					if (
+						overlay === "voicenote" ||
+						voice.status === "listening" ||
+						voice.status === "thinking"
+					) {
+						cancelVoice();
 					}
 					setOverlay(null);
 					setFnArmed(false);
@@ -1478,6 +1536,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		voice.status,
 		startVoice,
 		stopVoice,
+		cancelVoice,
 		cycleFont,
 	]);
 
@@ -1794,7 +1853,13 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					shortcut: "Volver",
 					tone: "red",
 					onPress: () => {
-						if (voice.status === "listening") stopVoice();
+						if (
+							overlay === "voicenote" ||
+							voice.status === "listening" ||
+							voice.status === "thinking"
+						) {
+							cancelVoice();
+						}
 						setOverlay(null);
 						setFnArmed(false);
 						setFnPage("inicio");
@@ -2263,10 +2328,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					}}
 					onEdit={() => setOverlay("neworder")}
 					onClose={() => {
-						if (voice.status === "listening") {
-							voiceCancelledRef.current = true;
-							stopVoice();
-						}
+						cancelVoice();
 						setOverlay(null);
 					}}
 				/>
