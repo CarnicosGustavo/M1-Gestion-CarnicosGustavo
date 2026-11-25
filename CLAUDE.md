@@ -73,7 +73,7 @@ cp apps/web/.env.example apps/web/.env.local   # editar con valores reales
 bun run dev --filter=web                        # http://localhost:3001
 ```
 Env: ver `apps/web/.env.example` (solo nombres y marcadores). Clave: `DATABASE_URL`,
-`BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`/`BASE_URL`, `ANTHROPIC_API_KEY` (Antonella).
+`BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`/`BASE_URL`, `CARNICOS_XAI_API_KEY` (Antonella x.ai/voz, nunca `XAI_API_KEY`), `ANTHROPIC_API_KEY` (respaldo Antonella).
 
 ## 📚 Documentación clave
 - **`GUIA_UI_UX_PLATAFORMA.md`** — guía funcional **exhaustiva** (cada pantalla, botón,
