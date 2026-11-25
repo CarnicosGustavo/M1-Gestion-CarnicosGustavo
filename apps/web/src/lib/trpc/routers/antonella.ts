@@ -37,7 +37,6 @@ import { XAI_MODEL, XAI_VOICE, xaiEnabled, xaiRespond } from "../../ai/xai";
 import { protectedProcedure, router, withRole } from "../init";
 
 const antonellaProcedure = withRole(...ANTONELLA_ALLOWED_ROLES);
-const DEFAULT_ANTHROPIC_VOICE_MODEL = "claude-sonnet-4-5";
 const CONFIRMATION_REQUIRED_TOOLS = new Set([
 	"execute_despiece",
 	"convert_to_variant",
@@ -1819,64 +1818,32 @@ PRODUCTOS (id|nombre):
 ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 
 			let call: { name: string; input: any } | undefined;
-			let xaiFailed = false;
-			if (xaiEnabled()) {
-				try {
-					const turn = await xaiRespond({
-						instructions: system,
-						input: [{ role: "user", content: input.text }],
-						tools,
-						toolChoice: "required",
-						maxOutputTokens: 1500,
-						timeoutMs: 15_000,
-					});
-					const first = turn.calls[0];
-					call = first
-						? { name: first.name, input: first.arguments }
-						: undefined;
-				} catch (err) {
-					xaiFailed = true;
-					console.error(
-						"[antonella/parseVoiceOrder] xAI falló:",
-						err instanceof Error ? err.message : err,
-					);
+			// P34-4: parseVoiceOrder solo usa xAI. Si falla o no está configurada,
+			// error genérico — no se envía nada a Anthropic.
+			try {
+				if (!xaiEnabled()) {
+					throw new Error("xai_disabled");
 				}
-			}
-			if (!xaiEnabled() || xaiFailed) {
-				if (xaiFailed && !process.env.ANTHROPIC_API_KEY) {
-					throw new TRPCError({
-						code: "BAD_GATEWAY",
-						message:
-							"Antonella no pudo procesar la nota de voz en este momento.",
-					});
-				}
-				try {
-					const response = await getClient().messages.create(
-						{
-							model: DEFAULT_ANTHROPIC_VOICE_MODEL,
-							max_tokens: 1500,
-							system,
-							tools: tools as any,
-							tool_choice: { type: "auto" },
-							messages: [{ role: "user", content: input.text }],
-						},
-						{ timeout: 15_000 },
-					);
-					call = response.content.find((b: any) => b.type === "tool_use") as
-						| { name: string; input: any }
-						| undefined;
-				} catch (err) {
-					if (err instanceof TRPCError) throw err;
-					console.error(
-						"[antonella/parseVoiceOrder] respaldo Anthropic falló:",
-						err instanceof Error ? err.message : err,
-					);
-					throw new TRPCError({
-						code: "BAD_GATEWAY",
-						message:
-							"Antonella no pudo procesar la nota de voz en este momento.",
-					});
-				}
+				const turn = await xaiRespond({
+					instructions: system,
+					input: [{ role: "user", content: input.text }],
+					tools,
+					toolChoice: "required",
+					maxOutputTokens: 1500,
+					timeoutMs: 15_000,
+				});
+				const first = turn.calls[0];
+				call = first ? { name: first.name, input: first.arguments } : undefined;
+			} catch (err) {
+				if (err instanceof TRPCError) throw err;
+				console.error(
+					"[antonella/parseVoiceOrder] xAI falló:",
+					err instanceof Error ? err.message : err,
+				);
+				throw new TRPCError({
+					code: "BAD_GATEWAY",
+					message: "Antonella no pudo procesar la nota de voz en este momento.",
+				});
 			}
 			if (!call || call.name !== "propose_order") return { kind: "question" };
 

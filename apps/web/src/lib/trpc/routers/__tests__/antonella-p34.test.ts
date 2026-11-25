@@ -331,14 +331,16 @@ describe("antonella router (P34-2, P34-3, P34-4, P34-5)", () => {
 			unmatched: [],
 		});
 
-		// Fallo 500 de xAI sin ANTHROPIC_API_KEY → mensaje limpio, nunca detalle interno xAI
-		globalThis.fetch = mock(
-			async () =>
-				new Response(
-					'{"error":{"message":"detalle interno proveedor xAI xyz"}}',
-					{ status: 500 },
-				),
-		) as any;
+		// Fallo 500 de xAI (aunque haya ANTHROPIC_API_KEY): error limpio y cero llamadas a Anthropic
+		process.env.ANTHROPIC_API_KEY = "no-debe-usarse";
+		const urls: string[] = [];
+		globalThis.fetch = mock(async (url: any) => {
+			urls.push(String(url));
+			return new Response(
+				'{"error":{"message":"detalle interno proveedor xAI xyz"}}',
+				{ status: 500 },
+			);
+		}) as any;
 
 		let caughtMsg = "";
 		try {
@@ -349,5 +351,7 @@ describe("antonella router (P34-2, P34-3, P34-4, P34-5)", () => {
 		expect(caughtMsg).toContain("no pudo procesar");
 		expect(caughtMsg).not.toContain("detalle interno proveedor xAI xyz");
 		expect(caughtMsg).not.toContain("500");
+		expect(urls.some((u) => u.includes("api.x.ai"))).toBe(true);
+		expect(urls.some((u) => /anthropic/i.test(u))).toBe(false);
 	});
 });

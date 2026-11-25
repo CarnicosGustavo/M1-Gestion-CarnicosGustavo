@@ -208,17 +208,26 @@ describe("xai (P34-1, P34-4, P34-5, P34-9, P34-10, P34-11)", () => {
 		expect(audioFileNameForMime("audio/webm;codecs=opus")).toBe("nota.webm");
 	});
 
-	it("P34-4: parseVoiceOrder ya no usa claude-sonnet-5-5 ni tool_choice any", () => {
+	it("P34-4: parseVoiceOrder solo usa xAI; si falla, BAD_GATEWAY y nada a Anthropic", () => {
 		const src = readFileSync(
 			join(import.meta.dir, "../../trpc/routers/antonella.ts"),
 			"utf8",
 		);
-		const block = src.slice(src.indexOf("parseVoiceOrder:"));
+		const nextProc = src.indexOf("voiceInfo:", src.indexOf("parseVoiceOrder:"));
+		const block = src.slice(
+			src.indexOf("parseVoiceOrder:"),
+			nextProc === -1 ? undefined : nextProc,
+		);
 		expect(block).toContain('toolChoice: "required"');
-		expect(block).toContain('tool_choice: { type: "auto" }');
-		expect(block).not.toContain('type: "any"');
-		expect(block).not.toContain("claude-sonnet-5-5");
 		expect(block).toContain("timeoutMs: 15_000");
+		expect(block).toContain('code: "BAD_GATEWAY"');
+		expect(block).not.toContain("getClient");
+		expect(block).not.toContain("ANTHROPIC_API_KEY");
+		expect(block).not.toContain("claude-sonnet");
+		expect(block).not.toContain("claude-opus");
+		expect(block).not.toContain("tool_choice");
+		expect(block).not.toContain('type: "any"');
+		expect(block).not.toContain('type: "auto"');
 	});
 
 	it("P34-11: ningún componente 'use client' importa módulos solo-servidor de Antonella", () => {
