@@ -3,6 +3,7 @@
 import { cn } from "@finopenpos/ui/lib/utils";
 import localFont from "next/font/local";
 import { useEffect, useRef } from "react";
+import { matchVoiceNoteKey } from "../shortcuts";
 import type { DraftLine } from "./new-order-overlay";
 
 // Letra a mano (Caveat, OFL) empaquetada local: el build no depende de la red.
@@ -77,19 +78,35 @@ export function VoiceNote({
 		year: "numeric",
 	});
 
+	const submittedRef = useRef(false);
+	useEffect(() => {
+		if (!busy) submittedRef.current = false;
+	}, [busy]);
+
 	// Enter confirma, E edita (Esc lo cierra la estación).
 	const actions = useRef({ onConfirm, onEdit, canConfirm, hasOrder });
 	actions.current = { onConfirm, onEdit, canConfirm, hasOrder };
+	const triggerConfirm = () => {
+		if (!actions.current.canConfirm || submittedRef.current) return;
+		submittedRef.current = true;
+		actions.current.onConfirm();
+	};
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
-			if (event.altKey || event.metaKey || event.ctrlKey) return;
-			if (event.key === "Enter" && actions.current.canConfirm) {
+			if (event.repeat) {
+				if (event.key === "Enter") event.preventDefault();
+				return;
+			}
+			const intent = matchVoiceNoteKey(event, {
+				canConfirm: actions.current.canConfirm,
+				hasOrder: actions.current.hasOrder,
+			});
+			if (intent === "confirm") {
+				if (submittedRef.current) return;
 				event.preventDefault();
+				submittedRef.current = true;
 				actions.current.onConfirm();
-			} else if (
-				(event.key === "e" || event.key === "E") &&
-				actions.current.hasOrder
-			) {
+			} else if (intent === "edit") {
 				event.preventDefault();
 				actions.current.onEdit();
 			}
@@ -259,7 +276,8 @@ export function VoiceNote({
 							</button>
 							<button
 								type="button"
-								onClick={onConfirm}
+								data-voice-confirm="true"
+								onClick={triggerConfirm}
 								disabled={!canConfirm}
 								className="rounded-md bg-gradient-to-b from-[#4cc35d] to-[#2f9a3f] px-6 py-2 font-bold text-[#06210b] text-base shadow disabled:opacity-40"
 							>

@@ -287,3 +287,43 @@ export const SHORTCUT_ROWS: Array<{
 	},
 	{ keys: "Esc", fallback: "", action: "Cerrar / volver a Inicio" },
 ];
+
+function isVoiceConfirmTarget(target: EventTarget | null): boolean {
+	if (!target || typeof target !== "object") return false;
+	const element = target as {
+		dataset?: { voiceConfirm?: string };
+		getAttribute?: (name: string) => string | null;
+		closest?: (selector: string) => unknown;
+	};
+	if (
+		element.dataset?.voiceConfirm === "true" ||
+		element.getAttribute?.("data-voice-confirm") === "true"
+	) {
+		return true;
+	}
+	return Boolean(element.closest?.("[data-voice-confirm='true']"));
+}
+
+/** P33-6: Enter en la nota de voz solo confirma si el foco no está en otro botón (Cancelar/Editar) ni se repite. */
+export function matchVoiceNoteKey(
+	event: Pick<
+		KeyboardEvent,
+		"key" | "repeat" | "altKey" | "metaKey" | "ctrlKey" | "target"
+	>,
+	options: { canConfirm: boolean; hasOrder: boolean },
+): "confirm" | "edit" | null {
+	if (event.repeat) return null;
+	if (event.altKey || event.metaKey || event.ctrlKey) return null;
+	if (event.key === "Enter") {
+		if (!options.canConfirm) return null;
+		if (isActivateTarget(event.target) && !isVoiceConfirmTarget(event.target)) {
+			return null;
+		}
+		return "confirm";
+	}
+	if ((event.key === "e" || event.key === "E") && options.hasOrder) {
+		if (isTypingTarget(event.target)) return null;
+		return "edit";
+	}
+	return null;
+}

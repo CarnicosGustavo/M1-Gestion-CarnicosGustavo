@@ -230,6 +230,7 @@ export function NewOrderOverlay({
 	submitRef.current = submit;
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
+			if (event.repeat) return;
 			if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
 				event.preventDefault();
 				submitRef.current();
