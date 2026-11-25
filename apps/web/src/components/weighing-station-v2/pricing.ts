@@ -94,6 +94,22 @@ export function saleLineSubtotalCents(line: {
 	return 0;
 }
 
+/** Total en centavos de la venta (pantalla 7 / panel 5): piezas y kg. */
+export function saleLinesTotalCents(
+	lines: ReadonlyArray<{ kg: number; pieces: number | null; price: string }>,
+): number {
+	return lines.reduce(
+		(sum, line) =>
+			sum +
+			saleLineSubtotalCents({
+				kg: line.kg,
+				pieces: line.pieces,
+				pricePerUnit: Number.parseFloat(line.price) || 0,
+			}),
+		0,
+	);
+}
+
 const SALE_LINE_STATUSES = new Set(["PESADO", "COMPLETADO", "WEIGHED"]);
 
 /** P33-5: Venta incluye líneas pesadas y también líneas por pieza ya listas (COMPLETADO). */

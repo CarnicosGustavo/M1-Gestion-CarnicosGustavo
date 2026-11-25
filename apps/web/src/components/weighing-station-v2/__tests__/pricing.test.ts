@@ -9,6 +9,7 @@ import {
 	PRICE_SOURCE_LABELS,
 	resolveDefaultPrice,
 	saleLineSubtotalCents,
+	saleLinesTotalCents,
 } from "../pricing";
 
 const row = (
@@ -177,5 +178,19 @@ describe("P33-5 — productos por pieza en catálogo y Venta", () => {
 		expect(saleLineSubtotalCents({ kg: 0, pieces: 3, pricePerUnit: 50 })).toBe(
 			15000,
 		);
+	});
+
+	test("P36-1: saleLinesTotalCents cobra piezas en $0 kg (pantalla 7 / CobroPage)", () => {
+		// 3 piezas × $50 = $150.00; lineSubtotalCents(kg=0) daría $0.00
+		expect(saleLinesTotalCents([{ kg: 0, pieces: 3, price: "50.00" }])).toBe(
+			15000,
+		);
+		expect(
+			saleLinesTotalCents([
+				{ kg: 2, pieces: null, price: "86.00" },
+				{ kg: 0, pieces: 3, price: "50.00" },
+			]),
+		).toBe(17200 + 15000);
+		expect(saleLinesTotalCents([{ kg: 0, pieces: 0, price: "50.00" }])).toBe(0);
 	});
 });

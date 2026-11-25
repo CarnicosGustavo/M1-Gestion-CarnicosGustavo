@@ -76,12 +76,13 @@ import { TicketsOverlay } from "./overlays/tickets-overlay";
 import { VoiceNote } from "./overlays/voice-note";
 import { usePesajeTheme } from "./pesaje-themes";
 import "./pesaje-themes.css";
+import { canUseAntonella } from "@/lib/ai/antonella-roles";
 import {
 	type CustomerPriceRow,
 	catalogProductPrice,
 	isSaleLineItem,
-	lineSubtotalCents,
 	resolveDefaultPrice,
+	saleLinesTotalCents,
 } from "./pricing";
 import {
 	matchPesajeShortcut,
@@ -202,7 +203,13 @@ const CONTAINER_LABELS: Record<string, string> = Object.fromEntries(
 	CONTAINERS.map((container) => [container.id, container.label]),
 );
 
-export function PesajeStation({ demo = false }: { demo?: boolean }) {
+export function PesajeStation({
+	demo = false,
+	role = null,
+}: {
+	demo?: boolean;
+	role?: string | null;
+}) {
 	const trpc = useTRPC();
 	const locale = useLocale();
 	const { theme, setTheme, cycleTheme } = usePesajeTheme();
@@ -252,9 +259,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		answer: string;
 	}>({ status: "idle", transcript: "", answer: "" });
 	// Con x.ai, el servidor transcribe (cualquier navegador) y Antonella habla (Ara).
+	const canUseVoice = demo || canUseAntonella(role);
 	const voiceInfoQuery = useQuery({
 		...trpc.antonella.voiceInfo.queryOptions(),
-		enabled: !demo,
+		enabled: !demo && canUseVoice,
 		retry: false,
 		staleTime: 5 * 60_000,
 	});
@@ -1262,6 +1270,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		[demo, voiceChatMutation, voiceOrderMutation],
 	);
 	const startVoice = useCallback(() => {
+		if (!canUseVoice) return;
 		voiceGenRef.current += 1;
 		const gen = voiceGenRef.current;
 		spokenRef.current = "";
@@ -1351,7 +1360,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			recognitionRef.current = null;
 			setVoice((current) => ({ ...current, status: "idle" }));
 		}
-	}, [askAntonella, demo, serverVoice, canRecord]);
+	}, [askAntonella, demo, serverVoice, canRecord, canUseVoice]);
 	const stopVoice = useCallback(() => {
 		const gen = voiceGenRef.current;
 		if (demo) {
@@ -1493,6 +1502,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					pressPage(action.page);
 					break;
 				case "voice":
+					if (!canUseVoice) break;
 					if (voice.status === "listening") stopVoice();
 					else startVoice();
 					break;
@@ -1534,6 +1544,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		runCommand,
 		updateWeightMutation.isPending,
 		voice.status,
+		canUseVoice,
 		startVoice,
 		stopVoice,
 		cancelVoice,
@@ -1836,17 +1847,21 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					active: CONFIG_PAGES.has(fnPage),
 					onPress: () => pressPage("config"),
 				},
-				{
-					id: "voz",
-					label: voice.status === "listening" ? "Escucho" : "Antonella",
-					shortcut: "Mantén · Alt+Espacio",
-					icon: <MicIcon aria-hidden="true" className="size-3.5" />,
-					tone: voice.status === "listening" ? "red" : "neutral",
-					active: fnPage === "voz" && voice.status !== "listening",
-					onPress: () => undefined,
-					onHoldStart: startVoice,
-					onHoldEnd: stopVoice,
-				},
+				...(canUseVoice
+					? [
+							{
+								id: "voz",
+								label: voice.status === "listening" ? "Escucho" : "Antonella",
+								shortcut: "Mantén · Alt+Espacio",
+								icon: <MicIcon aria-hidden="true" className="size-3.5" />,
+								tone: voice.status === "listening" ? "red" : "neutral",
+								active: fnPage === "voz" && voice.status !== "listening",
+								onPress: () => undefined,
+								onHoldStart: startVoice,
+								onHoldEnd: stopVoice,
+							} satisfies FnKey,
+						]
+					: []),
 				{
 					id: "esc",
 					label: "Esc",
@@ -1928,18 +1943,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					<CobroPage
 						type={chargeType}
 						customerName={selectedOrder ? orderTitle(selectedOrder) : "—"}
-						total={formatCurrency(
-							saleLines.reduce(
-								(sum, line) =>
-									sum +
-									lineSubtotalCents(
-										line.kg,
-										Number.parseFloat(line.price) || 0,
-									),
-								0,
-							),
-							locale,
-						)}
+						total={formatCurrency(saleLinesTotalCents(saleLines), locale)}
 						lineCount={saleLines.length}
 						methods={paymentMethods}
 						methodId={methodId}
