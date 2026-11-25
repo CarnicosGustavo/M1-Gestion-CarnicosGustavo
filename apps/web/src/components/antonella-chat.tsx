@@ -123,10 +123,7 @@ export function AntonellaChat() {
 		if (!msg.confirmationData) return;
 
 		const { toolName, toolInput } = msg.confirmationData as any;
-		const actionName =
-			toolName === "execute_despiece"
-				? "execute_despiece"
-				: "convert_to_variant";
+		const actionName = toolName;
 
 		await executeMutation.mutateAsync({
 			actionName: actionName as any,
@@ -186,7 +183,9 @@ export function AntonellaChat() {
 															([k, v]) => (
 																<div key={k}>
 																	<span className="font-bold">{k}:</span>{" "}
-																	{String(v)}
+																	{typeof v === "object" && v !== null
+																		? JSON.stringify(v)
+																		: String(v)}
 																</div>
 															),
 														)}

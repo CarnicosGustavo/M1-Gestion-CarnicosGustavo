@@ -311,7 +311,10 @@ function MessageBubble({
 						<div className="mb-2 space-y-0.5 font-mono text-[11px] text-foreground/80">
 							{Object.entries(msg.confirmationData as any).map(([k, v]) => (
 								<div key={k}>
-									<span className="font-bold">{k}:</span> {String(v)}
+									<span className="font-bold">{k}:</span>{" "}
+									{typeof v === "object" && v !== null
+										? JSON.stringify(v)
+										: String(v)}
 								</div>
 							))}
 						</div>
