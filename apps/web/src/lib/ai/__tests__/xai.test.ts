@@ -31,6 +31,31 @@ afterEach(() => {
 	else process.env.XAI_API_KEY = prevXaiKey;
 });
 
+/** P36-3: detecta alias (@/lib/ai/xai) y también imports relativos (../ai/xai, ./xai). */
+function isServerOnlyAntonellaImport(spec: string): boolean {
+	const path = spec.replaceAll("\\", "/").replace(/\.(ts|tsx|js|mjs)$/, "");
+	const segs = path.split("/").filter(Boolean);
+	const last = segs.at(-1) ?? "";
+	const prev = segs.at(-2) ?? "";
+	if (last === "antonella-roles") return false;
+	if (
+		last === "xai" ||
+		last === "antonella-access" ||
+		last === "voice-routes"
+	) {
+		return true;
+	}
+	if (prev === "routers" && last === "antonella") return true;
+	return false;
+}
+
+function clientImportsServerAntonellaModule(content: string): boolean {
+	const specs = [...content.matchAll(/from\s+["']([^"']+)["']/g)].map(
+		(match) => match[1],
+	);
+	return specs.some((spec) => isServerOnlyAntonellaImport(spec));
+}
+
 function walkFiles(dir: string): string[] {
 	const out: string[] = [];
 	for (const entry of readdirSync(dir)) {
@@ -230,6 +255,24 @@ describe("xai (P34-1, P34-4, P34-5, P34-9, P34-10, P34-11)", () => {
 		expect(block).not.toContain('type: "auto"');
 	});
 
+	it("P36-3 / P34-11: la detección cubre alias y imports relativos", () => {
+		const samples: Array<[string, boolean]> = [
+			['import { xaiEnabled } from "@/lib/ai/xai"', true],
+			['import { xaiEnabled } from "../ai/xai"', true],
+			['import { xaiEnabled } from "./xai"', true],
+			['import { canUseAntonella } from "../../lib/ai/antonella-access"', true],
+			['import { handleSttPost } from "../ai/voice-routes"', true],
+			['import { antonellaRouter } from "@/lib/trpc/routers/antonella"', true],
+			['import { antonellaRouter } from "../../trpc/routers/antonella"', true],
+			['import { canUseAntonella } from "@/lib/ai/antonella-roles"', false],
+			['import { canUseAntonella } from "../ai/antonella-roles"', false],
+			['import { foo } from "./foo"', false],
+		];
+		for (const [line, expected] of samples) {
+			expect(clientImportsServerAntonellaModule(line)).toBe(expected);
+		}
+	});
+
 	it("P34-11: ningún componente 'use client' importa módulos solo-servidor de Antonella", () => {
 		const srcRoot = join(import.meta.dir, "../../..");
 		const files = walkFiles(srcRoot);
@@ -237,11 +280,7 @@ describe("xai (P34-1, P34-4, P34-5, P34-9, P34-10, P34-11)", () => {
 		for (const file of files) {
 			const content = readFileSync(file, "utf8");
 			if (!/^\s*["']use client["']/.test(content)) continue;
-			if (
-				/from\s+["'][^"']*(lib\/ai\/xai|lib\/ai\/antonella-access|lib\/ai\/voice-routes|trpc\/routers\/antonella)/.test(
-					content,
-				)
-			) {
+			if (clientImportsServerAntonellaModule(content)) {
 				violations.push(file);
 			}
 		}
