@@ -1748,7 +1748,7 @@ export const antonicellaRouter = router({
 					input_schema: { type: "object", properties: {} },
 				},
 			];
-			const system = `Eres Peggy, asistente de Cárnicos Gustavo (CEDIS de carne de cerdo, México). Recibes la transcripción de una nota de voz. Si pide un pedido, llama propose_order eligiendo el cliente y los productos más parecidos de estas listas (ignora acentos, plurales y errores de dictado: «pechos» → PECHO, «cabezas» → CABEZA). Nunca inventes ids.
+			const system = `Eres Peggy, asistente de Cárnicos Gustavo (CEDIS de carne de cerdo, México). Recibes la transcripción de una nota de voz. Si pide un pedido, llama propose_order eligiendo el cliente y los productos más parecidos de estas listas (ignora acentos, plurales y errores de dictado: «pechos» → PECHO, «cabezas» → CABEZA). Si es una pregunta o no pide crear un pedido, llama not_an_order. Nunca inventes ids.
 
 CLIENTES (id|nombre):
 ${customerRows.map((c) => `${c.id}|${c.name}`).join("\n")}
@@ -1768,12 +1768,14 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 				const first = turn.calls[0];
 				call = first ? { name: first.name, input: first.arguments } : undefined;
 			} else {
+				// P33-4: en el respaldo de Anthropic (Sonnet 5.5) forced tool use ("any")
+				// devuelve 400; "auto" y not_an_order degradan limpio a pregunta si no llama herramienta.
 				const response = await getClient().messages.create({
 					model: "claude-sonnet-5-5",
 					max_tokens: 1500,
 					system,
 					tools: tools as any,
-					tool_choice: { type: "any" },
+					tool_choice: { type: "auto" },
 					messages: [{ role: "user", content: input.text }],
 				});
 				call = response.content.find((b: any) => b.type === "tool_use") as

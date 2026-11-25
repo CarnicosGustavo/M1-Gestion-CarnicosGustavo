@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { toXaiTools, xaiRespond } from "../xai";
 
 const realFetch = globalThis.fetch;
@@ -69,5 +71,16 @@ describe("xai", () => {
 		await expect(xaiRespond({ instructions: "s", input: [] })).rejects.toThrow(
 			/XAI_API_KEY/,
 		);
+	});
+
+	it("P33-4: parseVoiceOrder usa toolChoice required en x.ai y auto en el respaldo Anthropic", () => {
+		const src = readFileSync(
+			join(import.meta.dir, "../../trpc/routers/antonella.ts"),
+			"utf8",
+		);
+		const block = src.slice(src.indexOf("parseVoiceOrder:"));
+		expect(block).toContain('toolChoice: "required"');
+		expect(block).toContain('tool_choice: { type: "auto" }');
+		expect(block).not.toContain('type: "any"');
 	});
 });
