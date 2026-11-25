@@ -16,7 +16,7 @@ import {
 export default function ForgotPasswordPage() {
 	const params = useSearchParams();
 	const sent = params.get("enviado");
-	const badLink = params.get("error") === "enlace";
+	const error = params.get("error");
 
 	return (
 		<StationShell>
@@ -26,9 +26,18 @@ export default function ForgotPasswordPage() {
 						Si el correo está registrado, te llegará un enlace en unos minutos.
 						Vale 1 hora. Revisa también «spam».
 					</Notice>
-				) : badLink ? (
+				) : error === "enlace" ? (
 					<Notice tone="error">
 						El enlace ya no sirve (venció o ya se usó). Pide uno nuevo.
+					</Notice>
+				) : error === "limite" ? (
+					<Notice tone="error">
+						Demasiados intentos. Espera un minuto y vuelve a probar.
+					</Notice>
+				) : error === "envio" ? (
+					<Notice tone="error">
+						No pudimos completar la solicitud en este momento. Inténtalo más
+						tarde.
 					</Notice>
 				) : (
 					<p className="mb-4 text-[#9be59b]/80 text-xs">
@@ -50,7 +59,7 @@ export default function ForgotPasswordPage() {
 					className={fieldInput}
 				/>
 
-				<SubmitKey label="Enviar enlace" />
+				<SubmitKey label="Enviar enlace" pendingLabel="Enviando…" />
 				<p className="mt-4 text-center">
 					<ScreenLink href="/login">Volver a iniciar sesión</ScreenLink>
 				</p>

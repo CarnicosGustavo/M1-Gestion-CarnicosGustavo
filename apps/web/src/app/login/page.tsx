@@ -55,7 +55,7 @@ export default function LoginPage() {
 					className={`${fieldInput} mb-4`}
 				/>
 
-				<div className="flex items-baseline justify-between">
+				<div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
 					<label htmlFor="password" className={fieldLabel}>
 						{t("password")}
 					</label>

@@ -15,6 +15,7 @@ import {
 const ERRORS: Record<string, string> = {
 	corta: "La contraseña debe tener al menos 8 caracteres.",
 	distintas: "Las dos contraseñas no coinciden.",
+	invalida: "La contraseña no es válida. Usa entre 8 y 128 caracteres.",
 };
 
 /** Llega desde el enlace del correo con ?token=… */
@@ -58,6 +59,7 @@ export default function NewPasswordPage() {
 					type="password"
 					required
 					minLength={8}
+					maxLength={128}
 					autoComplete="new-password"
 					className={`${fieldInput} mb-4`}
 				/>
@@ -70,11 +72,12 @@ export default function NewPasswordPage() {
 					type="password"
 					required
 					minLength={8}
+					maxLength={128}
 					autoComplete="new-password"
 					className={fieldInput}
 				/>
 
-				<SubmitKey label="Guardar contraseña" />
+				<SubmitKey label="Guardar contraseña" pendingLabel="Guardando…" />
 			</GreenScreen>
 		</StationShell>
 	);

@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { CLIENT_NAME, PROJECT_CREDIT } from "@/lib/constants";
+import { PROJECT_CREDIT } from "@/lib/constants";
 
 /**
  * Carcasa de la estación (portada, olvidé mi contraseña y contraseña nueva):
@@ -12,7 +12,7 @@ import { CLIENT_NAME, PROJECT_CREDIT } from "@/lib/constants";
  */
 export function StationShell({ children }: { children: React.ReactNode }) {
 	return (
-		<div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#101315] px-4 py-8 text-[#d5ffd1]">
+		<div className="relative flex min-h-dvh items-center justify-center overflow-x-hidden bg-[#101315] px-4 py-8 pb-32 text-[#d5ffd1]">
 			{/* Fondo: rejilla tenue como la carcasa de la estación */}
 			<div
 				aria-hidden
@@ -24,13 +24,13 @@ export function StationShell({ children }: { children: React.ReactNode }) {
 				}}
 			/>
 
-			<main className="relative w-full max-w-[34rem] rounded-xl border border-[#2b3238] bg-gradient-to-b from-[#252b30] to-[#1a1f23] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.06)]">
+			<div className="relative w-full max-w-[34rem] rounded-xl border border-[#2b3238] bg-gradient-to-b from-[#252b30] to-[#1a1f23] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.06)]">
 				{/* Placa superior */}
 				<header className="flex items-center justify-between gap-3 px-2 pt-1 pb-3">
 					<div className="flex items-center gap-3">
 						<Image
 							src="/brand/logo-principal.png"
-							alt={CLIENT_NAME}
+							alt=""
 							width={120}
 							height={68}
 							priority
@@ -46,18 +46,18 @@ export function StationShell({ children }: { children: React.ReactNode }) {
 						</div>
 					</div>
 					<span className="flex items-center gap-1.5 text-[#8b949c] text-[10px] uppercase tracking-[0.2em]">
-						<span className="size-2 animate-pulse rounded-full bg-[#4cc35d] shadow-[0_0_6px_#4cc35d]" />
+						<span className="size-2 rounded-full bg-[#4cc35d] shadow-[0_0_6px_#4cc35d] motion-safe:animate-pulse" />
 						En línea
 					</span>
 				</header>
 
 				{children}
 
-				<footer className="flex items-center justify-between px-2 pt-3 text-[#6c757d] text-[10px] uppercase tracking-[0.2em]">
+				<footer className="flex items-center justify-between px-2 pt-3 text-[#a8b0b8] text-[10px] uppercase tracking-[0.2em]">
 					<span>Báscula · pedidos · cobranza</span>
 					<span>{PROJECT_CREDIT}</span>
 				</footer>
-			</main>
+			</div>
 		</div>
 	);
 }
@@ -97,7 +97,7 @@ export function GreenScreen({
 export const fieldLabel =
 	"block text-[#9be59b] text-[11px] uppercase tracking-[0.2em]";
 export const fieldInput =
-	"mt-1 w-full rounded border border-[#4d7652] bg-[#0b1710] px-3 py-2.5 text-[#d5ffd1] text-base outline-none placeholder:text-[#4d7652] focus:border-[#f39a1e] focus:shadow-[0_0_0_2px_rgba(243,154,30,0.25)]";
+	"mt-1 w-full rounded border border-[#4d7652] bg-[#0b1710] px-3 py-2.5 text-[#d5ffd1] text-base outline-none placeholder:text-[#8bc99a] focus:border-[#f39a1e] focus:shadow-[0_0_0_2px_rgba(243,154,30,0.25)]";
 
 export function Notice({
 	tone,
@@ -130,27 +130,37 @@ export function ScreenLink({
 	return (
 		<Link
 			href={href}
-			className="text-[#9be59b] text-xs underline decoration-dotted underline-offset-4 hover:text-[#f39a1e]"
+			className="text-[#9be59b] text-xs underline decoration-dotted underline-offset-4 hover:text-[#f39a1e] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f39a1e] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f2016]"
 		>
 			{children}
 		</Link>
 	);
 }
 /** Tecla naranja como las de la fila de módulos. */
-export function SubmitKey({ label }: { label: string }) {
+export function SubmitKey({
+	label,
+	pendingLabel = "Entrando…",
+}: {
+	label: string;
+	pendingLabel?: string;
+}) {
 	const { pending } = useFormStatus();
 	return (
 		<button
 			type="submit"
+			data-login-submit=""
 			disabled={pending}
-			className="mt-6 flex w-full items-center justify-between rounded-md border border-[#ffb85c] bg-gradient-to-b from-[#f7a93a] to-[#d9800f] px-4 py-3 font-sans text-[#2a1600] shadow-[0_3px_0_#8a4f05,0_6px_14px_rgba(0,0,0,0.45)] transition active:translate-y-[2px] active:shadow-[0_1px_0_#8a4f05] disabled:opacity-60"
+			className="mt-6 flex w-full items-center justify-between rounded-md border border-[#ffb85c] bg-gradient-to-b from-[#f7a93a] to-[#d9800f] px-4 py-3 font-sans text-[#2a1600] shadow-[0_3px_0_#8a4f05,0_6px_14px_rgba(0,0,0,0.45)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f39a1e] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f2016] active:translate-y-[2px] active:shadow-[0_1px_0_#8a4f05] disabled:opacity-60"
 		>
 			<span className="font-black text-base uppercase tracking-wider">
-				{pending ? "Entrando…" : label}
+				{pending ? pendingLabel : label}
 			</span>
-			<kbd className="rounded border border-[#8a4f05]/60 bg-[#2a1600]/15 px-1.5 py-0.5 font-bold text-[10px]">
+			<span
+				aria-hidden="true"
+				className="rounded border border-[#8a4f05]/60 bg-[#2a1600]/15 px-1.5 py-0.5 font-bold text-[10px]"
+			>
 				Enter
-			</kbd>
+			</span>
 		</button>
 	);
 }
