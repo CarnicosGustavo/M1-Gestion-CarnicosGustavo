@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+	catalogProductPrice,
+	isSaleLineItem,
 	lineSubtotalCents,
 	orderUnitPriceToPesos,
 	PRICE_SOURCE_LABELS,
 	resolveDefaultPrice,
+	saleLineSubtotalCents,
 } from "../pricing";
 
 const row = (
@@ -96,5 +99,83 @@ describe("P33-12 — el panel de venta ya no dice «Vista previa»", () => {
 		);
 		expect(source).not.toContain("Vista previa");
 		expect(source).not.toContain("no se guardan");
+	});
+});
+
+describe("P33-5 — productos por pieza en catálogo y Venta", () => {
+	test("catalogProductPrice usa price_per_piece cuando no se vende por peso", () => {
+		expect(
+			catalogProductPrice({
+				is_sellable_by_weight: false,
+				price_per_kg: null,
+				price_per_piece: "50.00",
+			}),
+		).toBe("50.00");
+		expect(
+			catalogProductPrice({
+				is_sellable_by_weight: true,
+				price_per_kg: "86.00",
+				price_per_piece: "50.00",
+			}),
+		).toBe("86.00");
+	});
+
+	test("resolveDefaultPrice con byPiece lee precios por pieza (último, lista, pedido, base)", () => {
+		expect(
+			resolveDefaultPrice(
+				row({
+					customerPricePerPiece: 55,
+					listPricePerPiece: 52,
+					pricePerPiece: "50.00",
+				}),
+				"5000",
+				{ byPiece: true },
+			),
+		).toEqual({ pricePerKg: 55, source: "ultimo" });
+		expect(
+			resolveDefaultPrice(row({ pricePerPiece: "50.00" }), "5000", {
+				byPiece: true,
+			}),
+		).toEqual({ pricePerKg: 50, source: "pedido" });
+		expect(
+			resolveDefaultPrice(row({ pricePerPiece: "50.00" }), "0", {
+				byPiece: true,
+			}),
+		).toEqual({ pricePerKg: 50, source: "base" });
+	});
+
+	test("isSaleLineItem incluye piezas COMPLETADO y saleLineSubtotalCents cobra piezas × precio", () => {
+		expect(
+			isSaleLineItem({
+				status: "COMPLETADO",
+				quantity_kg: null,
+				quantity_pieces: 3,
+			}),
+		).toBe(true);
+		expect(
+			isSaleLineItem({
+				status: "PESADO",
+				quantity_kg: "2.000",
+				quantity_pieces: null,
+			}),
+		).toBe(true);
+		expect(
+			isSaleLineItem({
+				status: "PENDIENTE_PESAJE",
+				quantity_kg: "2.000",
+				quantity_pieces: 1,
+			}),
+		).toBe(false);
+		expect(
+			isSaleLineItem({
+				status: "COBRADO",
+				quantity_kg: null,
+				quantity_pieces: 3,
+			}),
+		).toBe(false);
+		// 3 cabezas a $50/pz = 15,000 centavos ($150.00)
+		expect(saleLineSubtotalCents({ kg: 0, pieces: 3, pricePerUnit: 50 })).toBe(
+			15000,
+		);
 	});
 });

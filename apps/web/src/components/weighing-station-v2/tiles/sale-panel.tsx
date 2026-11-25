@@ -4,9 +4,9 @@ import { cn } from "@finopenpos/ui/lib/utils";
 import { Banknote, CreditCard, Undo2 } from "lucide-react";
 import { PanelFrame } from "../instrument/panel-frame";
 import {
-	lineSubtotalCents,
 	PRICE_SOURCE_LABELS,
 	type PriceSource,
+	saleLineSubtotalCents,
 } from "../pricing";
 import { presenceClass, usePresence } from "../use-presence";
 
@@ -18,6 +18,7 @@ export type SaleLine = {
 	pieces: number | null;
 	price: string;
 	source: PriceSource;
+	canReturn?: boolean;
 };
 
 export interface SalePanelProps {
@@ -68,7 +69,12 @@ export function SalePanel(props: SalePanelProps) {
 
 	const totalCents = lines.reduce(
 		(sum, line) =>
-			sum + lineSubtotalCents(line.kg, Number.parseFloat(line.price) || 0),
+			sum +
+			saleLineSubtotalCents({
+				kg: line.kg,
+				pieces: line.pieces,
+				pricePerUnit: Number.parseFloat(line.price) || 0,
+			}),
 		0,
 	);
 	const shown = usePresence(lines, (line) => line.itemId);
@@ -108,10 +114,11 @@ export function SalePanel(props: SalePanelProps) {
 					<ul className="pz-zoom min-h-0 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden px-2 py-2">
 						{shown.map(({ key, item: line, state }) => {
 							const index = lines.findIndex((l) => l.itemId === line.itemId);
-							const subtotalCents = lineSubtotalCents(
-								line.kg,
-								Number.parseFloat(line.price) || 0,
-							);
+							const subtotalCents = saleLineSubtotalCents({
+								kg: line.kg,
+								pieces: line.pieces,
+								pricePerUnit: Number.parseFloat(line.price) || 0,
+							});
 							const isActive = focused && index === activeIndex;
 
 							return (
@@ -130,24 +137,37 @@ export function SalePanel(props: SalePanelProps) {
 												{line.name}
 											</div>
 											<div className="mt-0.5 font-mono text-[#9da7b3] text-[11px] tabular-nums">
-												{line.kg.toLocaleString("es-MX", {
-													minimumFractionDigits: 3,
-													maximumFractionDigits: 3,
-												})}{" "}
-												kg
-												{line.pieces !== null ? ` · ${line.pieces} pza` : ""}
+												{line.kg > 0 ? (
+													<>
+														{line.kg.toLocaleString("es-MX", {
+															minimumFractionDigits: 3,
+															maximumFractionDigits: 3,
+														})}{" "}
+														kg
+														{line.pieces !== null
+															? ` · ${line.pieces} pza`
+															: ""}
+													</>
+												) : (
+													<>
+														{line.pieces ?? 0}{" "}
+														{line.pieces === 1 ? "pza" : "pzas"}
+													</>
+												)}
 											</div>
 										</div>
-										<button
-											type="button"
-											onClick={() => onReturn(line.itemId)}
-											disabled={state === "leave"}
-											title="Quitar peso: regresa a pendientes de pesar"
-											aria-label={`Quitar peso de ${line.name}`}
-											className="flex size-6 shrink-0 items-center justify-center rounded border border-[#3d444d] text-[#8b949e] transition-colors hover:border-[#d63a3a] hover:bg-[#d63a3a]/15 hover:text-[#ff8f8f]"
-										>
-											<Undo2 aria-hidden="true" size={13} />
-										</button>
+										{line.canReturn !== false && line.kg > 0 ? (
+											<button
+												type="button"
+												onClick={() => onReturn(line.itemId)}
+												disabled={state === "leave"}
+												title="Quitar peso: regresa a pendientes de pesar"
+												aria-label={`Quitar peso de ${line.name}`}
+												className="flex size-6 shrink-0 items-center justify-center rounded border border-[#3d444d] text-[#8b949e] transition-colors hover:border-[#d63a3a] hover:bg-[#d63a3a]/15 hover:text-[#ff8f8f]"
+											>
+												<Undo2 aria-hidden="true" size={13} />
+											</button>
+										) : null}
 									</div>
 									<div className="mt-2 flex items-center gap-1.5">
 										<div className="relative min-w-0 flex-1">
@@ -162,7 +182,11 @@ export function SalePanel(props: SalePanelProps) {
 													onPriceChange(line.itemId, event.target.value)
 												}
 												onFocus={onFocusPanel}
-												aria-label={`Precio por kg de ${line.name}`}
+												aria-label={
+													line.kg > 0
+														? `Precio por kg de ${line.name}`
+														: `Precio por pieza de ${line.name}`
+												}
 												className="w-full rounded border border-[#2d333b] bg-[#0f1216] py-1 pr-2 pl-5 text-right font-mono text-[#e6edf3] text-xs outline-none transition-colors focus:border-[#f39a1e]"
 											/>
 										</div>

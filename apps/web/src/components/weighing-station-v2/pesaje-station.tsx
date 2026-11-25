@@ -78,6 +78,8 @@ import { usePesajeTheme } from "./pesaje-themes";
 import "./pesaje-themes.css";
 import {
 	type CustomerPriceRow,
+	catalogProductPrice,
+	isSaleLineItem,
 	lineSubtotalCents,
 	resolveDefaultPrice,
 } from "./pricing";
@@ -362,7 +364,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 						name: p.name,
 						parent_product_id: p.parent_product_id ?? null,
 						category: p.category ?? null,
-						price: p.price_per_kg ?? 0,
+						price: catalogProductPrice(p),
 					})),
 		[demo, products],
 	);
@@ -450,11 +452,22 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 
 	useEffect(() => {
 		if (demo) return;
-		if (selectedOrderId && pendingItems.length === 0 && !isLoadingOrders) {
+		if (
+			selectedOrderId &&
+			!selectedOrder &&
+			!isLoadingOrders &&
+			!orderDetailQuery.isLoading
+		) {
 			setSelectedOrderId(null);
 			setCurrentItemIndex(0);
 		}
-	}, [pendingItems.length, selectedOrderId, isLoadingOrders, demo]);
+	}, [
+		selectedOrderId,
+		selectedOrder,
+		isLoadingOrders,
+		orderDetailQuery.isLoading,
+		demo,
+	]);
 
 	const containerDef = CONTAINERS.find(
 		(container) => container.id === containerId,
@@ -566,6 +579,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 
 	const createOrder = useCallback(
 		(customerId: number, lines: OrderDraft["lines"]) => {
+			if (createOrderMutation.isPending) return;
 			if (demo) {
 				toast.success("Demostración: pedido creado y enviado a Pedidos");
 				setOverlay(null);
@@ -789,29 +803,29 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		: (orderDetailQuery.data?.orderItems ?? []);
 	const saleLines: SaleLine[] = useMemo(
 		() =>
-			detailItems
-				.filter(
-					(item) =>
-						item.status !== "PENDIENTE_PESAJE" && Number(item.quantity_kg) > 0,
-				)
-				.map((item) => {
-					const row = priceRows.find(
-						(candidate) => candidate.productId === item.product_id,
-					);
-					// unit_price del pedido está en centavos; resolveDefaultPrice lo convierte.
-					const suggested = resolveDefaultPrice(row, item.unit_price);
-					const edited = priceEdits[item.id];
-					return {
-						itemId: item.id,
-						productId: item.product_id ?? null,
-						name: itemName(item),
-						kg: Number(item.quantity_kg) || 0,
-						pieces: item.quantity_pieces ?? null,
-						price: edited ?? (suggested ? suggested.pricePerKg.toFixed(2) : ""),
-						source:
-							edited !== undefined ? "manual" : (suggested?.source ?? "manual"),
-					};
-				}),
+			detailItems.filter(isSaleLineItem).map((item) => {
+				const row = priceRows.find(
+					(candidate) => candidate.productId === item.product_id,
+				);
+				const kg = Number(item.quantity_kg) || 0;
+				const byPiece = kg <= 0 && (item.quantity_pieces ?? 0) > 0;
+				// unit_price del pedido está en centavos; resolveDefaultPrice lo convierte.
+				const suggested = resolveDefaultPrice(row, item.unit_price, {
+					byPiece,
+				});
+				const edited = priceEdits[item.id];
+				return {
+					itemId: item.id,
+					productId: item.product_id ?? null,
+					name: itemName(item),
+					kg,
+					pieces: item.quantity_pieces ?? null,
+					price: edited ?? (suggested ? suggested.pricePerKg.toFixed(2) : ""),
+					source:
+						edited !== undefined ? "manual" : (suggested?.source ?? "manual"),
+					canReturn: item.status === "PESADO",
+				};
+			}),
 		[detailItems, priceRows, priceEdits],
 	);
 	useEffect(() => {
