@@ -119,3 +119,76 @@ describe("canRegisterWeight — botones apagados si isPending", () => {
 		).toBe(true);
 	});
 });
+
+function source(path: string): string {
+	return readFileSync(new URL(path, import.meta.url), "utf8");
+}
+
+describe("P32-R3-2 — el cableado de hasValidWeight usa canRegisterWeight", () => {
+	const stations = {
+		v2: "../pesaje-station.tsx",
+		clásica: "../../../app/admin/weighing-station/page.tsx",
+	};
+
+	for (const [name, path] of Object.entries(stations)) {
+		test(`${name}: hasValidWeight sale de canRegisterWeight con customTareInvalid (no de netKg > 0)`, () => {
+			const src = source(path);
+			expect(src).toMatch(
+				/const hasValidWeight = canRegisterWeight\(\{[^}]*customTareInvalid,[^}]*\}\)/,
+			);
+			expect(src).not.toMatch(/hasValidWeight = netKg > 0/);
+			expect(src).toMatch(/!currentItem \|\| !hasValidWeight/);
+		});
+	}
+
+	test("v2: la tecla f (Registrar peso del renglón) queda apagada sin peso válido o con isPending", () => {
+		const src = source("../pesaje-station.tsx");
+		expect(src).toMatch(
+			/label: "Registrar peso del renglón",\s*onPress: handleRegisterWeight,\s*disabled:\s*!hasValidWeight \|\|\s*currentItem === null \|\|\s*updateWeightMutation\.isPending/,
+		);
+		expect(src).toMatch(
+			/if \(!currentItem \|\| !hasValidWeight\) return;\s*if \(updateWeightMutation\.isPending\) return;/,
+		);
+	});
+});
+
+describe("P32-R3-3 — captura serial con tara «Otro» inválida", () => {
+	test("el panel serial no captura (ni aplica tara 0) con tareInvalid", () => {
+		const src = source("../../scale-serial/scale-serial-panel.tsx");
+		const guard = src.indexOf("if (currentContainer.tareInvalid)");
+		const tareG = src.indexOf(
+			"const tareG = Math.max(0, Math.round(currentContainer",
+		);
+		expect(guard).toBeGreaterThan(-1);
+		expect(tareG).toBeGreaterThan(guard);
+		expect(src.slice(guard, tareG)).toContain("return;");
+	});
+
+	test("las dos estaciones pasan tareInvalid al panel serial", () => {
+		expect(source("../pesaje-station.tsx")).toMatch(
+			/tareInvalid: customTareInvalid/,
+		);
+		expect(source("../../../app/admin/weighing-station/page.tsx")).toMatch(
+			/tareInvalid: customTareInvalid/,
+		);
+	});
+
+	test("v2: Espacio/M+ no captura con tara inválida", () => {
+		const src = source("../pesaje-station.tsx");
+		expect(src).toMatch(
+			/const handleCaptureStable = useCallback\(\(\) => \{\s*if \(customTareInvalid\) \{\s*toast\.error\(INVALID_TARE_CAPTURE_MESSAGE\);\s*return;/,
+		);
+	});
+});
+
+describe("P32-R3-4 — deps del keydown", () => {
+	test("handlePrevItem y handleNextItem están memoizados y en las deps", () => {
+		const src = source("../pesaje-station.tsx");
+		expect(src).toMatch(/const handlePrevItem = useCallback\(/);
+		expect(src).toMatch(/const handleNextItem = useCallback\(/);
+		const effect = src.slice(src.indexOf('window.addEventListener("keydown"'));
+		const deps = effect.slice(effect.indexOf("}, ["), effect.indexOf("]);"));
+		expect(deps).toContain("handlePrevItem");
+		expect(deps).toContain("handleNextItem");
+	});
+});

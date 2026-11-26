@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { AntonellaAvatar } from "@/components/antonella-avatar";
 import { useTRPC } from "@/lib/trpc/client";
 
-// Card de Peggy que sugiere el despiece necesario para cubrir los pedidos
+// Card de Antonella que sugiere el despiece necesario para cubrir los pedidos
 // abiertos y lo ejecuta con un clic, mostrando las piezas generadas.
 export function DespiecePlanCard({ onDone }: { onDone?: () => void }) {
 	const trpc = useTRPC();
@@ -79,7 +79,7 @@ export function DespiecePlanCard({ onDone }: { onDone?: () => void }) {
 				<div className="min-w-0 flex-1">
 					<div className="mb-1.5 flex flex-wrap items-center gap-2">
 						<span className="font-extrabold text-[13px] text-foreground">
-							Peggy
+							Antonella
 						</span>
 						<span className="h-[3px] w-[3px] rounded-full bg-muted-foreground" />
 						<span className="font-semibold text-muted-foreground text-xs">

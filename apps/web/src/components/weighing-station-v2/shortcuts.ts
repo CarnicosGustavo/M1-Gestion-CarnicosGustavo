@@ -8,7 +8,7 @@ export type PesajeCommand =
 	| "hold" // HOLD: congelar el display
 	| "undo" // deshacer la última captura
 	| "charge" // cobrar de contado (panel 5 → pantalla 7)
-	| "charge-credit" // anotar a crédito (lo más común)
+	| "charge-credit" // anotar a crédito (Súper+Shift+G)
 	| "antonella"
 	| "classic";
 
@@ -102,7 +102,7 @@ const MOD_KEYS: Record<string, PesajeAction> = {
 	r: { type: "command", command: "tare" },
 	l: { type: "command", command: "hold" },
 	z: { type: "command", command: "undo" },
-	g: { type: "command", command: "charge-credit" },
+	g: { type: "command", command: "charge" },
 	i: { type: "voice" },
 	v: { type: "command", command: "classic" },
 };
@@ -144,13 +144,13 @@ export function matchPesajeShortcut(
 	}
 
 	if (mod) {
-		// Alt+Espacio: empezar a dictarle a Peggy (Espacio solo termina).
+		// Alt+Espacio: empezar a dictarle a Antonella (Espacio solo termina).
 		if (key === " " || event.code === "Space") return { type: "voice" };
 		const physical = physicalKey(event);
 		if (physical === "t" && event.shiftKey) return { type: "cycle-theme" };
 		if (physical === "a" && event.shiftKey) return { type: "cycle-font" };
 		if (physical === "g" && event.shiftKey) {
-			return { type: "command", command: "charge" };
+			return { type: "command", command: "charge-credit" };
 		}
 		if (physical === "b" && event.shiftKey) {
 			return { type: "command", command: "power" };
@@ -256,14 +256,18 @@ export const SHORTCUT_ROWS: Array<{
 	{
 		keys: "Alt+Espacio",
 		fallback: "mantener 🎤",
-		action: "Hablar con Peggy",
+		action: "Hablar con Antonella",
 	},
 	{
 		keys: "Espacio (grabando)",
 		fallback: "soltar 🎤",
 		action: "Terminar de grabar",
 	},
-	{ keys: "Súper+G", fallback: "Alt+G", action: "Cobrar de contado" },
+	{
+		keys: "Súper+G",
+		fallback: "Alt+G",
+		action: "Cobrar de contado (efectivo)",
+	},
 	{
 		keys: "Súper+Shift+G",
 		fallback: "Alt+Shift+G",
@@ -272,7 +276,7 @@ export const SHORTCUT_ROWS: Array<{
 	{
 		keys: "Súper+I",
 		fallback: "Alt+I",
-		action: "Hablarle a Peggy (igual que Alt+Espacio)",
+		action: "Hablarle a Antonella (igual que Alt+Espacio)",
 	},
 	{ keys: "Súper+V", fallback: "Alt+V", action: "Versión clásica" },
 	{ keys: "Súper+Shift+T", fallback: "Alt+Shift+T", action: "Cambiar tema" },
@@ -283,3 +287,43 @@ export const SHORTCUT_ROWS: Array<{
 	},
 	{ keys: "Esc", fallback: "", action: "Cerrar / volver a Inicio" },
 ];
+
+function isVoiceConfirmTarget(target: EventTarget | null): boolean {
+	if (!target || typeof target !== "object") return false;
+	const element = target as {
+		dataset?: { voiceConfirm?: string };
+		getAttribute?: (name: string) => string | null;
+		closest?: (selector: string) => unknown;
+	};
+	if (
+		element.dataset?.voiceConfirm === "true" ||
+		element.getAttribute?.("data-voice-confirm") === "true"
+	) {
+		return true;
+	}
+	return Boolean(element.closest?.("[data-voice-confirm='true']"));
+}
+
+/** P33-6: Enter en la nota de voz solo confirma si el foco no está en otro botón (Cancelar/Editar) ni se repite. */
+export function matchVoiceNoteKey(
+	event: Pick<
+		KeyboardEvent,
+		"key" | "repeat" | "altKey" | "metaKey" | "ctrlKey" | "target"
+	>,
+	options: { canConfirm: boolean; hasOrder: boolean },
+): "confirm" | "edit" | null {
+	if (event.repeat) return null;
+	if (event.altKey || event.metaKey || event.ctrlKey) return null;
+	if (event.key === "Enter") {
+		if (!options.canConfirm) return null;
+		if (isActivateTarget(event.target) && !isVoiceConfirmTarget(event.target)) {
+			return null;
+		}
+		return "confirm";
+	}
+	if ((event.key === "e" || event.key === "E") && options.hasOrder) {
+		if (isTypingTarget(event.target)) return null;
+		return "edit";
+	}
+	return null;
+}

@@ -47,6 +47,7 @@ import { useTRPC } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
 import {
 	canRegisterWeight,
+	INVALID_TARE_CAPTURE_MESSAGE,
 	parseCustomTareKg,
 } from "@/lib/weighing/parse-custom-tare";
 import {
@@ -75,10 +76,13 @@ import { TicketsOverlay } from "./overlays/tickets-overlay";
 import { VoiceNote } from "./overlays/voice-note";
 import { usePesajeTheme } from "./pesaje-themes";
 import "./pesaje-themes.css";
+import { canUseAntonella } from "@/lib/ai/antonella-roles";
 import {
 	type CustomerPriceRow,
-	lineSubtotalCents,
+	catalogProductPrice,
+	isSaleLineItem,
 	resolveDefaultPrice,
+	saleLinesTotalCents,
 } from "./pricing";
 import {
 	matchPesajeShortcut,
@@ -199,7 +203,13 @@ const CONTAINER_LABELS: Record<string, string> = Object.fromEntries(
 	CONTAINERS.map((container) => [container.id, container.label]),
 );
 
-export function PesajeStation({ demo = false }: { demo?: boolean }) {
+export function PesajeStation({
+	demo = false,
+	role = null,
+}: {
+	demo?: boolean;
+	role?: string | null;
+}) {
 	const trpc = useTRPC();
 	const locale = useLocale();
 	const { theme, setTheme, cycleTheme } = usePesajeTheme();
@@ -248,10 +258,12 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		transcript: string;
 		answer: string;
 	}>({ status: "idle", transcript: "", answer: "" });
-	// Con x.ai, el servidor transcribe (cualquier navegador) y Peggy habla (Ara).
+	// Con x.ai, el servidor transcribe (cualquier navegador) y Antonella habla (Ara).
+	const canUseVoice = demo || canUseAntonella(role);
 	const voiceInfoQuery = useQuery({
 		...trpc.antonella.voiceInfo.queryOptions(),
-		enabled: !demo,
+		enabled: !demo && canUseVoice,
+		retry: false,
 		staleTime: 5 * 60_000,
 	});
 	const serverVoice = voiceInfoQuery.data?.serverVoice === true;
@@ -264,8 +276,9 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	const speechSupported = (serverVoice && canRecord) || browserSpeech;
 	const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 	const recorderRef = useRef<peggyVoice.NoteRecorder | null>(null);
-	/** Esc durante el dictado: se descarta lo grabado. */
+	/** Esc durante el dictado o thinking: invalida respuestas en vuelo. */
 	const voiceCancelledRef = useRef(false);
+	const voiceGenRef = useRef(0);
 	const [newOrderDraft, setNewOrderDraft] = useState<OrderDraft | null>(null);
 	const transcriptRef = useRef("");
 
@@ -361,7 +374,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 						name: p.name,
 						parent_product_id: p.parent_product_id ?? null,
 						category: p.category ?? null,
-						price: p.price_per_kg ?? 0,
+						price: catalogProductPrice(p),
 					})),
 		[demo, products],
 	);
@@ -449,11 +462,22 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 
 	useEffect(() => {
 		if (demo) return;
-		if (selectedOrderId && pendingItems.length === 0 && !isLoadingOrders) {
+		if (
+			selectedOrderId &&
+			!selectedOrder &&
+			!isLoadingOrders &&
+			!orderDetailQuery.isLoading
+		) {
 			setSelectedOrderId(null);
 			setCurrentItemIndex(0);
 		}
-	}, [pendingItems.length, selectedOrderId, isLoadingOrders, demo]);
+	}, [
+		selectedOrderId,
+		selectedOrder,
+		isLoadingOrders,
+		orderDetailQuery.isLoading,
+		demo,
+	]);
 
 	const containerDef = CONTAINERS.find(
 		(container) => container.id === containerId,
@@ -486,8 +510,13 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	}, [selectedOrder, currentItem]);
 
 	const serialContainer = useMemo(
-		() => ({ id: containerId, label: containerDef.label, tareKg }),
-		[containerId, containerDef.label, tareKg],
+		() => ({
+			id: containerId,
+			label: containerDef.label,
+			tareKg,
+			tareInvalid: customTareInvalid,
+		}),
+		[containerId, containerDef.label, tareKg, customTareInvalid],
 	);
 
 	useEffect(() => {
@@ -560,6 +589,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 
 	const createOrder = useCallback(
 		(customerId: number, lines: OrderDraft["lines"]) => {
+			if (createOrderMutation.isPending) return;
 			if (demo) {
 				toast.success("Demostración: pedido creado y enviado a Pedidos");
 				setOverlay(null);
@@ -675,6 +705,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 	]);
 
 	const handleCaptureStable = useCallback(() => {
+		if (customTareInvalid) {
+			toast.error(INVALID_TARE_CAPTURE_MESSAGE);
+			return;
+		}
 		if (demo) {
 			if (!live?.stable || live.overload || live.weightG == null) {
 				toast.info("En la demostración el peso de ejemplo ya está capturado");
@@ -686,7 +720,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			return;
 		}
 		controlsRef.current?.captureManual();
-	}, [demo, live]);
+	}, [demo, live, customTareInvalid]);
 
 	const handleUndo = useCallback(() => {
 		if (demo) {
@@ -727,12 +761,17 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		}
 	};
 
-	const handlePrevItem = () =>
-		setCurrentItemIndex((index) => Math.max(0, index - 1));
-	const handleNextItem = () =>
-		setCurrentItemIndex((index) =>
-			index + 1 < pendingItems.length ? index + 1 : index,
-		);
+	const handlePrevItem = useCallback(
+		() => setCurrentItemIndex((index) => Math.max(0, index - 1)),
+		[],
+	);
+	const handleNextItem = useCallback(
+		() =>
+			setCurrentItemIndex((index) =>
+				index + 1 < pendingItems.length ? index + 1 : index,
+			),
+		[pendingItems.length],
+	);
 
 	const cycleContainer = useCallback((direction: number) => {
 		setContainerId((current) => {
@@ -774,29 +813,29 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		: (orderDetailQuery.data?.orderItems ?? []);
 	const saleLines: SaleLine[] = useMemo(
 		() =>
-			detailItems
-				.filter(
-					(item) =>
-						item.status !== "PENDIENTE_PESAJE" && Number(item.quantity_kg) > 0,
-				)
-				.map((item) => {
-					const row = priceRows.find(
-						(candidate) => candidate.productId === item.product_id,
-					);
-					// unit_price del pedido está en centavos; resolveDefaultPrice lo convierte.
-					const suggested = resolveDefaultPrice(row, item.unit_price);
-					const edited = priceEdits[item.id];
-					return {
-						itemId: item.id,
-						productId: item.product_id ?? null,
-						name: itemName(item),
-						kg: Number(item.quantity_kg) || 0,
-						pieces: item.quantity_pieces ?? null,
-						price: edited ?? (suggested ? suggested.pricePerKg.toFixed(2) : ""),
-						source:
-							edited !== undefined ? "manual" : (suggested?.source ?? "manual"),
-					};
-				}),
+			detailItems.filter(isSaleLineItem).map((item) => {
+				const row = priceRows.find(
+					(candidate) => candidate.productId === item.product_id,
+				);
+				const kg = Number(item.quantity_kg) || 0;
+				const byPiece = kg <= 0 && (item.quantity_pieces ?? 0) > 0;
+				// unit_price del pedido está en centavos; resolveDefaultPrice lo convierte.
+				const suggested = resolveDefaultPrice(row, item.unit_price, {
+					byPiece,
+				});
+				const edited = priceEdits[item.id];
+				return {
+					itemId: item.id,
+					productId: item.product_id ?? null,
+					name: itemName(item),
+					kg,
+					pieces: item.quantity_pieces ?? null,
+					price: edited ?? (suggested ? suggested.pricePerKg.toFixed(2) : ""),
+					source:
+						edited !== undefined ? "manual" : (suggested?.source ?? "manual"),
+					canReturn: item.status === "PESADO",
+				};
+			}),
 		[detailItems, priceRows, priceEdits],
 	);
 	useEffect(() => {
@@ -979,7 +1018,8 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			orders,
 			selectedOrderId,
 			cycleContainer,
-			pendingItems.length,
+			handlePrevItem,
+			handleNextItem,
 			saleLines.length,
 			fnPage,
 			cycleTheme,
@@ -1117,38 +1157,34 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		[fnArmed, fnPage, overlay, openDetail, openPage],
 	);
 
-	// ── Voz: mantener 🎤 (o Alt+Espacio) → dictado → Peggy responde en 7
-	const voiceChatMutation = useMutation(
-		trpc.antonella.chat.mutationOptions({
-			onSuccess: (data) => {
-				setVoice((current) => ({
-					...current,
-					status: "answered",
-					answer: data.requiresConfirmation
-						? `${data.answer}\n\n(Esta acción pide confirmación: ábrela en «Chat completo».)`
-						: data.answer,
-				}));
-			},
-			onError: (error) => {
-				setVoice((current) => ({ ...current, status: "error" }));
-				toast.error(error.message ?? "Peggy no respondió");
-			},
-		}),
-	);
+	// ── Voz: mantener 🎤 (o Alt+Espacio) → dictado → Antonella responde en 7
+	const spokenRef = useRef("");
+	const voiceChatMutation = useMutation(trpc.antonella.chat.mutationOptions());
 	const voiceOrderMutation = useMutation(
-		trpc.antonella.parseVoiceOrder.mutationOptions({
-			onError: (error) => {
-				setVoice((current) => ({ ...current, status: "error" }));
-				toast.error(error.message ?? "Peggy no respondió");
-			},
-		}),
+		trpc.antonella.parseVoiceOrder.mutationOptions(),
 	);
+	const cancelVoice = useCallback(() => {
+		voiceGenRef.current += 1;
+		voiceCancelledRef.current = true;
+		peggyVoice.hush();
+		const recorder = recorderRef.current;
+		if (recorder) {
+			recorderRef.current = null;
+			recorder.cancel();
+		}
+		recognitionRef.current?.stop();
+		recognitionRef.current = null;
+		setNewOrderDraft(null);
+		setVoice({ status: "idle", transcript: "", answer: "" });
+	}, []);
 	const askAntonella = useCallback(
 		(text: string) => {
+			const gen = voiceGenRef.current;
 			setFnPage("voz");
 			setVoice({ status: "thinking", transcript: text, answer: "" });
 			if (demo && /pedido/i.test(text)) {
 				setTimeout(() => {
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
 					setNewOrderDraft({
 						customerId: 2,
 						lines: [
@@ -1168,24 +1204,25 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				return;
 			}
 			if (demo) {
-				setTimeout(
-					() =>
-						setVoice({
-							status: "answered",
-							transcript: text,
-							answer:
-								"Demostración: aquí llega la respuesta de Peggy (p. ej. «Pierna: 48 kg en existencia, 3 pedidos la esperan»).",
-						}),
-					900,
-				);
+				setTimeout(() => {
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
+					setVoice({
+						status: "answered",
+						transcript: text,
+						answer:
+							"Demostración: aquí llega la respuesta de Antonella (p. ej. «Pierna: 48 kg en existencia, 3 pedidos la esperan»).",
+					});
+				}, 900);
 				return;
 			}
-			// 1) ¿Es un pedido? Peggy lo arma y se abre para confirmar.
+			// 1) ¿Es un pedido? Antonella lo arma y se abre para confirmar.
 			// 2) Si no, responde como siempre en la pantalla 7.
 			voiceOrderMutation.mutate(
 				{ text },
 				{
 					onSuccess: (result) => {
+						if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+							return;
 						if (result.kind === "order") {
 							setNewOrderDraft({
 								customerId: result.customerId,
@@ -1198,7 +1235,34 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 							setVoice({ status: "answered", transcript: text, answer: "" });
 							return;
 						}
-						voiceChatMutation.mutate({ message: text });
+						voiceChatMutation.mutate(
+							{ message: text },
+							{
+								onSuccess: (data) => {
+									if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+										return;
+									setVoice((current) => ({
+										...current,
+										status: "answered",
+										answer: data.requiresConfirmation
+											? `${data.answer}\n\n(Esta acción pide confirmación: ábrela en «Chat completo».)`
+											: data.answer,
+									}));
+								},
+								onError: (error) => {
+									if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+										return;
+									setVoice((current) => ({ ...current, status: "error" }));
+									toast.error(error.message ?? "Antonella no respondió");
+								},
+							},
+						);
+					},
+					onError: (error) => {
+						if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+							return;
+						setVoice((current) => ({ ...current, status: "error" }));
+						toast.error(error.message ?? "Antonella no respondió");
 					},
 				},
 			);
@@ -1206,6 +1270,10 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		[demo, voiceChatMutation, voiceOrderMutation],
 	);
 	const startVoice = useCallback(() => {
+		if (!canUseVoice) return;
+		voiceGenRef.current += 1;
+		const gen = voiceGenRef.current;
+		spokenRef.current = "";
 		setFnPage("voz");
 		setFocusedTile(7);
 		setNewOrderDraft(null);
@@ -1237,10 +1305,14 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					starting.then((recorder) => recorder.cancel()).catch(() => undefined);
 				},
 			};
-			starting.catch(() => {
+			starting.catch((err: unknown) => {
 				recorderRef.current = null;
+				if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
+				const name = err instanceof Error ? err.name : "";
 				toast.error(
-					"No pude usar el micrófono: revisa el permiso del navegador.",
+					name === "NotFoundError"
+						? "No se detectó micrófono conectado."
+						: "No pude usar el micrófono: revisa el permiso del navegador.",
 				);
 				setVoice({ status: "error", transcript: "", answer: "" });
 			});
@@ -1288,8 +1360,9 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 			recognitionRef.current = null;
 			setVoice((current) => ({ ...current, status: "idle" }));
 		}
-	}, [askAntonella, demo, serverVoice, canRecord]);
+	}, [askAntonella, demo, serverVoice, canRecord, canUseVoice]);
 	const stopVoice = useCallback(() => {
+		const gen = voiceGenRef.current;
 		if (demo) {
 			if (voiceCancelledRef.current) {
 				setVoice({ status: "idle", transcript: "", answer: "" });
@@ -1308,24 +1381,34 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 				return;
 			}
 			setVoice({ status: "thinking", transcript: "", answer: "" });
+			let tooShort = false;
 			recorder
 				.stop()
 				.then((audio) => {
-					if (voiceCancelledRef.current) return "";
-					if (audio.size < 2000) return "";
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current)
+						return "";
+					if (audio.size < 2000) {
+						tooShort = true;
+						return "";
+					}
 					return peggyVoice.transcribe(audio);
 				})
 				.then((text) => {
-					if (voiceCancelledRef.current) {
-						setVoice({ status: "idle", transcript: "", answer: "" });
-					} else if (text) {
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
+					if (text) {
 						transcriptRef.current = text;
 						askAntonella(text);
+					} else if (tooShort) {
+						setVoice({ status: "error", transcript: "", answer: "" });
+						toast.info(
+							"No te escuché; intenta hablar más cerca del micrófono.",
+						);
 					} else {
 						setVoice({ status: "idle", transcript: "", answer: "" });
 					}
 				})
 				.catch((error: unknown) => {
+					if (voiceCancelledRef.current || gen !== voiceGenRef.current) return;
 					setVoice({ status: "error", transcript: "", answer: "" });
 					toast.error(error instanceof Error ? error.message : "Dictado falló");
 				});
@@ -1334,8 +1417,19 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		recognitionRef.current?.stop();
 	}, [demo, askAntonella]);
 
-	// Peggy contesta en voz alta (Ara) lo que anotó o lo que le preguntaron.
-	const spokenRef = useRef("");
+	useEffect(() => {
+		return () => {
+			voiceGenRef.current += 1;
+			voiceCancelledRef.current = true;
+			peggyVoice.hush();
+			recorderRef.current?.cancel();
+			recorderRef.current = null;
+			recognitionRef.current?.stop();
+			recognitionRef.current = null;
+		};
+	}, []);
+
+	// Antonella contesta en voz alta (Ara) lo que anotó o lo que le preguntaron.
 	useEffect(() => {
 		if (!serverVoice || voice.status !== "answered") return;
 		const key = `${voice.transcript}|${voice.answer}|${newOrderDraft?.transcript ?? ""}`;
@@ -1408,6 +1502,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					pressPage(action.page);
 					break;
 				case "voice":
+					if (!canUseVoice) break;
 					if (voice.status === "listening") stopVoice();
 					else startVoice();
 					break;
@@ -1421,10 +1516,13 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					cycleTheme();
 					break;
 				case "close":
-					// Esc siempre regresa de volada a la pantalla principal.
-					if (voice.status === "listening") {
-						voiceCancelledRef.current = true;
-						stopVoice();
+					// Esc siempre regresa de volada a la pantalla principal y cancela voz en vuelo.
+					if (
+						overlay === "voicenote" ||
+						voice.status === "listening" ||
+						voice.status === "thinking"
+					) {
+						cancelVoice();
 					}
 					setOverlay(null);
 					setFnArmed(false);
@@ -1439,13 +1537,17 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 		moveSelection,
 		selectCurrent,
 		handleCaptureStable,
+		handlePrevItem,
+		handleNextItem,
 		cycleTheme,
 		pressPage,
 		runCommand,
 		updateWeightMutation.isPending,
 		voice.status,
+		canUseVoice,
 		startVoice,
 		stopVoice,
+		cancelVoice,
 		cycleFont,
 	]);
 
@@ -1745,24 +1847,34 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					active: CONFIG_PAGES.has(fnPage),
 					onPress: () => pressPage("config"),
 				},
-				{
-					id: "voz",
-					label: voice.status === "listening" ? "Escucho" : "Peggy",
-					shortcut: "Mantén · Alt+Espacio",
-					icon: <MicIcon aria-hidden="true" className="size-3.5" />,
-					tone: voice.status === "listening" ? "red" : "neutral",
-					active: fnPage === "voz" && voice.status !== "listening",
-					onPress: () => undefined,
-					onHoldStart: startVoice,
-					onHoldEnd: stopVoice,
-				},
+				...(canUseVoice
+					? [
+							{
+								id: "voz",
+								label: voice.status === "listening" ? "Escucho" : "Antonella",
+								shortcut: "Mantén · Alt+Espacio",
+								icon: <MicIcon aria-hidden="true" className="size-3.5" />,
+								tone: voice.status === "listening" ? "red" : "neutral",
+								active: fnPage === "voz" && voice.status !== "listening",
+								onPress: () => undefined,
+								onHoldStart: startVoice,
+								onHoldEnd: stopVoice,
+							} satisfies FnKey,
+						]
+					: []),
 				{
 					id: "esc",
 					label: "Esc",
 					shortcut: "Volver",
 					tone: "red",
 					onPress: () => {
-						if (voice.status === "listening") stopVoice();
+						if (
+							overlay === "voicenote" ||
+							voice.status === "listening" ||
+							voice.status === "thinking"
+						) {
+							cancelVoice();
+						}
 						setOverlay(null);
 						setFnArmed(false);
 						setFnPage("inicio");
@@ -1831,18 +1943,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					<CobroPage
 						type={chargeType}
 						customerName={selectedOrder ? orderTitle(selectedOrder) : "—"}
-						total={formatCurrency(
-							saleLines.reduce(
-								(sum, line) =>
-									sum +
-									lineSubtotalCents(
-										line.kg,
-										Number.parseFloat(line.price) || 0,
-									),
-								0,
-							),
-							locale,
-						)}
+						total={formatCurrency(saleLinesTotalCents(saleLines), locale)}
 						lineCount={saleLines.length}
 						methods={paymentMethods}
 						methodId={methodId}
@@ -2231,10 +2332,7 @@ export function PesajeStation({ demo = false }: { demo?: boolean }) {
 					}}
 					onEdit={() => setOverlay("neworder")}
 					onClose={() => {
-						if (voice.status === "listening") {
-							voiceCancelledRef.current = true;
-							stopVoice();
-						}
+						cancelVoice();
 						setOverlay(null);
 					}}
 				/>

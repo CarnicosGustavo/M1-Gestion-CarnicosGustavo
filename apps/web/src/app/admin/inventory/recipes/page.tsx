@@ -697,7 +697,7 @@ export default function RecipesPage({
 	}, [mapRecipes]);
 
 	// Alerta de cierre de pesos: detecta el canal con más merma (% sin cubrir).
-	// Replica la card ALERTA de Peggy del diseño.
+	// Replica la card ALERTA de Antonella del diseño.
 	const mermaAlert = useMemo(() => {
 		let worst: { canal: string; sumPct: number; merma: number } | null = null;
 		for (const s of boardStyles) {
@@ -2122,7 +2122,7 @@ export default function RecipesPage({
 					/>
 				))}
 
-			{/* Peggy — autoconfig: estimar el peso de los canales desde sus piezas */}
+			{/* Antonella — autoconfig: estimar el peso de los canales desde sus piezas */}
 			{aiBar === "show" && boardStyles.length > 0 && (
 				<AiSuggestBar
 					tone="sugerencia"

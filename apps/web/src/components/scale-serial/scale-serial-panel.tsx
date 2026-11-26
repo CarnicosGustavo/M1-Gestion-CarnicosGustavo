@@ -50,6 +50,7 @@ import {
 } from "@/lib/scale/webserial/line-totals";
 import { BAUD_RATES, type ScaleSettings } from "@/lib/scale/webserial/settings";
 import { useTRPC } from "@/lib/trpc/client";
+import { INVALID_TARE_CAPTURE_MESSAGE } from "@/lib/weighing/parse-custom-tare";
 
 import { type CapturePayload, useCaptureQueue } from "./use-capture-queue";
 import {
@@ -89,6 +90,8 @@ interface ScaleSerialPanelProps {
 		id: string;
 		label: string;
 		tareKg: number;
+		/** Tara «Otro» inválida: no se captura (no se guarda tara 0 en silencio). */
+		tareInvalid?: boolean;
 	};
 	containerLabels?: Record<string, string>;
 	onCapturesTotal?: (totals: LineTotals) => void;
@@ -219,6 +222,11 @@ export function ScaleSerialPanel({
 			const capturedAt = Date.now();
 			const currentPieceCount = pieceCountRef.current;
 			const currentContainer = containerRef.current;
+			if (currentContainer.tareInvalid) {
+				// P32-R3-3: ni manual ni automática; avisa solo en la manual.
+				if (manual) toast.error(INVALID_TARE_CAPTURE_MESSAGE);
+				return;
+			}
 			const containerId = currentContainer.id;
 			const tareG = Math.max(0, Math.round(currentContainer.tareKg * 1000));
 			const payload: CapturePayload = {
@@ -356,7 +364,8 @@ export function ScaleSerialPanel({
 		live !== null &&
 		!live.overload &&
 		live.weightG !== null &&
-		live.weightG >= 1;
+		live.weightG >= 1 &&
+		!container.tareInvalid;
 	const currentTareG = Math.max(0, Math.round(container.tareKg * 1000));
 	const estimatedLiveNetKg =
 		live?.weightG === null || live?.weightG === undefined
@@ -626,8 +635,18 @@ export function ScaleSerialPanel({
 							{line.orderId}
 						</div>
 						<div className="text-muted-foreground text-sm">
-							Recipiente actual: {container.label} (tara{" "}
-							{formatKg(currentTareG)} kg) — se aplica a las siguientes capturas
+							{container.tareInvalid ? (
+								<>
+									Recipiente actual: {container.label} (tara inválida) — no se
+									captura hasta corregirla
+								</>
+							) : (
+								<>
+									Recipiente actual: {container.label} (tara{" "}
+									{formatKg(currentTareG)} kg) — se aplica a las siguientes
+									capturas
+								</>
+							)}
 						</div>
 
 						<div className="flex flex-wrap items-end gap-3">

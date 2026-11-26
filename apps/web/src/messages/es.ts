@@ -60,7 +60,7 @@ const messages = {
 		collections: "Cobranza",
 		cedis: "Verificación CEDIS",
 		cierre: "Cierre del día",
-		antonella: "Peggy",
+		antonella: "Antonella",
 		adminPanel: "Panel de administración",
 		openMenu: "Abrir menú",
 		myAccount: "Mi cuenta",

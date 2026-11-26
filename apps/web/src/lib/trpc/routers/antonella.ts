@@ -29,12 +29,26 @@ import {
 	sqlUnsatisfiedItem,
 	UNSATISFIED_ITEM_STATUS_SQL,
 } from "@/lib/orders/demand-sql";
+import {
+	ANTONELLA_ALLOWED_ROLES,
+	consumeAntonellaRateLimit,
+} from "../../ai/antonella-access";
 import { XAI_MODEL, XAI_VOICE, xaiEnabled, xaiRespond } from "../../ai/xai";
-import { protectedProcedure, router } from "../init";
+import { protectedProcedure, router, withRole } from "../init";
+
+const antonellaProcedure = withRole(...ANTONELLA_ALLOWED_ROLES);
+const CONFIRMATION_REQUIRED_TOOLS = new Set([
+	"execute_despiece",
+	"convert_to_variant",
+	"remember",
+	"forget",
+	"create_dataset",
+	"add_data",
+]);
 
 // System prompt por defecto (precargado). El usuario lo puede editar en
 // /admin/settings/antonella; si lo deja vacío, se usa éste.
-export const DEFAULT_SYSTEM_PROMPT = `Eres Peggy, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
+export const DEFAULT_SYSTEM_PROMPT = `Eres Antonella, un asistente inteligente para Carnicos Gustavo (CEDIS - distribuidora de carne de cerdo).
 
 Tu rol: Ayudar a optimizar inventario, producción y órdenes.
 
@@ -119,7 +133,7 @@ export const TOOL_META: Record<
 		category: "accion",
 		danger: true,
 	},
-	remember: { label: "Memorizar un dato", category: "lectura", danger: false },
+	remember: { label: "Memorizar un dato", category: "accion", danger: true },
 	recall: {
 		label: "Recordar (buscar memoria)",
 		category: "lectura",
@@ -130,16 +144,16 @@ export const TOOL_META: Record<
 		category: "lectura",
 		danger: false,
 	},
-	forget: { label: "Olvidar un dato", category: "lectura", danger: false },
+	forget: { label: "Olvidar un dato", category: "accion", danger: true },
 	create_dataset: {
 		label: "Crear tabla de memoria",
-		category: "lectura",
-		danger: false,
+		category: "accion",
+		danger: true,
 	},
 	add_data: {
 		label: "Agregar dato a tabla",
-		category: "lectura",
-		danger: false,
+		category: "accion",
+		danger: true,
 	},
 	query_dataset: {
 		label: "Leer tabla de memoria",
@@ -159,7 +173,7 @@ function getClient(): Anthropic {
 			throw new TRPCError({
 				code: "INTERNAL_SERVER_ERROR",
 				message:
-					"Peggy no está configurada: falta ANTHROPIC_API_KEY en el servidor.",
+					"Antonella no está configurada: falta ANTHROPIC_API_KEY en el servidor.",
 			});
 		}
 		_client = new Anthropic({ apiKey });
@@ -416,7 +430,7 @@ const tools = [
 			required: ["title"],
 		},
 	},
-	// ── DATASETS (bases de datos que Peggy crea) ──
+	// ── DATASETS (bases de datos que Antonella crea) ──
 	{
 		name: "create_dataset",
 		description:
@@ -474,7 +488,7 @@ const tools = [
 	{
 		name: "list_datasets",
 		description:
-			"Lista todas las tablas que Peggy ha creado, con su descripción y columnas.",
+			"Lista todas las tablas que Antonella ha creado, con su descripción y columnas.",
 		input_schema: { type: "object", properties: {}, required: [] },
 	},
 ];
@@ -530,7 +544,7 @@ async function executeTool(
 			return `🔒 ACCIÓN PROTEGIDA REQUERIDA:\n\nConversión solicitada:\n- Base: ${toolInput.base_product_name} → ${toolInput.variant_product_name}\n- Cantidad: ${toolInput.quantity} piezas\n\nEsto abrirá un diálogo de confirmación. El usuario debe presionar [Producir] en la UI.`;
 
 		case "remember":
-			return await rememberFact(toolInput, userId);
+			return `🔒 ACCIÓN PROTEGIDA REQUERIDA:\n\nGuardar en memoria:\n- Título: ${String(toolInput.title ?? "")}\n- Categoría: ${String(toolInput.category ?? "general")}\n- Dato: ${String(toolInput.content ?? "")}\n\nEl usuario debe confirmar en la UI para guardarlo.`;
 		case "recall":
 			return await recallMemories(toolInput.query as string, userId);
 		case "list_memories":
@@ -539,11 +553,11 @@ async function executeTool(
 				userId,
 			);
 		case "forget":
-			return await forgetMemory(toolInput.title as string, userId);
+			return `🔒 ACCIÓN PROTEGIDA REQUERIDA:\n\nBorrar memoria:\n- Título: ${String(toolInput.title ?? "")}\n\nEl usuario debe confirmar en la UI para borrarlo.`;
 		case "create_dataset":
-			return await createDataset(toolInput, userId);
+			return `🔒 ACCIÓN PROTEGIDA REQUERIDA:\n\nCrear tabla de memoria:\n- Nombre: ${String(toolInput.name ?? "")}\n- Columnas: ${Array.isArray(toolInput.columns) ? toolInput.columns.join(", ") : ""}\n\nEl usuario debe confirmar en la UI para crearla.`;
 		case "add_data":
-			return await addDatasetRow(toolInput, userId);
+			return `🔒 ACCIÓN PROTEGIDA REQUERIDA:\n\nAgregar fila a tabla:\n- Tabla: ${String(toolInput.dataset ?? "")}\n\nEl usuario debe confirmar en la UI para guardarla.`;
 		case "query_dataset":
 			return await queryDataset(toolInput, userId);
 		case "list_datasets":
@@ -1461,7 +1475,7 @@ ${forecastLines}
 // ────────────────────────────────────────────
 
 export const antonicellaRouter = router({
-	chat: protectedProcedure
+	chat: antonellaProcedure
 		.input(
 			z.object({
 				message: z.string().min(1),
@@ -1478,6 +1492,13 @@ export const antonicellaRouter = router({
 		)
 		.mutation(async ({ ctx, input }) => {
 			const userId = ctx.user.id;
+			const rate = consumeAntonellaRateLimit(userId, "chat");
+			if (!rate.ok) {
+				throw new TRPCError({
+					code: "TOO_MANY_REQUESTS",
+					message: `Demasiadas solicitudes a Antonella. Espera ${rate.retryAfterSec}s.`,
+				});
+			}
 
 			// Cargar la configuración personalizada del usuario (si existe)
 			const cfg = (
@@ -1493,7 +1514,7 @@ export const antonicellaRouter = router({
 					? cfg.system_prompt
 					: DEFAULT_SYSTEM_PROMPT;
 
-			// Cargar las memorias recientes/importantes para que Peggy sea
+			// Cargar las memorias recientes/importantes para que Antonella sea
 			// "consciente" de lo que ya sabe (puede usar recall para el detalle).
 			const memories = await db
 				.select({
@@ -1575,7 +1596,7 @@ export const antonicellaRouter = router({
 					? `[Herramienta personalizada "${name}"] ${customTools.find((t) => t?.name === name)?.description ?? ""}\n\n(Esta habilidad está declarada pero su ejecución automática aún no está conectada.)`
 					: await executeTool(name, toolInput, userId);
 				toolCalls.push({ name, input: toolInput, result: toolResult });
-				if (name === "execute_despiece" || name === "convert_to_variant") {
+				if (CONFIRMATION_REQUIRED_TOOLS.has(name)) {
 					requiresConfirmation = true;
 					confirmationData = { toolName: name, toolInput };
 				}
@@ -1583,68 +1604,101 @@ export const antonicellaRouter = router({
 			};
 
 			if (xaiEnabled()) {
-				// Grok (x.ai): mismo loop agéntico con la API de respuestas.
+				// Grok (x.ai): mismo loop agéntico con timeout y fallback limpio a Anthropic si falla.
 				const xaiInput: unknown[] = [{ role: "user", content: input.message }];
 				const xaiModel =
 					cfg?.model && cfg.model.startsWith("grok") ? cfg.model : XAI_MODEL;
-				for (let round = 0; round < 5; round++) {
-					const turn = await xaiRespond({
-						model: xaiModel,
-						instructions: systemPrompt,
-						input: xaiInput,
-						tools: activeTools as any,
-					});
-					if (turn.text) answerText = turn.text;
-					if (turn.calls.length === 0) break;
-					xaiInput.push(...turn.output);
-					for (const call of turn.calls) {
-						const output = await runTool(call.name, call.arguments);
-						xaiInput.push({
-							type: "function_call_output",
-							call_id: call.call_id,
-							output: String(output),
+				try {
+					for (let round = 0; round < 5; round++) {
+						const turn = await xaiRespond({
+							model: xaiModel,
+							instructions: systemPrompt,
+							input: xaiInput,
+							tools: activeTools as any,
+							timeoutMs: 20_000,
+						});
+						if (turn.text) answerText = turn.text;
+						if (turn.calls.length === 0) break;
+						xaiInput.push(...turn.output);
+						for (const call of turn.calls) {
+							const output = await runTool(call.name, call.arguments);
+							xaiInput.push({
+								type: "function_call_output",
+								call_id: call.call_id,
+								output: String(output),
+							});
+						}
+					}
+					return {
+						answer: answerText,
+						toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+						requiresConfirmation,
+						confirmationData: requiresConfirmation
+							? confirmationData
+							: undefined,
+					};
+				} catch (err) {
+					console.error(
+						"[antonella/chat] xAI falló:",
+						err instanceof Error ? err.message : err,
+					);
+					if (!process.env.ANTHROPIC_API_KEY || toolCalls.length > 0) {
+						throw new TRPCError({
+							code: "BAD_GATEWAY",
+							message: "Antonella no pudo responder en este momento.",
 						});
 					}
 				}
-				return {
-					answer: answerText,
-					toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-					requiresConfirmation,
-					confirmationData: requiresConfirmation ? confirmationData : undefined,
-				};
 			}
 
 			const client = getClient();
 
-			// Loop agéntico: hasta 5 rondas de tool_use para evitar bucles infinitos
-			for (let round = 0; round < 5; round++) {
-				const response = await client.messages.create({
-					model: model.startsWith("grok") ? "claude-opus-4-8" : model,
-					max_tokens: 2000,
-					tools: activeTools as any,
-					messages: conversation,
-					system: systemPrompt,
-				});
+			try {
+				// Loop agéntico: hasta 5 rondas de tool_use para evitar bucles infinitos
+				for (let round = 0; round < 5; round++) {
+					const response = await client.messages.create(
+						{
+							model: model.startsWith("grok") ? "claude-opus-4-8" : model,
+							max_tokens: 2000,
+							tools: activeTools as any,
+							messages: conversation,
+							system: systemPrompt,
+						},
+						{ timeout: 20_000 },
+					);
 
-				const textBlock = response.content.find((b: any) => b.type === "text");
-				if (textBlock) answerText = (textBlock as any).text;
-				conversation.push({ role: "assistant", content: response.content });
+					const textBlock = response.content.find(
+						(b: any) => b.type === "text",
+					);
+					if (textBlock) answerText = (textBlock as any).text;
+					conversation.push({ role: "assistant", content: response.content });
 
-				const toolUses = response.content.filter(
-					(b: any) => b.type === "tool_use",
-				);
-				if (toolUses.length === 0) break;
+					const toolUses = response.content.filter(
+						(b: any) => b.type === "tool_use",
+					);
+					if (toolUses.length === 0) break;
 
-				const toolResults: any[] = [];
-				for (const block of toolUses) {
-					const toolUse = block as any;
-					toolResults.push({
-						type: "tool_result",
-						tool_use_id: toolUse.id,
-						content: await runTool(toolUse.name, toolUse.input),
-					});
+					const toolResults: any[] = [];
+					for (const block of toolUses) {
+						const toolUse = block as any;
+						toolResults.push({
+							type: "tool_result",
+							tool_use_id: toolUse.id,
+							content: await runTool(toolUse.name, toolUse.input),
+						});
+					}
+					conversation.push({ role: "user", content: toolResults });
 				}
-				conversation.push({ role: "user", content: toolResults });
+			} catch (err) {
+				if (err instanceof TRPCError) throw err;
+				console.error(
+					"[antonella/chat] error proveedor IA:",
+					err instanceof Error ? err.message : err,
+				);
+				throw new TRPCError({
+					code: "BAD_GATEWAY",
+					message: "Antonella no pudo responder en este momento.",
+				});
 			}
 
 			return {
@@ -1656,11 +1710,11 @@ export const antonicellaRouter = router({
 		}),
 
 	/**
-	 * Nota de voz → borrador de pedido. Peggy reconoce cliente y productos
+	 * Nota de voz → borrador de pedido. Antonella reconoce cliente y productos
 	 * contra el catálogo real; NO crea nada: la báscula muestra el borrador y
 	 * el usuario lo confirma con Enter (orders.create).
 	 */
-	parseVoiceOrder: protectedProcedure
+	parseVoiceOrder: antonellaProcedure
 		.input(z.object({ text: z.string().min(1).max(2000) }))
 		.output(
 			z.discriminatedUnion("kind", [
@@ -1682,6 +1736,13 @@ export const antonicellaRouter = router({
 		)
 		.mutation(async ({ ctx, input }) => {
 			const uid = ctx.user.id;
+			const rate = consumeAntonellaRateLimit(uid, "parseVoiceOrder");
+			if (!rate.ok) {
+				throw new TRPCError({
+					code: "TOO_MANY_REQUESTS",
+					message: `Demasiadas notas de voz. Espera ${rate.retryAfterSec}s.`,
+				});
+			}
 			const customerRows = await db
 				.select({ id: customers.id, name: customers.name })
 				.from(customers)
@@ -1748,7 +1809,7 @@ export const antonicellaRouter = router({
 					input_schema: { type: "object", properties: {} },
 				},
 			];
-			const system = `Eres Peggy, asistente de Cárnicos Gustavo (CEDIS de carne de cerdo, México). Recibes la transcripción de una nota de voz. Si pide un pedido, llama propose_order eligiendo el cliente y los productos más parecidos de estas listas (ignora acentos, plurales y errores de dictado: «pechos» → PECHO, «cabezas» → CABEZA). Nunca inventes ids.
+			const system = `Eres Antonella, asistente de Cárnicos Gustavo (CEDIS de carne de cerdo, México). Recibes la transcripción de una nota de voz. Si pide un pedido, llama propose_order eligiendo el cliente y los productos más parecidos de estas listas (ignora acentos, plurales y errores de dictado: «pechos» → PECHO, «cabezas» → CABEZA). Si es una pregunta o no pide crear un pedido, llama not_an_order. Nunca inventes ids.
 
 CLIENTES (id|nombre):
 ${customerRows.map((c) => `${c.id}|${c.name}`).join("\n")}
@@ -1757,28 +1818,32 @@ PRODUCTOS (id|nombre):
 ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 
 			let call: { name: string; input: any } | undefined;
-			if (xaiEnabled()) {
+			// P34-4: parseVoiceOrder solo usa xAI. Si falla o no está configurada,
+			// error genérico — no se envía nada a Anthropic.
+			try {
+				if (!xaiEnabled()) {
+					throw new Error("xai_disabled");
+				}
 				const turn = await xaiRespond({
 					instructions: system,
 					input: [{ role: "user", content: input.text }],
 					tools,
 					toolChoice: "required",
 					maxOutputTokens: 1500,
+					timeoutMs: 15_000,
 				});
 				const first = turn.calls[0];
 				call = first ? { name: first.name, input: first.arguments } : undefined;
-			} else {
-				const response = await getClient().messages.create({
-					model: "claude-sonnet-5-5",
-					max_tokens: 1500,
-					system,
-					tools: tools as any,
-					tool_choice: { type: "any" },
-					messages: [{ role: "user", content: input.text }],
+			} catch (err) {
+				if (err instanceof TRPCError) throw err;
+				console.error(
+					"[antonella/parseVoiceOrder] xAI falló:",
+					err instanceof Error ? err.message : err,
+				);
+				throw new TRPCError({
+					code: "BAD_GATEWAY",
+					message: "Antonella no pudo procesar la nota de voz en este momento.",
 				});
-				call = response.content.find((b: any) => b.type === "tool_use") as
-					| { name: string; input: any }
-					| undefined;
 			}
 			if (!call || call.name !== "propose_order") return { kind: "question" };
 
@@ -1813,18 +1878,25 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 			};
 		}),
 
-	/** Qué voz tiene Peggy: con x.ai, dictado y respuesta hablada (Ara). */
-	voiceInfo: protectedProcedure.query(() => ({
+	/** Qué voz tiene Antonella: con x.ai, dictado y respuesta hablada (Ara). */
+	voiceInfo: antonellaProcedure.query(() => ({
 		provider: xaiEnabled() ? ("xai" as const) : ("anthropic" as const),
 		serverVoice: xaiEnabled(),
 		voice: xaiEnabled() ? XAI_VOICE : null,
 		model: xaiEnabled() ? XAI_MODEL : null,
 	})),
 
-	executeAction: protectedProcedure
+	executeAction: antonellaProcedure
 		.input(
 			z.object({
-				actionName: z.enum(["execute_despiece", "convert_to_variant"]),
+				actionName: z.enum([
+					"execute_despiece",
+					"convert_to_variant",
+					"remember",
+					"forget",
+					"create_dataset",
+					"add_data",
+				]),
 				actionInput: z.any(),
 			}),
 		)
@@ -1876,7 +1948,7 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 					quantity_change_kg: null,
 					transaction_type: "DESPIECE_SOLICITADO",
 					reference_id: null,
-					notes: `Despiece solicitado por Peggy: ${quantity} ${canal_type}`,
+					notes: `Despiece solicitado por Antonella: ${quantity} ${canal_type}`,
 				});
 
 				return {
@@ -1932,7 +2004,7 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 					quantity_change_kg: null,
 					transaction_type: "VARIANTE_SOLICITADA",
 					reference_id: null,
-					notes: `Conversión solicitada por Peggy: ${quantity} ${base_product_name} → ${variant_product_name}`,
+					notes: `Conversión solicitada por Antonella: ${quantity} ${base_product_name} → ${variant_product_name}`,
 				});
 
 				return {
@@ -1941,13 +2013,41 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 				};
 			}
 
+			if (input.actionName === "remember") {
+				const payload = (input.actionInput ?? {}) as Record<string, unknown>;
+				if (!payload.title || !payload.content) {
+					return { success: false, message: "Falta título o contenido." };
+				}
+				const message = await rememberFact(payload, uid);
+				return { success: true, message };
+			}
+
+			if (input.actionName === "forget") {
+				const title = String((input.actionInput as any)?.title ?? "").trim();
+				if (!title) return { success: false, message: "Falta título." };
+				const message = await forgetMemory(title, uid);
+				return { success: !message.startsWith("❌"), message };
+			}
+
+			if (input.actionName === "create_dataset") {
+				const payload = (input.actionInput ?? {}) as Record<string, unknown>;
+				const message = await createDataset(payload, uid);
+				return { success: !message.startsWith("❌"), message };
+			}
+
+			if (input.actionName === "add_data") {
+				const payload = (input.actionInput ?? {}) as Record<string, unknown>;
+				const message = await addDatasetRow(payload, uid);
+				return { success: !message.startsWith("❌"), message };
+			}
+
 			return {
 				success: false,
 				message: "Acción desconocida",
 			};
 		}),
 
-	// ── Notificaciones internas (Peggy vigilando el negocio) ──
+	// ── Notificaciones internas (Antonella vigilando el negocio) ──
 	// Detecta condiciones reales y devuelve avisos para mostrar en el dashboard.
 	notifications: protectedProcedure
 		.input(z.void())
@@ -2069,10 +2169,10 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 			return { items };
 		}),
 
-	// ── Configuración de Peggy ──
+	// ── Configuración de Antonella ──
 
 	// Lista las herramientas integradas con su metadata (para la UI)
-	listTools: protectedProcedure
+	listTools: antonellaProcedure
 		.input(z.void())
 		.output(
 			z.object({
@@ -2102,7 +2202,7 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 		}),
 
 	// Obtiene la configuración guardada del usuario (o valores por defecto)
-	getConfig: protectedProcedure
+	getConfig: antonellaProcedure
 		.input(z.void())
 		.output(
 			z.object({
@@ -2132,7 +2232,7 @@ ${catalog.map((p) => `${p.id}|${p.name}`).join("\n")}`;
 		}),
 
 	// Guarda la configuración del usuario (upsert por user_uid)
-	saveConfig: protectedProcedure
+	saveConfig: antonellaProcedure
 		.input(
 			z.object({
 				systemPrompt: z.string(),

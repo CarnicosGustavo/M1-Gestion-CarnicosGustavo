@@ -173,7 +173,8 @@ Plantilla completa en [`apps/web/.env.example`](apps/web/.env.example). Resumen:
 | `BETTER_AUTH_SECRET` | Firma de sesiones |
 | `BETTER_AUTH_URL` / `BASE_URL` / `NEXT_PUBLIC_BASE_URL` | URL del despliegue |
 | `BASE_PATH` | Prefijo de ruta (vacío = raíz) |
-| `ANTHROPIC_API_KEY` | Motor de IA de Antonella |
+| `ANTHROPIC_API_KEY` | Motor de IA de respaldo de Antonella |
+| `CARNICOS_XAI_API_KEY` | Motor principal de Antonella (Grok x.ai) + voz STT/TTS (no usar `XAI_API_KEY`) |
 | `NEXT_PUBLIC_LOCALE` | Idioma (`es`) |
 | `RUN_SEED` | Semilla demo al arrancar (siempre `false` en prod) |
 | `SEED_TOKEN` / `ADMIN_RESET_PASSWORD` | Protegen rutas y acciones administrativas |
@@ -182,7 +183,7 @@ Plantilla completa en [`apps/web/.env.example`](apps/web/.env.example). Resumen:
 
 > ⚠️ Un valor inválido en `DATABASE_SSL` o `DATABASE_PREPARE` hace que la app **falle al arrancar a propósito** (el error se lanza al cargar `lib/db`, sin mostrar la URL). Así una configuración mal escrita no pasa desapercibida ni se conecta sin TLS por accidente.
 
-> ⚠️ **Antonella** no funciona sin `ANTHROPIC_API_KEY` configurada en las
+> ⚠️ **Antonella** requiere `CARNICOS_XAI_API_KEY` (x.ai/Grok + voz) o `ANTHROPIC_API_KEY` configurada en las
 > variables de entorno de Vercel (Production/Preview/Development).
 >
 > 🔐 Los **valores reales** de claves y conexiones están en `PROYECTO_INFO.md`

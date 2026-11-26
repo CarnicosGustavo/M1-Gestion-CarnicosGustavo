@@ -12,6 +12,7 @@ import {
 	type AntonellaMessage,
 	useAntonellaHistory,
 } from "@/hooks/useAntonellaHistory";
+import { canUseAntonella } from "@/lib/ai/antonella-roles";
 import { useTRPC } from "@/lib/trpc/client";
 
 interface AntonellaCtx {
@@ -36,7 +37,13 @@ const DEFAULT_CHIPS = [
 	"¿Cuántos canales necesito comprar?",
 ];
 
-export function AntonellaProvider({ children }: { children: React.ReactNode }) {
+export function AntonellaProvider({
+	children,
+	userRole = null,
+}: {
+	children: React.ReactNode;
+	userRole?: string | null;
+}) {
 	const trpc = useTRPC();
 	const sessionId = "antonella-dock";
 	const history = useAntonellaHistory(sessionId);
@@ -47,7 +54,7 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 			id: "welcome",
 			role: "assistant",
 			content:
-				"¡Hola! Soy Peggy, el cerebro del sistema. Conozco inventario, despiece, pesaje, pedidos y cobranza. ¿En qué te ayudo?",
+				"¡Hola! Soy Antonella, el cerebro del sistema. Conozco inventario, despiece, pesaje, pedidos y cobranza. ¿En qué te ayudo?",
 			timestamp: new Date(),
 		},
 	]);
@@ -83,7 +90,7 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 				setIsLoading(false);
 			},
 			onError: (e: any) => {
-				toast.error(e.message ?? "Error en Peggy");
+				toast.error(e.message ?? "Error en Antonella");
 				setIsLoading(false);
 			},
 		}),
@@ -149,129 +156,138 @@ export function AntonellaProvider({ children }: { children: React.ReactNode }) {
 		executeMutation.mutate({ actionName: toolName, actionInput: toolInput });
 	};
 
+	const allowed = canUseAntonella(userRole);
+
 	return (
 		<Ctx.Provider value={ctx}>
 			{children}
 
-			{/* Launcher flotante */}
-			<button
-				type="button"
-				onClick={() => setOpen((o) => !o)}
-				aria-label="Abrir Peggy"
-				data-antonella-launcher=""
-				className={cn(
-					"fixed right-5 bottom-5 z-[80] flex h-[58px] items-center gap-3 rounded-full border border-[var(--cg-chrome)] bg-[var(--cg-chrome)] shadow-2xl transition-all",
-					open ? "p-0" : "py-2 pr-4 pl-2",
-				)}
-			>
-				<span className="relative">
-					<AntonellaAvatar size={42} />
-					{!open && (
-						<span className="absolute -top-px -right-px h-3 w-3 rounded-full border-2 border-[var(--cg-chrome)] bg-primary" />
-					)}
-				</span>
-				{!open && (
-					<span className="pr-1 font-bold text-[var(--cg-chrome-fg)] text-sm">
-						Peggy
-					</span>
-				)}
-			</button>
-
-			{/* Overlay */}
-			{open && (
-				<button
-					type="button"
-					aria-label="Cerrar"
-					className="fixed inset-0 z-[85] cursor-default bg-black/30"
-					onClick={() => setOpen(false)}
-				/>
-			)}
-
-			{/* Drawer */}
-			<aside
-				className={cn(
-					"fixed inset-y-0 right-0 z-[90] flex w-[min(420px,92vw)] flex-col border-l bg-background shadow-2xl transition-transform duration-300",
-					open ? "translate-x-0" : "translate-x-[106%]",
-				)}
-			>
-				{/* Header */}
-				<div className="flex items-center gap-3 bg-[var(--cg-chrome)] px-4 py-4 text-[var(--cg-chrome-fg)]">
-					<AntonellaAvatar size={44} />
-					<div className="min-w-0 flex-1">
-						<div className="font-bold text-base">Peggy</div>
-						<div className="flex items-center gap-1.5 text-[var(--cg-chrome-fg)]/70 text-xs">
-							<span className="h-1.5 w-1.5 rounded-full bg-[var(--cg-green)]" />
-							El cerebro del sistema · en línea
-						</div>
-					</div>
+			{/* P36-4: el launcher y el drawer solo para roles de ANTONELLA_ALLOWED_ROLES */}
+			{allowed ? (
+				<>
 					<button
 						type="button"
-						onClick={() => setOpen(false)}
-						className="text-[var(--cg-chrome-fg)]"
+						onClick={() => setOpen((o) => !o)}
+						aria-label="Abrir Antonella"
+						data-antonella-launcher=""
+						className={cn(
+							"fixed right-5 bottom-5 z-[80] flex h-[58px] items-center gap-3 rounded-full border border-[var(--cg-chrome)] bg-[var(--cg-chrome)] shadow-2xl transition-all",
+							open ? "p-0" : "py-2 pr-4 pl-2",
+						)}
 					>
-						<XIcon className="h-5 w-5" />
+						<span className="relative">
+							<AntonellaAvatar size={42} />
+							{!open && (
+								<span className="absolute -top-px -right-px h-3 w-3 rounded-full border-2 border-[var(--cg-chrome)] bg-primary" />
+							)}
+						</span>
+						{!open && (
+							<span className="pr-1 font-bold text-[var(--cg-chrome-fg)] text-sm">
+								Antonella
+							</span>
+						)}
 					</button>
-				</div>
 
-				{/* Cuerpo */}
-				<div ref={bodyRef} className="flex-1 overflow-y-auto px-4 pt-4 pb-1.5">
-					<p className="mb-4 text-center text-[11px] text-muted-foreground tracking-wide">
-						Conoce inventario · despiece · pesaje · pedidos · cobranza
-					</p>
-					{messages.map((m) => (
-						<MessageBubble
-							key={m.id}
-							msg={m}
-							onConfirm={() => confirmAction(m)}
-						/>
-					))}
-					{isLoading && (
-						<div className="mb-3 flex items-center gap-2 text-muted-foreground text-sm">
-							<AntonellaAvatar size={28} />
-							<Loader2Icon className="h-4 w-4 animate-spin" />
-							Pensando…
-						</div>
-					)}
-				</div>
-
-				{/* Chips */}
-				<div className="flex gap-2 overflow-x-auto px-4 pt-1 pb-3">
-					{DEFAULT_CHIPS.map((c) => (
+					{/* Overlay */}
+					{open && (
 						<button
-							key={c}
 							type="button"
-							onClick={() => send(c)}
-							disabled={isLoading}
-							className="shrink-0 whitespace-nowrap rounded-full border bg-card px-3 py-2 font-bold text-foreground text-xs"
-						>
-							{c}
-						</button>
-					))}
-				</div>
+							aria-label="Cerrar"
+							className="fixed inset-0 z-[85] cursor-default bg-black/30"
+							onClick={() => setOpen(false)}
+						/>
+					)}
 
-				{/* Input */}
-				<div className="flex items-center gap-2 px-3.5 pb-4">
-					<Input
-						value={input}
-						onChange={(e) => setInput(e.target.value)}
-						onKeyDown={(e) => {
-							if (e.key === "Enter") send();
-						}}
-						disabled={isLoading}
-						placeholder="Pregunta o da una instrucción…"
-						className="flex-1"
-					/>
-					<Button
-						type="button"
-						size="icon"
-						onClick={() => send()}
-						disabled={!input.trim() || isLoading}
-						className="h-11 w-11 shrink-0 rounded-xl"
+					{/* Drawer */}
+					<aside
+						className={cn(
+							"fixed inset-y-0 right-0 z-[90] flex w-[min(420px,92vw)] flex-col border-l bg-background shadow-2xl transition-transform duration-300",
+							open ? "translate-x-0" : "translate-x-[106%]",
+						)}
 					>
-						<ArrowUpIcon className="h-5 w-5" />
-					</Button>
-				</div>
-			</aside>
+						{/* Header */}
+						<div className="flex items-center gap-3 bg-[var(--cg-chrome)] px-4 py-4 text-[var(--cg-chrome-fg)]">
+							<AntonellaAvatar size={44} />
+							<div className="min-w-0 flex-1">
+								<div className="font-bold text-base">Antonella</div>
+								<div className="flex items-center gap-1.5 text-[var(--cg-chrome-fg)]/70 text-xs">
+									<span className="h-1.5 w-1.5 rounded-full bg-[var(--cg-green)]" />
+									El cerebro del sistema · en línea
+								</div>
+							</div>
+							<button
+								type="button"
+								onClick={() => setOpen(false)}
+								className="text-[var(--cg-chrome-fg)]"
+							>
+								<XIcon className="h-5 w-5" />
+							</button>
+						</div>
+
+						{/* Cuerpo */}
+						<div
+							ref={bodyRef}
+							className="flex-1 overflow-y-auto px-4 pt-4 pb-1.5"
+						>
+							<p className="mb-4 text-center text-[11px] text-muted-foreground tracking-wide">
+								Conoce inventario · despiece · pesaje · pedidos · cobranza
+							</p>
+							{messages.map((m) => (
+								<MessageBubble
+									key={m.id}
+									msg={m}
+									onConfirm={() => confirmAction(m)}
+								/>
+							))}
+							{isLoading && (
+								<div className="mb-3 flex items-center gap-2 text-muted-foreground text-sm">
+									<AntonellaAvatar size={28} />
+									<Loader2Icon className="h-4 w-4 animate-spin" />
+									Pensando…
+								</div>
+							)}
+						</div>
+
+						{/* Chips */}
+						<div className="flex gap-2 overflow-x-auto px-4 pt-1 pb-3">
+							{DEFAULT_CHIPS.map((c) => (
+								<button
+									key={c}
+									type="button"
+									onClick={() => send(c)}
+									disabled={isLoading}
+									className="shrink-0 whitespace-nowrap rounded-full border bg-card px-3 py-2 font-bold text-foreground text-xs"
+								>
+									{c}
+								</button>
+							))}
+						</div>
+
+						{/* Input */}
+						<div className="flex items-center gap-2 px-3.5 pb-4">
+							<Input
+								value={input}
+								onChange={(e) => setInput(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter") send();
+								}}
+								disabled={isLoading}
+								placeholder="Pregunta o da una instrucción…"
+								className="flex-1"
+							/>
+							<Button
+								type="button"
+								size="icon"
+								onClick={() => send()}
+								disabled={!input.trim() || isLoading}
+								className="h-11 w-11 shrink-0 rounded-xl"
+							>
+								<ArrowUpIcon className="h-5 w-5" />
+							</Button>
+						</div>
+					</aside>
+				</>
+			) : null}
 		</Ctx.Provider>
 	);
 }
@@ -311,7 +327,10 @@ function MessageBubble({
 						<div className="mb-2 space-y-0.5 font-mono text-[11px] text-foreground/80">
 							{Object.entries(msg.confirmationData as any).map(([k, v]) => (
 								<div key={k}>
-									<span className="font-bold">{k}:</span> {String(v)}
+									<span className="font-bold">{k}:</span>{" "}
+									{typeof v === "object" && v !== null
+										? JSON.stringify(v)
+										: String(v)}
 								</div>
 							))}
 						</div>

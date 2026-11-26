@@ -29,3 +29,7 @@ export function canRegisterWeight(input: {
 		!input.isPending
 	);
 }
+
+/** P32-R3-3: con una tara «Otro» inválida no se captura (no se aplica tara 0). */
+export const INVALID_TARE_CAPTURE_MESSAGE =
+	"Corrige la tara «Otro» (0 o más, con punto) antes de capturar";

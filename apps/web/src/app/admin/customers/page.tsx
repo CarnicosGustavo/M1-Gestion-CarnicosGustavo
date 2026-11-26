@@ -644,7 +644,7 @@ export default function CustomersPage() {
 															</span>
 														</div>
 														<p className="mt-1.5 text-muted-foreground text-xs">
-															Peggy te avisará al acercarse al límite o al
+															Antonella te avisará al acercarse al límite o al
 															vencer un saldo.
 														</p>
 													</div>

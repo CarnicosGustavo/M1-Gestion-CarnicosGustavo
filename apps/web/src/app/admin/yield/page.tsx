@@ -381,7 +381,7 @@ export default function YieldPage() {
 				</Button>
 			</div>
 
-			{/* Peggy: estimar pesos faltantes desde las recetas */}
+			{/* Antonella: estimar pesos faltantes desde las recetas */}
 			<AiSuggestBar
 				tone="sugerencia"
 				title="Estimar pesos del día"
@@ -392,7 +392,7 @@ export default function YieldPage() {
 						"Estima los pesos de las piezas del despiece de hoy desde las recetas y dime el rendimiento esperado.",
 					)
 				}
-				secondary="Abrir Peggy"
+				secondary="Abrir Antonella"
 				onSecondary={() => antonella.open()}
 			/>
 

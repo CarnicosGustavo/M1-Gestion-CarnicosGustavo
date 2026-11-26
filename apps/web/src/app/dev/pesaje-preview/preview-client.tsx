@@ -7,7 +7,7 @@ import { PesajeStation } from "@/components/weighing-station-v2/pesaje-station";
 export function PesajePreviewClient() {
 	return (
 		<div className="flex h-screen w-full flex-col overflow-hidden bg-background p-1.5">
-			<AntonellaProvider>
+			<AntonellaProvider userRole="admin">
 				<PesajeStation demo />
 			</AntonellaProvider>
 		</div>

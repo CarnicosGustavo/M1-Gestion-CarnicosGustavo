@@ -653,7 +653,7 @@ export default function POSPage() {
 		<div className="mx-auto w-full max-w-6xl pb-28 lg:pb-0">
 			<ScreenHead
 				title="Punto de venta"
-				desc="Captura el pedido del cliente. Peggy clasifica cada pieza en stock, vía despiece o por pesar al agregarla."
+				desc="Captura el pedido del cliente. Antonella clasifica cada pieza en stock, vía despiece o por pesar al agregarla."
 			/>
 			<AntonellaSlot
 				data={{

@@ -1,12 +1,34 @@
 "use client";
 
 import type { DraftLine } from "./overlays/new-order-overlay";
-import { noteProductName, noteQuantity } from "./overlays/voice-note";
+
+/** «PIERNA» → «Piernas» (8 pzs); los nombres compuestos se dejan igual. */
+export function noteProductName(name: string, pieces: number): string {
+	const title = name
+		.toLowerCase()
+		.replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
+	if (pieces <= 1 || /\s|\//.test(title) || /s$/i.test(title)) return title;
+	return /[aeiou]$/i.test(title) ? `${title}s` : `${title}es`;
+}
+
+export function noteQuantity(line: DraftLine): string {
+	if (line.kg && !line.pieces) return `${line.kg} kg`;
+	return `${line.pieces} ${line.pieces === 1 ? "pz" : "pzs"}`;
+}
+
+export function audioFileNameForMime(mime: string | null | undefined): string {
+	const base = (mime ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+	if (base === "audio/mp4" || base === "audio/x-m4a") return "nota.m4a";
+	if (base === "audio/ogg") return "nota.ogg";
+	if (base === "audio/mpeg" || base === "audio/mp3") return "nota.mp3";
+	if (base === "audio/wav") return "nota.wav";
+	return "nota.webm";
+}
 
 /**
- * Voz de Peggy con x.ai: se graba la nota en el navegador (MediaRecorder),
- * el servidor la transcribe (Grok STT) y Peggy contesta hablando (voz Ara).
- * Funciona en cualquier navegador moderno, no solo en Chrome.
+ * Voz de Antonella con x.ai: se graba la nota en el navegador (MediaRecorder),
+ * el servidor la transcribe (Grok STT) y Antonella contesta hablando (voz Ara).
+ * Funciona en cualquier navegador moderno (incluido Safari con audio/mp4).
  */
 
 export function canRecord(): boolean {
@@ -24,12 +46,19 @@ export interface NoteRecorder {
 	cancel: () => void;
 }
 
+const RECORD_MIME_CANDIDATES = [
+	"audio/webm;codecs=opus",
+	"audio/webm",
+	"audio/ogg",
+	"audio/mp4",
+];
+
 export async function startRecording(): Promise<NoteRecorder> {
 	const stream = await navigator.mediaDevices.getUserMedia({
 		audio: { echoCancellation: true, noiseSuppression: true },
 	});
-	const type = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"].find(
-		(candidate) => MediaRecorder.isTypeSupported(candidate),
+	const type = RECORD_MIME_CANDIDATES.find((candidate) =>
+		MediaRecorder.isTypeSupported(candidate),
 	);
 	const recorder = new MediaRecorder(stream, type ? { mimeType: type } : {});
 	const chunks: Blob[] = [];
@@ -40,18 +69,17 @@ export async function startRecording(): Promise<NoteRecorder> {
 	const release = () => {
 		for (const track of stream.getTracks()) track.stop();
 	};
+	const resolvedMime = () => recorder.mimeType || type || "audio/webm";
 	return {
 		stop: () =>
 			new Promise<Blob>((resolve) => {
 				recorder.onstop = () => {
 					release();
-					resolve(
-						new Blob(chunks, { type: recorder.mimeType || "audio/webm" }),
-					);
+					resolve(new Blob(chunks, { type: resolvedMime() }));
 				};
 				if (recorder.state === "inactive") {
 					release();
-					resolve(new Blob(chunks));
+					resolve(new Blob(chunks, { type: resolvedMime() }));
 				} else recorder.stop();
 			}),
 		cancel: () => {
@@ -64,8 +92,8 @@ export async function startRecording(): Promise<NoteRecorder> {
 
 export async function transcribe(audio: Blob): Promise<string> {
 	const form = new FormData();
-	form.append("audio", audio, "nota.webm");
-	const res = await fetch("/api/peggy/stt", { method: "POST", body: form });
+	form.append("audio", audio, audioFileNameForMime(audio.type));
+	const res = await fetch("/api/antonella/stt", { method: "POST", body: form });
 	if (!res.ok) throw new Error(`Dictado no disponible (${res.status})`);
 	const data = (await res.json()) as { text?: string };
 	return String(data.text ?? "").trim();
@@ -74,7 +102,7 @@ export async function transcribe(audio: Blob): Promise<string> {
 let current: HTMLAudioElement | null = null;
 let pending: AbortController | null = null;
 
-/** Calla a Peggy (Esc, nueva nota o cerrar). */
+/** Calla a Antonella (Esc, nueva nota o cerrar). */
 export function hush(): void {
 	pending?.abort();
 	pending = null;
@@ -85,7 +113,7 @@ export function hush(): void {
 	}
 }
 
-/** Peggy dice el texto con su voz; si falla, se queda callada. */
+/** Antonella dice el texto con su voz; si falla, se queda callada. */
 export async function speak(text: string): Promise<void> {
 	hush();
 	const clean = text.replace(/[*_#`>]/g, "").trim();
@@ -93,7 +121,7 @@ export async function speak(text: string): Promise<void> {
 	const controller = new AbortController();
 	pending = controller;
 	try {
-		const res = await fetch("/api/peggy/tts", {
+		const res = await fetch("/api/antonella/tts", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ text: clean }),
@@ -107,11 +135,15 @@ export async function speak(text: string): Promise<void> {
 		}
 		const audio = new Audio(url);
 		current = audio;
-		audio.onended = () => {
+		const cleanup = () => {
 			URL.revokeObjectURL(url);
 			if (current === audio) current = null;
 		};
-		await audio.play().catch(() => undefined);
+		audio.onended = cleanup;
+		audio.onerror = cleanup;
+		await audio.play().catch(() => {
+			cleanup();
+		});
 	} catch {
 		// Sin voz: la nota en pantalla basta.
 	} finally {

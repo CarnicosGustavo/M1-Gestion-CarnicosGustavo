@@ -3,6 +3,8 @@
 import { cn } from "@finopenpos/ui/lib/utils";
 import localFont from "next/font/local";
 import { useEffect, useRef } from "react";
+import { noteProductName, noteQuantity } from "../peggy-voice";
+import { matchVoiceNoteKey } from "../shortcuts";
 import type { DraftLine } from "./new-order-overlay";
 
 // Letra a mano (Caveat, OFL) empaquetada local: el build no depende de la red.
@@ -23,19 +25,7 @@ export interface NoteCustomer {
 	phone: string | null;
 }
 
-/** «PIERNA» → «Piernas» (8 pzs); los nombres compuestos se dejan igual. */
-export function noteProductName(name: string, pieces: number): string {
-	const title = name
-		.toLowerCase()
-		.replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
-	if (pieces <= 1 || /\s|\//.test(title) || /s$/i.test(title)) return title;
-	return /[aeiou]$/i.test(title) ? `${title}s` : `${title}es`;
-}
-
-export function noteQuantity(line: DraftLine): string {
-	if (line.kg && !line.pieces) return `${line.kg} kg`;
-	return `${line.pieces} ${line.pieces === 1 ? "pz" : "pzs"}`;
-}
+export { noteProductName, noteQuantity };
 
 /**
  * Nota de voz con aspecto de libreta de cuadrícula: parece apuntada a mano,
@@ -77,19 +67,35 @@ export function VoiceNote({
 		year: "numeric",
 	});
 
+	const submittedRef = useRef(false);
+	useEffect(() => {
+		if (!busy) submittedRef.current = false;
+	}, [busy]);
+
 	// Enter confirma, E edita (Esc lo cierra la estación).
 	const actions = useRef({ onConfirm, onEdit, canConfirm, hasOrder });
 	actions.current = { onConfirm, onEdit, canConfirm, hasOrder };
+	const triggerConfirm = () => {
+		if (!actions.current.canConfirm || submittedRef.current) return;
+		submittedRef.current = true;
+		actions.current.onConfirm();
+	};
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
-			if (event.altKey || event.metaKey || event.ctrlKey) return;
-			if (event.key === "Enter" && actions.current.canConfirm) {
+			if (event.repeat) {
+				if (event.key === "Enter") event.preventDefault();
+				return;
+			}
+			const intent = matchVoiceNoteKey(event, {
+				canConfirm: actions.current.canConfirm,
+				hasOrder: actions.current.hasOrder,
+			});
+			if (intent === "confirm") {
+				if (submittedRef.current) return;
 				event.preventDefault();
+				submittedRef.current = true;
 				actions.current.onConfirm();
-			} else if (
-				(event.key === "e" || event.key === "E") &&
-				actions.current.hasOrder
-			) {
+			} else if (intent === "edit") {
 				event.preventDefault();
 				actions.current.onEdit();
 			}
@@ -116,7 +122,7 @@ export function VoiceNote({
 			<section
 				role="dialog"
 				aria-modal="true"
-				aria-label="Nota de voz para Peggy"
+				aria-label="Nota de voz para Antonella"
 				className={cn(
 					handwriting.className,
 					"relative z-10 flex max-h-[92vh] w-[min(64rem,92vw)] rotate-[-0.4deg] flex-col overflow-hidden rounded-sm text-[1.9rem] leading-none shadow-[0_18px_40px_rgba(0,0,0,0.55),0_2px_0_#d8d2c2]",
@@ -137,7 +143,7 @@ export function VoiceNote({
 						Cárnicos Gustavo
 					</span>
 					<span className="font-semibold text-[#7d8794] text-xs uppercase tracking-[0.3em]">
-						Notas · Peggy 🎤
+						Notas · Antonella 🎤
 					</span>
 				</header>
 
@@ -213,11 +219,14 @@ export function VoiceNote({
 								className={cn(ink, "pz-write whitespace-pre-wrap")}
 								style={write()}
 							>
-								<span className={label}>Peggy: </span>
+								<span className={label}>Antonella: </span>
 								{answer}
 							</p>
 						) : (
-							<p className="text-[#9aa4ae] italic">
+							<output
+								aria-live="polite"
+								className="block text-[#9aa4ae] italic"
+							>
 								{status === "listening"
 									? transcript || "te escucho…"
 									: status === "thinking"
@@ -225,22 +234,22 @@ export function VoiceNote({
 										: status === "error"
 											? "No te entendí, inténtalo otra vez."
 											: "Mantén 🎤 y dicta el pedido…"}
-							</p>
+							</output>
 						)}
 					</div>
 				</div>
 
 				{/* Pie: cancelar, editar o confirmar */}
 				<footer className="flex items-center justify-between gap-4 border-[#d8d2c2] border-t bg-[#fdfcf6]/95 px-[5.6rem] py-3 font-sans">
-					<span className="text-[#7d8794] text-sm">
+					<output aria-live="polite" className="text-[#7d8794] text-sm">
 						{status === "listening"
 							? "🎤 Escuchando… suelta el botón o pulsa Espacio"
 							: status === "thinking"
-								? "✍️ Peggy está anotando…"
+								? "✍️ Antonella está anotando…"
 								: hasOrder
 									? "Revisa la nota"
 									: ""}
-					</span>
+					</output>
 					{hasOrder ? (
 						<div className="flex gap-3">
 							<button
@@ -259,7 +268,8 @@ export function VoiceNote({
 							</button>
 							<button
 								type="button"
-								onClick={onConfirm}
+								data-voice-confirm="true"
+								onClick={triggerConfirm}
 								disabled={!canConfirm}
 								className="rounded-md bg-gradient-to-b from-[#4cc35d] to-[#2f9a3f] px-6 py-2 font-bold text-[#06210b] text-base shadow disabled:opacity-40"
 							>
